@@ -1,0 +1,1645 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CondoTransparent | Portale Trasparenza Condominiale</title>
+    
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e3a8a">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; color: black !important; }
+            .tab-pane { display: block !important; page-break-inside: avoid; }
+            header, footer { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    
+
+
+        <!-- ========================================================================
+         HEADER / NAVBAR PRINCIPALE CON INFORMAZIONI RUOLO RBAC
+         ======================================================================== -->
+    
+<div id="agency-dashboard-view" class="hidden min-h-screen bg-slate-100 py-12 flex-col items-center">
+    <div class="max-w-6xl w-full px-6">
+        <div class="flex justify-between items-center mb-10">
+            <div>
+                <h1 class="text-4xl font-extrabold text-slate-900 mb-2">La tua Scrivania</h1>
+                <p class="text-slate-500">Seleziona il condominio che desideri gestire.</p>
+            </div>
+            <button onclick="logout()" class="px-4 py-2 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100"><i class="fa-solid fa-right-from-bracket mr-2"></i> Esci</button>
+        </div>
+        <div id="agency-condos-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Cards here -->
+        </div>
+    </div>
+</div>
+<div id="app-core-view"><header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-18 items-center py-3">
+                <!-- Logo & Dati Condominio -->
+                <div class="flex items-center space-x-3 sm:space-x-4">
+                    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
+                        <i class="fa-solid fa-building-user text-xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-lg tracking-tight text-slate-900">CondoTransparent</span>
+                            <span id="role-badge" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase bg-blue-100 text-blue-800">
+                                RBAC ATTIVO
+                            </span>
+                        </div>
+                        <p id="header-condo-name" class="text-xs text-slate-500 font-medium">Caricamento dati condominio...</p>
+                    </div>
+                </div>
+
+                <!-- Profilo Utente Autenticato & Tasto Logout -->
+                <div class="flex items-center space-x-3">
+                    <div class="text-right hidden sm:block">
+                        <span id="user-display-name" class="font-bold text-slate-900 text-xs block">Caricamento...</span>
+                        <span id="user-display-unit" class="text-[11px] text-slate-500 block"></span>
+                    </div>
+                    
+                    
+<button id="btn-return-dashboard" onclick="returnToAgencyDashboard()" class="hidden no-print px-3.5 py-1.5 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition-colors flex items-center mr-2">
+    <i class="fa-solid fa-layer-group mr-1.5 text-indigo-500"></i> I Miei Condomìni
+</button>
+
+                    <button onclick="openSecurityProfileModal()" class="no-print px-3.5 py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-colors flex items-center ml-2">
+                        <i class="fa-solid fa-shield-halved mr-1.5 text-blue-500"></i> Sicurezza (2FA)
+                    </button>
+                    <button onclick="window.location.href='/'" class="no-print px-3.5 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center">
+                        <i class="fa-solid fa-house mr-1.5 text-slate-400"></i> Home
+                    </button>
+
+                    <button onclick="window.print()" class="no-print px-3.5 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center">
+                        <i class="fa-solid fa-print mr-1.5 text-slate-400"></i> Stampa
+                    </button>
+
+                    <button id="btn-nuovo-accesso" onclick="window.open('login.html?new_session=1', '_blank', 'noopener,noreferrer')" class="hidden no-print px-3.5 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center">
+                        <i class="fa-solid fa-user-plus mr-1.5 text-slate-400"></i> Nuovo Accesso
+                    </button>
+
+                    <button onclick="logout()" class="px-3.5 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center">
+                        <i class="fa-solid fa-right-from-bracket mr-1.5 text-slate-400"></i> Esci
+                    </button>
+                </div>
+            </div>
+
+            <!-- TABS DI NAVIGAZIONE PRINCIPALE -->
+            <div class="flex flex-wrap gap-2 sm:gap-4 border-t border-slate-100 pt-2">
+                <button id="tab-btn-dashboard" onclick="switchTab('dashboard')" class="tab-btn flex items-center space-x-2 py-3 px-3 border-b-2 border-blue-600 font-semibold text-sm text-blue-600 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-gauge-high text-base"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button id="tab-btn-accounting" onclick="switchTab('accounting')" class="tab-btn flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-file-invoice-dollar text-base"></i>
+                    <span>Area Contabile & Finanze</span>
+                </button>
+                <button id="tab-btn-assemblies" onclick="switchTab('assemblies')" class="tab-btn flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-landmark text-base"></i>
+                    <span>Area Assemblee & Video Call</span>
+                </button>
+                <button id="tab-btn-communications" onclick="switchTab('communications')" class="tab-btn admin-only hidden flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-paper-plane text-base"></i>
+                    <span>Comunicazioni & Circolari</span>
+                </button>
+                <button id="tab-btn-tickets" onclick="switchTab('tickets')" class="tab-btn flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-screwdriver-wrench text-base"></i>
+                    <span>Segnalazioni Guasti</span>
+                    <span id="open-tickets-badge" class="ml-1.5 bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+                </button>
+                <button id="tab-btn-admin-profile" onclick="switchTab('admin-profile')" class="tab-btn flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-id-card-clip text-base"></i>
+                    <span>Amministratore</span>
+                </button>
+
+                
+                <!-- TABS ADMIN V2.0 -->
+                <button id="tab-btn-unita" onclick="switchTab('unita')" class="tab-btn hidden admin-only flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-building text-base"></i><span>Unità Immobiliari</span>
+                </button>
+                <button id="tab-btn-anagrafica" onclick="switchTab('anagrafica')" class="tab-btn hidden no-print flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-building text-base"></i><span>Profilo & Rubrica</span>
+                </button>
+                <button id="tab-btn-banca" onclick="switchTab('banca')" class="tab-btn hidden no-print flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-building-columns text-base"></i><span>Banca</span>
+                </button>
+                <button id="tab-btn-giornale" onclick="switchTab('giornale')" class="tab-btn hidden no-print flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-book text-base"></i><span>Giornale</span>
+                </button>
+                <button id="tab-btn-audit" onclick="switchTab('audit')" class="tab-btn hidden no-print flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-clock-rotate-left text-base"></i><span>Registro Log</span>
+                </button>
+
+                <!-- TAB RISERVATA ESCLUSIVAMENTE ALL'AMMINISTRATORE -->
+                <button id="tab-btn-users" onclick="switchTab('users')" class="tab-btn hidden flex items-center space-x-2 py-3 px-3 border-b-2 border-transparent font-bold text-sm text-indigo-600 hover:text-indigo-800 whitespace-nowrap transition-colors">
+                    <i class="fa-solid fa-users-gear text-base"></i>
+                    <span>Gestione Utenti & Credenziali</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- ========================================================================
+         MAIN CONTENT - SPA TABS
+         ======================================================================== -->
+    <main class="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+
+        <!-- ====================================================================
+             1. TAB: AREA CONTABILE (VISIBILITà DINAMICA RBAC)
+             ==================================================================== -->
+                <!-- ====================================================================
+             0. TAB: DASHBOARD INTUITIVA
+             ==================================================================== -->
+        <section id="tab-dashboard" class="tab-pane space-y-8">
+            <!-- Hero / Welcome Banner -->
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-indigo-700 to-blue-900 p-8 sm:p-10 text-white shadow-2xl mb-8 border border-blue-500/30">
+                <div class="relative z-10 max-w-3xl">
+                    <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3 drop-shadow-lg">Benvenuto nella Home Page del <span id="dash-condo-nome">CONDOMINIO</span></h1>
+                    <p class="text-base sm:text-lg text-blue-100 font-medium leading-relaxed opacity-90 mb-6">Qui troverai tutte le informazioni utili relative alla gestione amministrativa condominiale.</p>
+                    
+                    <div id="dash-condo-details-box" class="flex flex-col gap-3 text-sm text-white bg-black/20 px-5 py-4 rounded-2xl backdrop-blur-md border border-white/20 shadow-inner">
+                        <div class="flex flex-wrap gap-5 font-bold">
+                            <div class="flex items-center"><i class="fa-solid fa-map-location-dot mr-2 text-blue-300"></i><span id="dash-condo-indirizzo">Caricamento indirizzo...</span></div>
+                            <div class="flex items-center"><i class="fa-solid fa-fingerprint mr-2 text-blue-300"></i>C.F. <span id="dash-condo-cf">...</span></div>
+                            <div class="flex items-center"><i class="fa-solid fa-building mr-2 text-blue-300"></i>Scale: <span id="dash-condo-scala">...</span></div>
+                        </div>
+                        <div id="dash-admin-details" class="flex flex-wrap gap-5 text-blue-50 pt-3 mt-1 border-t border-white/10 hidden">
+                            <div class="flex items-center"><i class="fa-solid fa-user-tie mr-2 text-blue-300 text-lg"></i>Amministratore: <span id="dash-admin-nome" class="font-bold ml-1">N/D</span></div>
+                            <div class="flex items-center"><i class="fa-solid fa-phone mr-2 text-blue-300"></i>Fisso: <span id="dash-admin-tel" class="ml-1">N/D</span></div>
+                            <div class="flex items-center"><i class="fa-solid fa-mobile-screen mr-2 text-blue-300"></i>Cellulare: <span id="dash-admin-cell" class="ml-1">N/D</span></div>
+                            <div class="flex items-center text-rose-300"><i class="fa-solid fa-truck-medical mr-2"></i>Emergenze: <span id="dash-admin-emg" class="ml-1 font-bold">N/D</span></div>
+                            <div class="flex items-center"><i class="fa-solid fa-envelope mr-2 text-blue-300"></i><span id="dash-admin-email">N/D</span></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Elementi decorativi di sfondo -->
+                <div class="absolute top-0 right-0 -translate-y-8 translate-x-1/4 opacity-20 pointer-events-none">
+                    <i class="fa-solid fa-city text-[220px]"></i>
+                </div>
+                <div class="absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/4 opacity-10 pointer-events-none">
+                    <i class="fa-solid fa-leaf text-[150px]"></i>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- Card: Area Contabile -->
+                <div onclick="switchTab('accounting')" class="group cursor-pointer bg-white rounded-3xl p-6 border border-slate-200 hover:border-blue-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Area Contabile</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Visualizza il bilancio, le tue spese, le rate e i pagamenti in modo trasparente.</p>
+                </div>
+
+                <!-- Card: Assemblee -->
+                <div onclick="switchTab('assemblies')" class="group cursor-pointer bg-white rounded-3xl p-6 border border-slate-200 hover:border-indigo-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-landmark"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Assemblee</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Consulta i verbali, i documenti e partecipa alle assemblee condominiali in remoto.</p>
+                </div>
+
+                <!-- Card: Segnalazioni -->
+                <div onclick="switchTab('tickets')" class="group cursor-pointer bg-white rounded-3xl p-6 border border-slate-200 hover:border-rose-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-screwdriver-wrench"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Segnalazioni</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Invia ticket per guasti o problemi e monitora lo stato di avanzamento dei lavori.</p>
+                </div>
+
+
+
+                <!-- Card: Unità Immobiliari (Admin) -->
+                <div onclick="switchTab('unita')" class="admin-only hidden group cursor-pointer bg-amber-50 rounded-3xl p-6 border border-amber-200 hover:border-amber-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-building"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Unità Immobiliari</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Gestisci il registro anagrafico e i millesimi delle unità del condominio.</p>
+                </div>
+
+                <!-- Card: Anagrafica (Admin) -->
+                <div onclick="switchTab('anagrafica')" class="admin-only hidden group cursor-pointer bg-emerald-50 rounded-3xl p-6 border border-emerald-200 hover:border-emerald-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-address-book"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Anagrafica</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Gestisci i condòmini, i loro contatti e le operazioni di subentro.</p>
+                </div>
+
+                <!-- Card: Banca / Cassa (Admin) -->
+                <div onclick="switchTab('banca')" class="admin-only hidden group cursor-pointer bg-teal-50 rounded-3xl p-6 border border-teal-200 hover:border-teal-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-teal-100 text-teal-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-piggy-bank"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Banca / Cassa</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Registra incassi, pagamenti e mantieni allineato l'estratto conto.</p>
+                </div>
+
+                <!-- Card: Giornale Contabile (Admin) -->
+                <div onclick="switchTab('giornale')" class="admin-only hidden group cursor-pointer bg-cyan-50 rounded-3xl p-6 border border-cyan-200 hover:border-cyan-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-cyan-100 text-cyan-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-book"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Giornale Contabile</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Visiona tutti i movimenti contabili in ordine cronologico.</p>
+                </div>
+                
+                <!-- Card: Audit Log (Admin) -->
+                <div onclick="switchTab('audit')" class="admin-only hidden group cursor-pointer bg-gray-50 rounded-3xl p-6 border border-gray-200 hover:border-gray-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-gray-200 text-gray-700 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Audit Log</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Visualizza il tracciamento di sicurezza delle operazioni di tutti gli utenti.</p>
+                </div>
+
+                <!-- Card: Gestione Utenti (Admin) -->
+                <div onclick="switchTab('users')" class="admin-only hidden group cursor-pointer bg-fuchsia-50 rounded-3xl p-6 border border-fuchsia-200 hover:border-fuchsia-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-14 h-14 bg-fuchsia-100 text-fuchsia-600 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Gestione Utenti</h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Aggiungi, modifica o rimuovi gli account utente che hanno accesso al portale.</p>
+                </div>
+            </div>
+        </section>
+
+
+        <section id="tab-accounting" class="tab-pane hidden space-y-8">
+            
+            <!-- Banner Informativo sul Ruolo e Regole di Privacy Attive -->
+            <div id="role-accounting-banner" class="p-4 rounded-2xl border flex items-center justify-between shadow-2xs">
+                <div class="flex items-center space-x-3">
+                    <div id="role-banner-icon" class="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0"></div>
+                    <div>
+                        <h4 id="role-banner-title" class="text-sm font-bold"></h4>
+                        <p id="role-banner-desc" class="text-xs"></p>
+                    </div>
+                </div>
+                <div class="hidden md:flex items-center space-x-2">
+                    <button onclick="exportExcel(event)" 
+                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all flex items-center shadow-2xs">
+                        <i class="fa-solid fa-file-excel mr-1.5"></i> Esporta Excel (.xlsx)
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPI Cards Generali (Disponibili per trasparenza) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-hand-holding-dollar"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-slate-500">Quote Totali Incassate</p>
+                        <h3 id="kpi-total-received" class="text-xl font-extrabold text-emerald-600 tracking-tight">€ 0,00</h3>
+                        <span class="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">Quote saldate</span>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-slate-500">Crediti da Riscuotere</p>
+                        <h3 id="kpi-total-receivables" class="text-xl font-extrabold text-amber-600 tracking-tight">€ 0,00</h3>
+                        <span class="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-medium">Quote in sospeso</span>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-receipt"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-slate-500">Fornitori Pagati</p>
+                        <h3 id="kpi-suppliers-paid" class="text-xl font-extrabold text-blue-600 tracking-tight">€ 0,00</h3>
+                        <span class="text-[11px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full font-medium">Uscite saldate</span>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-file-invoice"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-slate-500">Debiti verso Fornitori</p>
+                        <h3 id="kpi-suppliers-debt" class="text-xl font-extrabold text-rose-600 tracking-tight">€ 0,00</h3>
+                        <span class="text-[11px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full font-medium">Fatture da liquidare</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SEZIONE 1.1: TABELLA QUOTE (Personali per il Condòmino, Generali per l'Amministratore) -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-slate-50/50">
+                    <div>
+                        <h2 id="quotes-table-title" class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-wallet text-blue-600"></i>
+                            Quote Condominiali
+                        </h2>
+                        <p id="quotes-table-subtitle" class="text-xs text-slate-500"></p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div id="admin-add-quote-btn-box" class="hidden">
+                            <button onclick="openNewQuoteModal()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors">
+                                <i class="fa-solid fa-plus mr-1"></i> Assegna Quota
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                            <tr id="quotes-table-header"></tr>
+                        </thead>
+                        <tbody id="quotes-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SEZIONE 1.2: CREDITI DEL CONDOMINIO DA RISCUOTERE (CON PRIVACY & ANONIMIZZAZIONE) -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-user-shield text-amber-600"></i>
+                            Elenco Crediti Condominiali da Riscuotere (Quote Non Pagate)
+                        </h2>
+                        <p class="text-xs text-slate-500">Monitoraggio quote scoperte nel pieno rispetto della privacy dei condòmini</p>
+                    </div>
+                    <div id="privacy-badge-container"></div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                            <tr>
+                                <th class="py-3.5 px-4">Debitore</th>
+                                <th class="py-3.5 px-4">Unità Immobiliare</th>
+                                <th class="py-3.5 px-4">Descrizione Quota</th>
+                                <th class="py-3.5 px-4">Scadenza</th>
+                                <th class="py-3.5 px-4 text-right">Importo Insoluto</th>
+                                <th class="py-3.5 px-4 text-center">Stato</th>
+                            </tr>
+                        </thead>
+                        <tbody id="receivables-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SEZIONE 1.3: ANAGRAFICA FORNITORI (Solo Admin) -->
+            <div class="admin-only hidden bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden mb-8">
+                <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-address-book text-indigo-600"></i>
+                            Anagrafica Fornitori
+                        </h2>
+                        <p class="text-xs text-slate-500">Gestione dell'anagrafica fornitori del condominio</p>
+                    </div>
+                    <button id="admin-add-supplier-registry-btn" onclick="openSupplierRegistryModal()" class="hidden px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors">
+                        <i class="fa-solid fa-plus mr-1"></i> Nuovo Fornitore
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                            <tr>
+                                <th class="py-3.5 px-4">Ragione Sociale</th>
+                                <th class="py-3.5 px-4">P. IVA / CF</th>
+                                <th class="py-3.5 px-4">Email & Tel</th>
+                                <th class="py-3.5 px-4">IBAN</th>
+                                <th class="py-3.5 px-4 text-right">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="suppliers-registry-body" class="divide-y divide-slate-100">
+                            <!-- Popolato dinamicamente -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SEZIONE 1.4: CONTABILITà GENERALE FORNITORI & FATTURE (Visibile a Tutti) -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-truck-ramp-box text-indigo-600"></i>
+                            Contabilità Fornitori (Fatture Ricevute, Pagate e Debiti)
+                        </h2>
+                        <p class="text-xs text-slate-500">Trasparenza contabile sulle uscite di gestione del condominio</p>
+                    </div>
+                    <button id="admin-add-supplier-btn" onclick="openNewSupplierModal()" class="hidden px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors">
+                        <i class="fa-solid fa-plus mr-1"></i> Registra Fattura
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                            <tr>
+                                <th class="py-3.5 px-4">Fornitore</th>
+                                <th class="py-3.5 px-4">Categoria</th>
+                                <th class="py-3.5 px-4">N° Fattura</th>
+                                <th class="py-3.5 px-4">Data Pagamento</th>
+                                <th class="py-3.5 px-4 text-right">Importo</th>
+                                <th class="py-3.5 px-4 text-center">Stato</th>
+                                <th class="py-3.5 px-4">Note</th>
+                            </tr>
+                        </thead>
+                        <tbody id="suppliers-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             2. TAB: AREA ASSEMBLEE & VIDEO CALL
+             ==================================================================== -->
+        <section id="tab-assemblies" class="tab-pane hidden space-y-8">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Assemblee & Convocazioni</h1>
+                    <p class="text-sm text-slate-500 mt-1">Partecipa alle assemblee in videoconferenza e consulta gli ordini del giorno.</p>
+                </div>
+                <div class="admin-only hidden">
+                    <button onclick="openConvocazioneModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold flex items-center shadow-md transition-all">
+                        <i class="fa-solid fa-file-signature mr-2"></i> Genera Modulo Convocazione
+                    </button>
+                </div>
+            </div>
+
+            <!-- Schede Convocazioni Prossime -->
+            <div>
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-check text-blue-600"></i> Convocazioni in Programma
+                </h2>
+                <div id="assemblies-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+            </div>
+
+            
+            <!-- V2.0 SPEECH TO TEXT VERBALE -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs mt-8 no-print" id="speech-section">
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-microphone text-rose-500"></i> Dettatura Verbale in Tempo Reale (Solo Admin)
+                </h2>
+                <textarea id="speech-output" rows="6" class="w-full border rounded-xl p-3 text-sm text-slate-700 bg-slate-50 mb-3" placeholder="Il testo dettato apparirà qui..."></textarea>
+                <div class="flex space-x-2">
+                    <button id="btn-speech" onclick="startSpeechToText()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-xl text-sm font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-microphone"></i> Avvia Dettatura
+                    </button>
+                    <button onclick="downloadVerbale()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-download"></i> Scarica TXT
+                    </button>
+                </div>
+            </div>
+
+            
+            <!-- Storico Convocazioni (Admin) -->
+            <div class="admin-only hidden">
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-slate-500"></i> Storico Convocazioni Inviate
+                </h2>
+                <div id="assemblies-log-container" class="space-y-3 mb-8">
+                    <div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Caricamento storico...</div>
+                </div>
+            </div>
+
+            <!-- Archivio Verbali Assemblee Passate -->
+            <div>
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-book-open text-slate-500"></i> Archivio Verbali Assemblee Passate
+                </h2>
+                <div id="assemblies-past-container" class="space-y-4"></div>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             NEW TAB: COMUNICAZIONI E CIRCOLARI
+             ==================================================================== -->
+        <section id="tab-communications" class="tab-pane hidden space-y-8">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+                <div class="mb-6">
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Circolari e Comunicazioni</h1>
+                    <p class="text-sm text-slate-500 mt-1">Invia comunicazioni a testo libero in PDF ai condòmini. L'invio verrà tracciato nello storico.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <!-- Form Invio -->
+                    <div class="md:col-span-2 space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Destinatari</label>
+                            <select id="comm-user" class="w-full border rounded-xl p-3 text-sm bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500 transition-colors">
+                                <option value="all">Tutti i condòmini (con indirizzo email)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Oggetto della Comunicazione</label>
+                            <input type="text" id="comm-subject" class="w-full border rounded-xl p-3 text-sm bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500 transition-colors" placeholder="Es. Avviso Lavori Straordinari" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Testo della Comunicazione</label>
+                            <textarea id="comm-message" rows="8" class="w-full border rounded-xl p-3 text-sm bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500 transition-colors" placeholder="Scrivi qui il testo della comunicazione... Verrà automaticamente impaginato su carta intestata in PDF."></textarea>
+                        </div>
+                        <div class="flex justify-end pt-2">
+                            <button onclick="sendCommunication()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center">
+                                <i class="fa-solid fa-paper-plane mr-2"></i> Impagina PDF & Invia
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Box Informativo -->
+                    <div class="bg-blue-50 rounded-2xl p-5 border border-blue-100 self-start">
+                        <h3 class="text-blue-800 font-bold mb-3 flex items-center"><i class="fa-solid fa-circle-info mr-2"></i> Come Funziona</h3>
+                        <p class="text-sm text-blue-700 mb-3">La piattaforma prenderà il testo che scrivi qui a lato e lo impaginerà automaticamente all'interno di un <b>documento PDF ufficiale</b> del Condominio.</p>
+                        <p class="text-sm text-blue-700 mb-3">Il documento conterrà l'intestazione, i dati del destinatario, l'oggetto e la tua firma.</p>
+                        <p class="text-sm text-blue-700">Tutti gli invii verranno registrati per tua sicurezza nello <b>Storico Convocazioni e Comunicazioni</b> (nella scheda Area Assemblee).</p>
+                    </div>
+                </div>
+
+                <!-- STORICO COMUNICAZIONI -->
+                <div class="mt-8 border-t border-slate-200 pt-8">
+                    <h2 class="text-base font-bold text-slate-900 mb-4 flex items-center">
+                        <i class="fa-solid fa-clock-rotate-left text-slate-500 mr-2"></i> Storico Globale Email Inviate
+                    </h2>
+                    <p class="text-xs text-slate-500 mb-4">Registro di tutte le email (Solleciti, Ricevute, Circolari, Convocazioni) inviate dalla piattaforma.</p>
+                    <div id="communications-log-container" class="space-y-3 mb-8">
+                        <div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Caricamento storico...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             3. TAB: AREA MANUTENZIONE & TICKETING (FILTRO PERSONALE RBAC)
+             ==================================================================== -->
+        <section id="tab-tickets" class="tab-pane hidden space-y-8">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Segnalazioni Guasti & Manutenzioni</h1>
+                    <p id="tickets-header-desc" class="text-sm text-slate-500 mt-1"></p>
+                </div>
+                <button onclick="openNewTicketModal()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center shadow-xs">
+                    <i class="fa-solid fa-plus-circle mr-2 text-sm"></i> Nuova Segnalazione
+                </button>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                            <tr>
+                                <th class="py-3.5 px-4">ID</th>
+                                <th id="th-ticket-user" class="py-3.5 px-4">Condòmino</th>
+                                <th class="py-3.5 px-4">Categoria</th>
+                                <th class="py-3.5 px-4">Oggetto Segnalazione</th>
+                                <th class="py-3.5 px-4 text-center">Priorità</th>
+                                <th class="py-3.5 px-4 text-center">Stato</th>
+                                <th class="py-3.5 px-4">Data</th>
+                                <th class="py-3.5 px-4 text-center">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tickets-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             TAB: PROFILO AMMINISTRATORE
+             ==================================================================== -->
+        <section id="tab-admin-profile" class="tab-pane hidden space-y-6">
+            <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-8 opacity-5"><i class="fa-solid fa-id-card-clip text-9xl"></i></div>
+                <div class="relative z-10 flex justify-between items-start mb-6">
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Dati Amministratore</h2>
+                        <p class="text-sm text-slate-500 mt-1">Informazioni di contatto ufficiali dell'Amministratore del Condominio.</p>
+                    </div>
+                    <button id="btn-edit-admin" onclick="toggleEditAdmin(true)" class="hidden admin-only px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md transition-all">
+                        <i class="fa-solid fa-pen-to-square mr-1.5"></i> Modifica Dati
+                    </button>
+                </div>
+                
+                <!-- Vista in Sola Lettura -->
+                <div id="admin-view-mode" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Loaded dynamically via JS -->
+                </div>
+
+                <!-- Vista in Modifica (Form) -->
+                <form id="admin-edit-form" onsubmit="saveAdminProfile(event)" class="hidden bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Nome</label><input type="text" id="admin-nome-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Cognome</label><input type="text" id="admin-cognome-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Titolo (es. Dott., Geom.)</label><input type="text" id="admin-titolo-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Email Ufficiale</label><input type="email" id="admin-email-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">PEC (Posta Elettronica Certificata)</label><input type="email" id="admin-pec-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Telefono Fisso</label><input type="text" id="admin-telefono-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Cellulare</label><input type="text" id="admin-cellulare-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
+                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Numero Emergenze</label><input type="text" id="admin-emergenze-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-rose-50"></div>
+                    </div>
+                    <div class="flex justify-end space-x-3 pt-4 border-t border-slate-200 mt-4">
+                        <button type="button" onclick="toggleEditAdmin(false)" class="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-bold transition-all">Annulla</button>
+                        <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-md">Salva Dati</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             4. TAB: PANNELLO GESTIONE UTENTI (ESCLUSIVO AMMINISTRATORE)
+             ==================================================================== -->
+        <section id="tab-users" class="tab-pane hidden space-y-8">
+            <div class="bg-indigo-900 text-white p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-700 text-indigo-200 border border-indigo-500/30">
+                        Area Riservata Amministratore
+                    </span>
+                    <h1 class="text-2xl font-extrabold tracking-tight mt-1">Gestione Utenti & Credenziali Condòmini</h1>
+                    <p class="text-xs text-indigo-200 mt-1">Crea nuovi accessi per i condòmini, assegna le unità immobiliari e gestisci i ruoli.</p>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-8">
+                <!-- Form Creazione Credenziali -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs no-print">
+                    <h3 class="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
+                        <i class="fa-solid fa-user-plus text-indigo-600"></i> Genera Nuove Credenziali
+                    </h3>
+                    <p class="text-xs text-slate-500 mb-5">Crea un nuovo account per un condòmino</p>
+
+                    <form id="form-create-user" onsubmit="handleCreateUser(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nome e Cognome *</label>
+                            <input type="text" id="new-user-nome" required placeholder="Es: Paolo Gialli" 
+                                class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Email di Accesso *</label>
+                            <input type="email" id="new-user-email" required placeholder="Es: paolo.gialli@email.it" 
+                                class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Password Iniziale *</label>
+                            <div class="relative">
+                                <input type="password" id="new-user-password" required placeholder="Es: Condomino1! (8 car, 1 maiusc, 1 num, 1 spec)" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10">
+                                <button type="button" onclick="togglePasswordVisibility('new-user-password', 'eye-icon-new-user')" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
+                                    <i id="eye-icon-new-user" class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Unità Immobiliare / Scala</label>
+                            <input type="text" id="new-user-unita" placeholder="Es: Scala B - Int. 6" 
+                                class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Telefono</label>
+                            <input type="text" id="new-user-telefono" placeholder="Es. 333 1234567" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Dati Catastali</label>
+                            <div class="grid grid-cols-4 gap-2">
+                                <input type="text" id="new-user-catasto-sez" placeholder="Sez." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <input type="text" id="new-user-catasto-fg" placeholder="Fg." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <input type="text" id="new-user-catasto-part" placeholder="Part." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <input type="text" id="new-user-catasto-sub" placeholder="Sub." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Ruolo Assegnato</label>
+                            <select id="new-user-role" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <option value="condomino" selected>Condòmino (Accesso standard)</option>
+                                <option value="admin">Amministratore (Accesso completo)</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" id="btn-submit-user" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors">
+                            Crea Credenziali Utente
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Log Sicurezza -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden no-print">
+                    <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-shield-halved text-indigo-700"></i>
+                            Registro Attività di Sicurezza (Log)
+                        </h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                                <tr>
+                                    <th class="py-3.5 px-4">Data/Ora</th>
+                                    <th class="py-3.5 px-4">Utente</th>
+                                    <th class="py-3.5 px-4">Azione Effettuata</th>
+                                </tr>
+                            </thead>
+                            <tbody id="security-logs-body" class="divide-y divide-slate-100">
+                                <tr><td colspan="3" class="text-center p-4 text-slate-400">Caricamento log...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tabella Elenco Utenti Esistenti -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-users text-slate-700"></i>
+                            Elenco Utenti e Condòmini Registrati
+                        </h3>
+                        <div class="space-x-2 no-print ml-auto flex">
+                            <button onclick="window.print()" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold"><i class="fa-solid fa-print mr-1"></i>Stampa</button>
+                            <button onclick="exportUsersExcel()" class="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg text-xs font-bold"><i class="fa-solid fa-file-excel mr-1"></i>Esporta</button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                                <tr>
+                                    <th class="py-3.5 px-4">Nome</th>
+                                    <th class="py-3.5 px-4">Email</th>
+                                      <th class="py-3.5 px-4">Telefono</th>
+                                      <th class="py-3.5 px-4">Unità</th>
+                                      <th class="py-3.5 px-4">Catasto</th>
+                                    <th class="py-3.5 px-4 text-center">Privacy GDPR</th>
+                                    <th class="py-3.5 px-4 text-center">Ruolo</th>
+                                    <th class="py-3.5 px-4">Data Creazione</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    
+        <!-- V2.0 ANAGRAFICA -->
+        <section id="tab-anagrafica" class="tab-pane hidden space-y-8">
+            <h2 class="text-2xl font-bold">Anagrafica Condominio</h2>
+            <div class="bg-white p-5 rounded-2xl shadow-xs border">
+                <form id="form-condominio" onsubmit="handleSaveCondominio(event)" class="grid grid-cols-2 gap-4">
+                    <input type="text" id="condominio-nome" placeholder="Nome Condominio" class="border p-2 rounded">
+                    <input type="text" id="condominio-indirizzo" placeholder="Indirizzo" class="border p-2 rounded">
+                    <input type="text" id="condominio-cf" placeholder="Codice Fiscale" class="border p-2 rounded">
+                    <input type="text" id="condominio-scala" placeholder="Scale (es. A, B)" class="border p-2 rounded">
+                    <button type="submit" class="col-span-2 bg-blue-600 text-white p-2 rounded font-bold">Salva Dati Condominio</button>
+                </form>
+            </div>
+        
+            <!-- SEZIONE RUBRICA ANAGRAFICA -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden mt-8">
+                <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-address-book text-indigo-600"></i>
+                            Rubrica Persone (Proprietari / Conduttori)
+                        </h2>
+                        <p class="text-xs text-slate-500">Gestione dell'anagrafica centralizzata delle persone fisiche o giuridiche del condominio</p>
+                    </div>
+                    <button type="button" onclick="openPersonaModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors">
+                        <i class="fa-solid fa-plus mr-1"></i> Nuova Persona
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
+                            <tr>
+                                <th class="py-3.5 px-4">Nominativo</th>
+                                <th class="py-3.5 px-4">Codice Fiscale</th>
+                                <th class="py-3.5 px-4">Contatti (Tel / Email)</th>
+                                <th class="py-3.5 px-4">Ruolo Fiscale</th>
+                                <th class="py-3.5 px-4 text-right">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="persone-table-body" class="divide-y divide-slate-100">
+                            <!-- Popolato via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Modale Nuova Persona -->
+            <div id="modal-persona" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <h3 class="font-bold text-slate-800" id="persona-modal-title">Nuova Persona</h3>
+                        <button type="button" onclick="closePersonaModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                    </div>
+                    <form id="persona-form" onsubmit="savePersona(event)" class="p-6 space-y-4">
+                        <input type="hidden" id="persona-id">
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nome *</label>
+                                <input type="text" id="persona-nome" required class="w-full p-2 border rounded-xl">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cognome / Ragione Sociale *</label>
+                                <input type="text" id="persona-cognome" required class="w-full p-2 border rounded-xl">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Codice Fiscale / P.IVA</label>
+                                <input type="text" id="persona-cf" class="w-full p-2 border rounded-xl uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Tel. Fisso</label>
+                                <input type="tel" id="persona-tel" class="w-full p-2 border rounded-xl">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cellulare</label>
+                                <input type="tel" id="persona-cell" class="w-full p-2 border rounded-xl">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Email</label>
+                                <input type="email" id="persona-email" class="w-full p-2 border rounded-xl">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Ruolo Fiscale Prevalente</label>
+                                <select id="persona-ruolo" class="w-full p-2 border rounded-xl">
+                                    <option value="Proprietario">Proprietario</option>
+                                    <option value="Conduttore">Conduttore (Inquilino)</option>
+                                    <option value="Usufruttuario">Usufruttuario</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="pt-4 flex justify-end space-x-3">
+                            <button type="button" onclick="closePersonaModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold rounded-xl transition-colors">Annulla</button>
+                            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition-colors">Salva Persona</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- V2.0 BANCA -->
+        <section id="tab-banca" class="tab-pane hidden space-y-8">
+            <!-- Anagrafica Banca -->
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Anagrafica Conti Bancari</h2>
+                    <button onclick="addBankAccount()" class="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-bold no-print">+ Nuovo Conto</button>
+                </div>
+                <div id="anagrafica-banca-container" class="bg-white p-4 border rounded-2xl shadow-xs"></div>
+            </div>
+
+            <!-- Movimenti -->
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Movimenti</h2>
+                    <button onclick="addBankTransaction()" class="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-bold no-print">+ Nuovo Movimento</button>
+                </div>
+                <div id="banca-container" class="bg-white p-4 border rounded-2xl shadow-xs"></div>
+            </div>
+        </section>
+
+        <!-- V2.0 GIORNALE -->
+        <section id="tab-giornale" class="tab-pane hidden space-y-8">
+            <div class="flex justify-between items-center">
+                <h2 class="text-2xl font-bold">Libro Giornale</h2>
+                <button onclick="addJournalEntry()" class="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-bold no-print">+ Nuova Registrazione</button>
+            </div>
+            <div id="giornale-container" class="bg-white p-4 border rounded-2xl shadow-xs"></div>
+        </section>
+
+        <!-- V2.0 AUDIT LOG -->
+        <section id="tab-audit" class="tab-pane hidden space-y-8">
+            <h2 class="text-2xl font-bold">Registro Accessi e Modifiche</h2>
+            <div id="audit-container" class="bg-white p-4 border rounded-2xl shadow-xs text-sm"></div>
+        </section>
+
+    <!-- SEZIONE ANAGRAFICA & MILLESIMI -->
+<section id="tab-unita" class="tab-pane hidden space-y-6">
+    <div class="flex justify-between items-center">
+        <h2 class="text-2xl font-extrabold text-slate-800">Unità e Tabelle Millesimali</h2>
+        <button onclick="openUnitaModal()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-all admin-only">
+            <i class="fa-solid fa-plus mr-2"></i> Nuova Unità
+        </button>
+    </div>
+    
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
+                        <th class="px-6 py-4 font-bold">Unità</th>
+                        <th class="px-6 py-4 font-bold">Tipo</th>
+                        <th class="px-6 py-4 font-bold">Condòmino</th>
+                        <th class="px-6 py-4 font-bold">Mill. Proprietà (A)</th>
+                        <th class="px-6 py-4 font-bold">Mill. Scale (B)</th>
+                        <th class="px-6 py-4 font-bold">Mill. Ascensore (C)</th>
+                        <th class="px-6 py-4 font-bold text-right admin-only">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody id="unita-list" class="divide-y divide-slate-100 text-sm">
+                    <!-- Popolato via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modale Unità -->
+    <div id="unita-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="font-bold text-slate-800" id="unita-modal-title">Nuova Unità</h3>
+                <button onclick="closeUnitaModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <form id="unita-form" onsubmit="saveUnita(event)" class="p-6 space-y-4">
+                <input type="hidden" id="unita-id">
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Identificativo (es. Int. 1)</label>
+                        <input type="text" id="unita-identificativo" required class="w-full p-2 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Tipo</label>
+                        <select id="unita-tipo" class="w-full p-2 border rounded-xl">
+                            <option value="Appartamento">Appartamento</option>
+                            <option value="Box">Box / Garage</option>
+                            <option value="Cantina">Cantina</option>
+                            <option value="Negozio">Negozio</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Scala</label>
+                        <input type="text" id="unita-scala" class="w-full p-2 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Piano</label>
+                        <input type="text" id="unita-piano" class="w-full p-2 border rounded-xl">
+                    </div>
+                </div>
+                
+                <hr class="border-slate-100">
+                <h4 class="text-sm font-bold text-slate-700">Tabelle Millesimali</h4>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Proprietà (A)</label>
+                        <input type="number" step="0.01" id="unita-mill-prop" value="0" required class="w-full p-2 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Scale (B)</label>
+                        <input type="number" step="0.01" id="unita-mill-scale" value="0" class="w-full p-2 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Ascensore (C)</label>
+                        <input type="number" step="0.01" id="unita-mill-asc" value="0" class="w-full p-2 border rounded-xl">
+                    </div>
+                </div>
+
+                <hr class="border-slate-100">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Proprietario / Condòmino (User ID)</label>
+                    <select id="unita-user-id" class="w-full p-2 border rounded-xl"><option value="">-- Nessun Proprietario (Sfitto/Esterno) --</option></select>
+                </div>
+
+                <button type="submit" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Salva Unità</button>
+            </form>
+        </div>
+    </div>
+</section>
+    </main>
+
+    <!-- Modale Dettaglio Ticket & Timeline -->
+    <div id="modal-ticket-details" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeTicketDetailsModal()"></div>
+            <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100">
+                <div class="flex justify-between items-start pb-4 border-b border-slate-100">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span id="detail-ticket-id" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800">#0</span>
+                        </div>
+                        <h3 id="detail-ticket-title" class="text-lg font-bold text-slate-900 mt-2">Dettaglio Segnalazione</h3>
+                        <p id="detail-ticket-meta" class="text-xs text-slate-500"></p>
+                    </div>
+                    <button onclick="closeTicketDetailsModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+
+                <div class="my-4 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Descrizione del Problema</p>
+                    <p id="detail-ticket-description" class="text-sm text-slate-700 leading-relaxed"></p>
+                </div>
+
+                <!-- Selettore Stato Avanzamento (Riservato Admin) -->
+                <div id="admin-ticket-status-box" class="hidden items-center justify-between p-3.5 bg-blue-50/60 rounded-xl border border-blue-100 mb-6">
+                    <span class="text-xs font-medium text-blue-900"><i class="fa-solid fa-pen-to-square mr-1 text-blue-600"></i> Aggiorna Stato (Amministratore):</span>
+                    <div class="flex items-center space-x-2">
+                        <select id="update-ticket-status-select" class="text-xs font-semibold rounded-lg border border-blue-200 bg-white px-3 py-1.5 focus:outline-none">
+                            <option value="Segnalato">Segnalato</option>
+                            <option value="Preso in carico">Preso in carico</option>
+                            <option value="In lavorazione">In lavorazione</option>
+                            <option value="Risolto">Risolto</option>
+                            <option value="Chiuso">Chiuso</option>
+                        </select>
+                        <button onclick="submitStatusUpdate()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Salva</button>
+                    </div>
+                </div>
+
+                <!-- Timeline Comunicazioni -->
+                <div class="mb-6">
+                    <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-comments text-blue-600"></i> Cronologia Comunicazioni
+                    </h4>
+                    <div id="detail-ticket-updates" class="relative pl-6 border-l-2 border-slate-200 space-y-4 max-h-56 overflow-y-auto pr-2"></div>
+                </div>
+
+                <!-- Form Risposta -->
+                <form id="form-add-update" onsubmit="handleAddTicketUpdate(event)" class="pt-4 border-t border-slate-100 flex gap-2">
+                    <input type="text" id="update-message" required placeholder="Scrivi una risposta o aggiornamento..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                    <button type="submit" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shrink-0">Invia</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- Modale Consenso Privacy (Obbligatorio) -->
+    <div id="modal-privacy" class="fixed inset-0 z-[100] hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop bg-slate-900/80 backdrop-blur-sm"></div>
+            <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100 max-h-[90vh] flex flex-col">
+                <div class="flex items-center gap-3 pb-4 border-b border-slate-100">
+                    <div class="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Informativa e Consenso Privacy</h3>
+                        <p class="text-xs text-slate-500">Ai sensi del Regolamento UE 2016/679 (GDPR)</p>
+                    </div>
+                </div>
+                
+                <div class="overflow-y-auto py-4 text-sm text-slate-600 space-y-4 pr-2 flex-grow">
+                    <p>Gentile Condòmino,</p>
+                    <p>Per poter erogare i servizi di gestione condominiale tramite questa piattaforma (inclusa la visualizzazione delle proprie quote, la partecipazione alle assemblee e la gestione delle manutenzioni), è necessario che l'Amministratore pro-tempore possa trattare i Suoi dati personali.</p>
+                    <h4 class="font-bold text-slate-800">1. Finalità del trattamento</h4>
+                    <p>I Suoi dati (nome, cognome, email, unità immobiliare di pertinenza, e dati contabili relativi alle quote) saranno trattati unicamente per le finalità strettamente connesse alla gestione amministrativa e contabile del Condominio, e per l'adempimento di obblighi di legge.</p>
+                    <h4 class="font-bold text-slate-800">2. Conservazione e Sicurezza</h4>
+                    <p>I dati saranno conservati all'interno della piattaforma per la durata del mandato dell'Amministratore e/o secondo i tempi previsti dalla legge. L'accesso è strettamente limitato, crittografato e protetto da policy di sicurezza.</p>
+                    <h4 class="font-bold text-slate-800">3. Diritti dell'interessato</h4>
+                    <p>Lei ha il diritto di richiedere all'Amministratore l'accesso ai Suoi dati, la rettifica, la cancellazione (nei limiti consentiti dalla normativa condominiale), o la limitazione del trattamento. Cliccando su "Accetto e Sottoscrivo", acconsente espressamente al trattamento per le finalità sopra esposte.</p>
+                </div>
+                
+                <div class="pt-4 mt-4 flex flex-col space-y-3 border-t border-slate-100">
+                    <div class="flex items-start gap-2">
+                        <input type="checkbox" id="privacy-checkbox" class="mt-1 w-4 h-4 text-indigo-600 rounded border-slate-300">
+                        <label for="privacy-checkbox" class="text-xs font-bold text-slate-700">Dichiaro di aver preso visione dell'informativa e presto il consenso al trattamento dei miei dati personali ai fini della gestione condominiale.</label>
+                    </div>
+                    <button id="btn-accept-privacy" onclick="acceptPrivacy()" class="w-full py-3 bg-slate-300 text-slate-500 font-bold rounded-xl transition-all cursor-not-allowed" disabled>
+                        Accetto e Sottoscrivo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Nuovo Ticket -->
+    <div id="modal-new-ticket" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeNewTicketModal()"></div>
+            <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100">
+                <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-900">Nuova Segnalazione Guasto</h3>
+                    <button onclick="closeNewTicketModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+                <form onsubmit="handleCreateTicket(event)" class="space-y-4 mt-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Categoria *</label>
+                        <select id="ticket-category" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                            <option value="Idraulica">Idraulica</option>
+                            <option value="Elettricità">Elettricità / Luci</option>
+                            <option value="Ascensore">Ascensore</option>
+                            <option value="Pulizie">Pulizie</option>
+                            <option value="Altro">Altro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Priorità</label>
+                        <select id="ticket-priority" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                            <option value="Bassa">Bassa</option>
+                            <option value="Media" selected>Media</option>
+                            <option value="Alta">Alta</option>
+                            <option value="Urgente">Urgente</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Titolo Guasto *</label>
+                        <input type="text" id="ticket-title" required placeholder="Es: Citofono non squilla" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Descrizione Dettagliata *</label>
+                        <textarea id="ticket-description" required rows="3" placeholder="Fornisci indicazioni sul guasto..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300"></textarea>
+                    </div>
+                    <div class="pt-4 flex justify-end space-x-2 border-t border-slate-100">
+                        <button type="button" onclick="closeNewTicketModal()" class="px-4 py-2 text-xs font-semibold text-slate-600">Annulla</button>
+                        <button type="submit" id="btn-submit-ticket" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl">Invia</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Nuova Quota (Admin) -->
+    <div id="modal-new-quote" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeNewQuoteModal()"></div>
+            <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100">
+                <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-900">Assegna Nuova Quota</h3>
+                    <button onclick="closeNewQuoteModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+                <form onsubmit="handleCreateQuote(event)" class="space-y-4 mt-4">
+                                        <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Intestatario Bolletta (dalla Rubrica) *</label>
+                        <select id="quote-persona-id" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Riferimento Unità (Opzionale)</label>
+                        <select id="quote-unita-id" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tipologia *</label>
+                        <select id="quote-type" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                            <option value="ordinaria">Ordinaria</option>
+                            <option value="straordinaria">Straordinaria</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Titolo / Causale *</label>
+                        <input type="text" id="quote-title" required placeholder="Es: Rata Ordinaria Q2 2026" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Importo (€) *</label>
+                            <input type="number" step="0.01" id="quote-amount" required placeholder="350.00" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Data Scadenza *</label>
+                            <input type="date" id="quote-due-date" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
+                        </div>
+                    </div>
+                    <div class="pt-4 flex justify-end space-x-2 border-t border-slate-100">
+                        <button type="button" onclick="closeNewQuoteModal()" class="px-4 py-2 text-xs font-semibold text-slate-600">Annulla</button>
+                        <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl">Assegna</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Registra Nuova Fattura Fornitore (Admin) -->
+    <div id="modal-new-supplier" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeNewSupplierModal()"></div>
+            <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100">
+                <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-900"><i class="fa-solid fa-file-invoice-dollar text-indigo-600 mr-2"></i>Registra Fattura Fornitore</h3>
+                    <button onclick="closeNewSupplierModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+                <form onsubmit="handleCreateSupplier(event)" class="space-y-4 mt-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Ragione Sociale Fornitore *</label>
+                            <select id="supplier-name" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white"><option value="">Seleziona fornitore dall\'anagrafica...</option></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Categoria *</label>
+                            <select id="supplier-category" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <option>Energia Elettrica</option>
+                                <option>Consumi Idrici</option>
+                                <option>Manutenzione Ascensore</option>
+                                <option>Pulizia Scale</option>
+                                <option>Impianti Idrici</option>
+                                <option>Impianti Elettrici</option>
+                                <option>Giardinaggio</option>
+                                <option>Assicurazione</option>
+                                <option>Altro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">N° Fattura</label>
+                            <input type="text" id="supplier-invoice" placeholder="Es: FT-2026-0099" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Importo (€) *</label>
+                            <input type="number" step="0.01" id="supplier-amount" required placeholder="0.00" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Data Fattura *</label>
+                            <input type="date" id="supplier-date" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Stato Pagamento</label>
+                            <select id="supplier-status" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <option value="Pagato">Pagato</option>
+                                <option value="Da liquidare">Da liquidare</option>
+                                <option value="In elaborazione">In elaborazione</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Note Aggiuntive</label>
+                            <textarea id="supplier-notes" rows="2" placeholder="Descrizione del servizio / lavoro..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300"></textarea>
+                        </div>
+                    </div>
+                    <div class="pt-4 flex justify-end space-x-2 border-t border-slate-100">
+                        <button type="button" onclick="closeNewSupplierModal()" class="px-4 py-2 text-xs font-semibold text-slate-600">Annulla</button>
+                        <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">Registra Fattura</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Upload Allegati Ticket -->
+    <div id="modal-attachments" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeAttachmentsModal()"></div>
+            <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100">
+                <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-900"><i class="fa-solid fa-paperclip text-blue-600 mr-2"></i>Allegati Ticket <span id="attachment-ticket-id-label" class="text-slate-400 text-sm"></span></h3>
+                    <button onclick="closeAttachmentsModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+
+                <!-- Lista allegati esistenti -->
+                <div id="attachments-list" class="mt-4 space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+
+                <!-- Form upload nuovo allegato -->
+                <form onsubmit="handleUploadAttachment(event)" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                    <label class="block text-xs font-bold text-slate-700">Carica nuovo allegato (Documenti, Immagini, Video, Archivi — max 50 MB)</label>
+                    <input type="file" id="attachment-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.mkv,.zip,.rar" required
+                        class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <div class="flex justify-end">
+                        <button type="submit" id="btn-upload-attachment" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold">
+                            <i class="fa-solid fa-upload mr-1"></i> Carica Allegato
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- Modale Modifica Interattiva -->
+    <div id="modal-edit-generic" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="text-lg font-extrabold text-slate-800" id="edit-modal-title">Modifica Record</h3>
+                <button onclick="closeEditModal()" class="text-slate-400 hover:text-rose-500 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <form id="form-edit-generic" onsubmit="handleEditSubmit(event)" class="space-y-4">
+                    <div id="edit-modal-fields" class="space-y-4"></div>
+                    <div class="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeEditModal()" class="px-5 py-2.5 text-slate-600 hover:bg-slate-100 font-bold text-sm rounded-xl transition-colors">Annulla</button>
+                        <button type="submit" class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-save"></i> Salva Modifiche
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- Modale Nuova Registrazione Giornale -->
+    <div id="modal-new-journal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="text-lg font-extrabold text-slate-800"><i class="fa-solid fa-book text-indigo-600 mr-2"></i>Nuova Registrazione</h3>
+                <button onclick="closeJournalModal()" class="text-slate-400 hover:text-rose-500 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <form id="form-new-journal" onsubmit="handleNewJournalSubmit(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Condòmino di riferimento (Conto)</label>
+                        <select id="journal-user-id" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white">
+                            <option value="">-- Nessuno / Fornitore Esterno --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Descrizione *</label>
+                        <input type="text" id="journal-desc" required placeholder="Es. Pagamento quota condominiale" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Entrate (Dare) €</label>
+                            <input type="number" step="0.01" id="journal-dare" value="0.00" min="0" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 text-emerald-600 font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Uscite (Avere) €</label>
+                            <input type="number" step="0.01" id="journal-avere" value="0.00" min="0" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 text-rose-600 font-bold">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Data Registrazione *</label>
+                        <input type="date" id="journal-data" required class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    
+                    <div class="pt-4 border-t border-slate-100 flex justify-end gap-3 mt-4">
+                        <button type="button" onclick="closeJournalModal()" class="px-5 py-2.5 text-slate-600 hover:bg-slate-100 font-bold text-sm rounded-xl transition-colors">Annulla</button>
+                        <button type="submit" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-save"></i> Salva
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contenitore Toast di Notifica -->
+    <div id="toast-container"></div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 mt-auto text-center text-xs text-slate-500">
+        <p>&copy; 2026 CondoTransparent &bull; Controllo Accessi RBAC e Privacy Dati Attiva &bull; Node.js, Express & SQLite</p>
+    </footer>
+
+    <div id="modal-new-bank-account" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="text-lg font-extrabold text-slate-800"><i class="fa-solid fa-building-columns text-indigo-600 mr-2"></i>Nuovo Conto Bancario</h3>
+                <button onclick="closeBankAccountModal()" class="text-slate-400 hover:text-rose-500 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <form id="form-new-bank-account" onsubmit="handleNewBankAccountSubmit(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Nome Banca *</label>
+                        <input type="text" id="bank-name" required placeholder="Es. Intesa Sanpaolo" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">IBAN *</label>
+                        <input type="text" id="bank-iban" required placeholder="IT..." class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Intestazione *</label>
+                        <input type="text" id="bank-holder" required placeholder="Condominio XYZ" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Note (opzionale)</label>
+                        <input type="text" id="bank-notes" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div class="pt-4 flex space-x-3 border-t border-slate-100">
+                        <button type="button" onclick="closeBankAccountModal()" class="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors text-sm">Annulla</button>
+                        <button type="submit" class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors text-sm">Salva Conto</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-new-bank-transaction" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="text-lg font-extrabold text-slate-800"><i class="fa-solid fa-money-bill-transfer text-indigo-600 mr-2"></i>Nuovo Movimento Bancario</h3>
+                <button onclick="closeBankTransactionModal()" class="text-slate-400 hover:text-rose-500 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <form id="form-new-bank-transaction" onsubmit="handleNewBankTransactionSubmit(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Conto Bancario *</label>
+                        <select id="trans-account-id" required class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white">
+                            <!-- Popolato dinamicamente -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Data *</label>
+                        <input type="date" id="trans-date" required class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Causale *</label>
+                        <input type="text" id="trans-causale" required placeholder="Es. Bonifico Mario Rossi" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Importo *</label>
+                            <input type="number" step="0.01" min="0" id="trans-importo" required placeholder="0.00" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Tipo *</label>
+                            <select id="trans-tipo" required class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white">
+                                <option value="Entrata">Entrata (+)</option>
+                                <option value="Uscita">Uscita (-)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="pt-4 flex space-x-3 border-t border-slate-100">
+                        <button type="button" onclick="closeBankTransactionModal()" class="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors text-sm">Annulla</button>
+                        <button type="submit" class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors text-sm">Salva Movimento</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-supplier-registry" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="text-lg font-extrabold text-slate-800"><i class="fa-solid fa-address-book text-indigo-600 mr-2"></i>Nuovo Fornitore</h3>
+                <button onclick="closeSupplierRegistryModal()" class="text-slate-400 hover:text-rose-500 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <form id="form-supplier-registry" onsubmit="handleSupplierRegistrySubmit(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Ragione Sociale *</label>
+                        <input type="text" id="supp-name" required placeholder="Es. Idraulica S.r.l." class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Partita IVA</label>
+                            <input type="text" id="supp-piva" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Codice Fiscale</label>
+                            <input type="text" id="supp-cf" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Indirizzo</label>
+                        <input type="text" id="supp-address" placeholder="Via Roma 1, Milano" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Email</label>
+                            <input type="email" id="supp-email" placeholder="info@idraulica.it" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Telefono</label>
+                            <input type="text" id="supp-phone" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">IBAN</label>
+                        <input type="text" id="supp-iban" placeholder="IT..." class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Note (opzionale)</label>
+                        <textarea id="supp-notes" rows="2" class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300"></textarea>
+                    </div>
+                    <div class="pt-4 flex space-x-3 border-t border-slate-100">
+                        <button type="button" onclick="closeSupplierRegistryModal()" class="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-colors text-sm">Annulla</button>
+                        <button type="submit" class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors text-sm">Salva Fornitore</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="app_v4.js?v=1790956512125"></script>
+
+    <!-- Modale Generazione Convocazione Assemblea -->
+    <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+                <h3 class="font-bold text-slate-800"><i class="fa-solid fa-file-signature text-blue-600 mr-2"></i> Genera Convocazione</h3>
+                <button onclick="closeConvocazioneModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto grow space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Destinatario</label>
+                    <select id="convocazione-user" class="w-full border rounded-xl p-2.5 text-sm"></select>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Data/Ora Prima Convocazione</label>
+                        <input type="datetime-local" id="convocazione-data1" class="w-full p-2.5 border rounded-xl text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Luogo Prima Convocazione</label>
+                        <input type="text" id="convocazione-luogo1" value="Presso lo studio dell'Amministratore" class="w-full p-2.5 border rounded-xl text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Data/Ora Seconda Convocazione</label>
+                        <input type="datetime-local" id="convocazione-data2" class="w-full p-2.5 border rounded-xl text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Luogo Seconda Convocazione</label>
+                        <input type="text" id="convocazione-luogo2" value="Presso lo studio dell'Amministratore" class="w-full p-2.5 border rounded-xl text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Ordine del Giorno</label>
+                    <textarea id="convocazione-odg" rows="5" class="w-full border rounded-xl p-2.5 text-sm">1. Lettura e approvazione del rendiconto consuntivo dell'esercizio precedente e relativo riparto.
+2. Lettura e approvazione del preventivo di spesa per l'esercizio in corso e relativo piano di riparto.
+3. Nomina o conferma dell'Amministratore e determinazione del relativo compenso.
+4. Varie ed eventuali.</textarea>
+                </div>
+            </div>
+            <div class="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onclick="inviaConvocazioneEmail()" class="px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-all flex items-center">
+                    <i class="fa-solid fa-envelope-open-text mr-2"></i> Invia via Email
+                </button>
+                <button onclick="stampaConvocazione()" class="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-all flex items-center">
+                    <i class="fa-solid fa-print mr-2"></i> Genera & Stampa
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+    <!-- Modale Profilo Sicurezza (2FA) -->
+    <div id="modal-security-profile" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="text-lg font-extrabold text-slate-800 flex items-center"><i class="fa-solid fa-shield-halved text-blue-600 mr-2"></i> Sicurezza Account (2FA)</h3>
+                <button onclick="closeSecurityProfileModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-6">
+                <div class="text-sm text-slate-600">
+                    L'Autenticazione a Due Fattori (2FA) protegge il tuo account richiedendo un codice temporaneo generato dal tuo smartphone (es. Google Authenticator) ad ogni accesso.
+                </div>
+                
+                <div id="2fa-status-container" class="p-4 rounded-xl border bg-slate-50 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div id="2fa-status-icon" class="w-10 h-10 rounded-full flex items-center justify-center text-lg"></div>
+                        <div>
+                            <div id="2fa-status-title" class="font-bold text-slate-900">Stato 2FA</div>
+                            <div id="2fa-status-text" class="text-xs text-slate-500">Verifica in corso...</div>
+                        </div>
+                    </div>
+                    <button id="btn-enable-2fa" onclick="start2FASetup()" class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-colors">Attiva 2FA</button>
+                </div>
+
+                <div id="2fa-setup-container" class="hidden space-y-4 border-t border-slate-100 pt-4">
+                    <p class="text-sm font-bold text-slate-800">1. Scansiona questo QR Code con un'App Authenticator:</p>
+                    <div class="flex justify-center bg-white p-2 border border-slate-200 rounded-xl w-max mx-auto">
+                        <img id="2fa-qrcode-img" src="" alt="QR Code 2FA" class="w-48 h-48">
+                    </div>
+                    <p class="text-sm font-bold text-slate-800">2. Inserisci il codice a 6 cifre generato dall'App:</p>
+                    <div class="flex space-x-2">
+                        <input type="text" id="2fa-verify-code" maxlength="6" class="w-full px-4 py-2 rounded-xl border border-slate-300 text-center tracking-widest text-xl font-mono focus:border-blue-500 outline-none" placeholder="000000">
+                        <button onclick="verifyAndEnable2FA()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-colors">Conferma</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
+
+
+

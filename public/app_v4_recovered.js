@@ -1,0 +1,2644 @@
+ˇ˛/**
+ * ============================================================================
+ * GESTIONE CondominiALE - Logica Client-Side RBAC (Vanilla JavaScript)
+ * ============================================================================
+ * 
+ * Gestisce:
+ * 1. Controllo di autenticazione e reindirizzamento (se non loggato -> login.html).
+ * 2. Visualizzazione dinamica basata sul ruolo (Amministratore vs condomino).
+ * 3. Nomi debitori in chiaro per Admin vs Anonimizzazione automatica per condomino.
+ * 4. Pannello "Gestione Utenti" e generazione credenziali riservato all'Amministratore.
+ * 5. Chiamate asincrone protette con header Bearer JWT verso le API Express.
+ */
+
+const state = {
+    currentUser: null,
+    token: sessionStorage.getItem('condo_token') || null,
+    currentTab: 'accounting',
+    quotes: [],
+    receivables: [],
+    suppliers: [],
+    assemblies: [],
+    tickets: [],
+    users: [],
+    currentTicketId: null
+};
+
+// ============================================================================
+// 1. VERIFICA AUTENTICAZIONE ALL'AVVIO
+// ============================================================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // Se non Ë presente alcun token JWT, reindirizza immediatamente a login.html
+    if (!state.token) {
+        window.location.href = 'login.html';
+        return;
+    }
+
+    try {
+        // Valida il token con il backend e recupera i dati del profilo
+        const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
+        if (!res.ok) {
+            logout();
+            return;
+        }
+
+        const data = await res.json();
+        state.currentUser = data.user;
+
+        
+        // Dati caricati tramite auth/me
+
+        // Configura l'interfaccia grafica in base al ruolo dell'utente
+        setupUIForRole();
+        checkPrivacyStatus();
+
+        // Carica i dati della prima scheda
+        loadAccountingData();
+        loadTicketsBadge();
+
+        // Se l'utente Ë amministratore, pre-carica la lista utenti per il pannello
+        if (state.currentUser.role === 'admin') {
+            loadUsersList();
+        }
+
+    } catch (err) {
+        console.error('Errore durante la verifica della sessione:', err);
+        logout();
+    }
+});
+
+/**
+ * Restituisce l'header Authorization con il token JWT Bearer
+ */
+
+function getAuthHeaders() {
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + state.token
+    };
+    if (state.activeCondominioId) {
+        headers['X-Condominio-Id'] = state.activeCondominioId;
+    }
+    return headers;
+}
+
+
+/**
+ * Disconnette l'utente cancellando la sessione e reindirizzando al login
+ */
+function logout() {
+    sessionStorage.removeItem('condo_token');
+    sessionStorage.removeItem('condo_user');
+    window.location.href = 'login.html';
+}
+
+// ============================================================================
+// 2. CONFIGURAZIONE DINAMICA DELLA UI PER IL RUOLO (RBAC)
+// ============================================================================
+
+function setupUIForRole() {
+    
+    const user = state.currentUser;
+    if (!state.activeCondominioId && user.condomini && user.condomini.length > 0) {
+        state.activeCondominioId = user.condomini[0].id;
+    }
+    
+    const currentCondo = user.condomini ? user.condomini.find(c => c.id == state.activeCondominioId) : null;
+    const isAdmin = user.is_superadmin || (currentCondo && currentCondo.role === 'admin');
+    
+    // FISSA IL RUOLO NELLO STATE
+    state.currentUser.role = isAdmin ? 'admin' : 'condomino';
+
+    if (user.condomini && user.condomini.length > 1) {
+
+        let selectorHtml = '<select id="condo-selector" onchange="changeCondominio(this.value)" class="bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded-xl px-2 py-1">';
+        user.condomini.forEach(c => {
+            selectorHtml += `<option value="${c.id}" ${c.id == state.activeCondominioId ? 'selected' : ''}>${c.nome}</option>`;
+        });
+        selectorHtml += '</select>';
+        
+        const headerCondoName = document.getElementById('header-condo-name');
+        if (headerCondoName) {
+            headerCondoName.innerHTML = selectorHtml;
+        }
+    } else if (currentCondo) {
+        const headerCondoName = document.getElementById('header-condo-name');
+        if (headerCondoName) {
+            headerCondoName.innerHTML = currentCondo.nome;
+        }
+    }
+
+    if (!window.changeCondominioDefined) {
+        window.changeCondominioDefined = true;
+        window.changeCondominio = function(id) {
+            state.activeCondominioId = id;
+            setupUIForRole();
+            if (state.currentTab) switchTab(state.currentTab);
+            else switchTab('dashboard');
+        };
+    }
+
+
+
+    // Dati profilo nell'header
+    document.getElementById('user-display-name').textContent = user.nome;
+    document.getElementById('user-display-unit').textContent = isAdmin ? 'Amministrazione Condominiale' : (user.unita || 'condomino');
+
+    const roleBadge = document.getElementById('role-badge');
+    if (isAdmin) {
+        roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200';
+        roleBadge.innerHTML = '<i class="fa-solid fa-shield-halved mr-1"></i> AMMINISTRATORE';
+    } else {
+        roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200';
+        roleBadge.innerHTML = '<i class="fa-solid fa-user-check mr-1"></i> condomino';
+    }
+
+    const tabBtnUsers = document.getElementById('tab-btn-users');
+    const tabBtnAnagrafica = document.getElementById('tab-btn-anagrafica');
+    const tabBtnBanca = document.getElementById('tab-btn-banca');
+    const tabBtnGiornale = document.getElementById('tab-btn-giornale');
+    const tabBtnAudit = document.getElementById('tab-btn-audit');
+    if (isAdmin) {
+        if (tabBtnUsers) tabBtnUsers.classList.remove('hidden');
+        if (tabBtnAnagrafica) tabBtnAnagrafica.classList.remove('hidden');
+        const tabBtnUnit‡a = document.getElementById('tab-btn-unita'); if (tabBtnUnit‡a) tabBtnUnit‡a.classList.remove('hidden');
+        if (tabBtnBanca) tabBtnBanca.classList.remove('hidden');
+        if (tabBtnGiornale) tabBtnGiornale.classList.remove('hidden');
+        if (tabBtnAudit) tabBtnAudit.classList.remove('hidden');
+        document.getElementById('admin-add-quote-btn-box').classList.remove('hidden');
+        document.getElementById('admin-add-supplier-btn').classList.remove('hidden');
+        const adminAddSuppReg = document.getElementById('admin-add-supplier-registry-btn');
+        if (adminAddSuppReg) adminAddSuppReg.classList.remove('hidden');
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    } else {
+        if (tabBtnUsers) tabBtnUsers.classList.add('hidden');
+        if (tabBtnAnagrafica) tabBtnAnagrafica.classList.add('hidden');
+        const tabBtnUnit‡a = document.getElementById('tab-btn-unita'); if (tabBtnUnit‡a) tabBtnUnit‡a.classList.add('hidden');
+        if (tabBtnBanca) tabBtnBanca.classList.add('hidden');
+        if (tabBtnGiornale) tabBtnGiornale.classList.add('hidden');
+        if (tabBtnAudit) tabBtnAudit.classList.add('hidden');
+        document.getElementById('admin-add-quote-btn-box').classList.add('hidden');
+        document.getElementById('admin-add-supplier-btn').classList.add('hidden');
+        const adminAddSuppReg = document.getElementById('admin-add-supplier-registry-btn');
+        if (adminAddSuppReg) adminAddSuppReg.classList.add('hidden');
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+    }
+
+
+    // Banner informativo sulle regole di privacy attive
+    const banner = document.getElementById('role-accounting-banner');
+    const bannerIcon = document.getElementById('role-banner-icon');
+    const bannerTitle = document.getElementById('role-banner-title');
+    const bannerDesc = document.getElementById('role-banner-desc');
+
+    if (isAdmin) {
+        banner.className = 'p-4 rounded-2xl border bg-blue-50/80 border-blue-200 text-blue-950 flex items-center justify-between shadow-2xs';
+        bannerIcon.className = 'w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg shrink-0';
+        bannerIcon.innerHTML = '<i class="fa-solid fa-user-tie"></i>';
+        bannerTitle.textContent = 'Pannello di Controllo Amministratore (Superuser)';
+        bannerDesc.textContent = 'Accesso completo a tutti i dati finanziari, debitori in chiaro e gestione quote/fatture.';
+
+        document.getElementById('quotes-table-title').innerHTML = '<i class="fa-solid fa-list-check text-blue-600"></i> Tutte le Quote del Condominio (Vista Amministratore)';
+        document.getElementById('quotes-table-subtitle').textContent = 'Elenco completo delle quote emesse per ciascun condomino con stato e opzione di saldo';
+
+        document.getElementById('th-ticket-user').textContent = 'condomino Segnalatore';
+        document.getElementById('tickets-header-desc').textContent = 'Registro di tutte le segnalazioni aperte dai Condomini del fabbricato.';
+        document.getElementById('admin-ticket-status-box').classList.remove('hidden');
+        document.getElementById('admin-ticket-status-box').classList.add('flex');
+    } else {
+        banner.className = 'p-4 rounded-2xl border bg-emerald-50/80 border-emerald-200 text-emerald-950 flex items-center justify-between shadow-2xs';
+        bannerIcon.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0';
+        bannerIcon.innerHTML = '<i class="fa-solid fa-lock"></i>';
+        bannerTitle.textContent = 'Area Riservata condomino (Dati Personali & Trasparenza Protetta)';
+        bannerDesc.textContent = 'Visualizzazione limitata alle sole tue quote. I nominativi dei debitori nelle altre quote sono oscurati per la privacy.';
+
+        document.getElementById('quotes-table-title').innerHTML = '<i class="fa-solid fa-wallet text-emerald-600"></i> Le Mie Quote Personali';
+        document.getElementById('quotes-table-subtitle').textContent = `Quote ordinarie e straordinarie intestate a ${user.nome} (${user.unita})`;
+
+        document.getElementById('th-ticket-user').textContent = 'Richiedente';
+        document.getElementById('tickets-header-desc').textContent = 'Elenco delle tue richieste di manutenzione e stato di avanzamento.';
+        document.getElementById('admin-ticket-status-box').classList.add('hidden');
+    }
+}
+
+// ============================================================================
+// 3. NAVIGAZIONE A SCHEDE (SPA TABS)
+// ============================================================================
+
+function switchTab(tabId) {
+    state.currentTab = tabId;
+
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+    const target = document.getElementById(`tab-${tabId}`);
+    if (target) target.classList.remove('hidden');
+    if (tabId === 'unita') loadUnit‡a();
+
+    document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('border-blue-600', 'text-blue-600', 'font-semibold');
+        b.classList.add('border-transparent', 'text-slate-500', 'font-medium');
+    });
+
+    const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+    if (activeBtn) {
+        activeBtn.classList.remove('border-transparent', 'text-slate-500', 'font-medium');
+        activeBtn.classList.add('border-blue-600', 'text-blue-600', 'font-semibold');
+    }
+
+    if (tabId === 'accounting') loadAccountingData();
+    else if (tabId === 'assemblies') loadAssembliesData();
+    else if (tabId === 'tickets') loadTicketsData();
+    else if (tabId === 'users' && state.currentUser.role === 'admin') loadUsersList();
+    else if (tabId === 'anagrafica' && state.currentUser.role === 'admin') { loadAnagrafica(); loadUsersList(); }
+    else if (tabId === 'banca' && state.currentUser.role === 'admin') loadBanca();
+    else if (tabId === 'giornale' && state.currentUser.role === 'admin') loadGiornale();
+    else if (tabId === 'audit' && state.currentUser.role === 'admin') loadAudit();
+    else if (tabId === 'admin-profile') loadAdminProfile();
+    
+}
+
+// ============================================================================
+// 4. AREA CONTABILE (DATI PERSONALI + PRIVACY CREDITI ANONIMIZZATI)
+// ============================================================================
+
+async function loadAccountingData() {
+    loadSupplierRegistry();
+    try {
+        const [sumRes, quotesRes, recRes, supRes] = await Promise.all([
+            fetch('/api/accounting-summary', { headers: getAuthHeaders() }),
+            fetch('/api/quotes', { headers: getAuthHeaders() }),
+            fetch('/api/receivables', { headers: getAuthHeaders() }),
+            fetch('/api/supplier-payments', { headers: getAuthHeaders() })
+        ]);
+
+        const sumData = await sumRes.json();
+        const quotesData = await quotesRes.json();
+        const recData = await recRes.json();
+        const supData = await supRes.json();
+
+        // 1. KPI Cards
+        if (sumData.success) {
+            document.getElementById('kpi-total-received').textContent = formatCurrency(sumData.data.totalReceived);
+            document.getElementById('kpi-total-receivables').textContent = formatCurrency(sumData.data.totalReceivables);
+            document.getElementById('kpi-suppliers-paid').textContent = formatCurrency(sumData.data.totalSuppliersPaid);
+            document.getElementById('kpi-suppliers-debt').textContent = formatCurrency(sumData.data.totalSuppliersDebt);
+        }
+
+        // 2. Tabella Quote (filtrata automaticamente dal backend in base al ruolo)
+        if (quotesData.success) {
+            state.quotes = quotesData.data;
+            renderQuotesTable();
+        }
+
+        // 3. Tabella Crediti Condominiali (con nomi oscurati se condomino)
+        if (recData.success) {
+            state.receivables = recData.data;
+            renderReceivablesTable(recData);
+        }
+
+        // 4. Tabella Fornitori (Contabilit‡ Generale)
+        if (supData.success) {
+            state.suppliers = supData.data;
+            renderSuppliersTable();
+        }
+
+    } catch (err) {
+        console.error('Errore caricamento dati contabili:', err);
+    }
+}
+
+/**
+ * Renderizza la tabella delle quote (Personali per il condomino o generali per l'admin)
+ */
+function renderQuotesTable() {
+    const tbody = document.getElementById('quotes-table-body');
+    const header = document.getElementById('quotes-table-header');
+    const isAdmin = state.currentUser.role === 'admin';
+
+    // Intestazione condizionale della tabella
+    if (isAdmin) {
+        header.innerHTML = `
+            <th class="py-3.5 px-4">condomino / unitath>
+            <th class="py-3.5 px-4">Tipo</th>
+            <th class="py-3.5 px-4">Descrizione Quota</th>
+            <th class="py-3.5 px-4">Scadenza</th>
+            <th class="py-3.5 px-4 text-right">Importo</th>
+            <th class="py-3.5 px-4 text-center">Stato</th>
+            <th class="py-3.5 px-4 text-center">Azione Saldo</th>
+        `;
+    } else {
+        header.innerHTML = `
+            <th class="py-3.5 px-4">Tipo</th>
+            <th class="py-3.5 px-4">Descrizione Quota</th>
+            <th class="py-3.5 px-4">Scadenza</th>
+            <th class="py-3.5 px-4 text-right">Importo</th>
+            <th class="py-3.5 px-4 text-center">Stato</th>
+            <th class="py-3.5 px-4 text-center">Data Saldo</th>
+        `;
+    }
+
+    if (state.quotes.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Nessuna quota registrata.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = state.quotes.map(q => {
+        const isPaid = q.status === 'Pagato';
+        const badgeClass = isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200';
+        const isOrd = q.type === 'ordinaria';
+        const typeBadge = isOrd ? '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700">Ordinaria</span>' : '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-700">Straordinaria</span>';
+
+        if (isAdmin) {
+            let payAction = isPaid
+                ? '<span class="text-xs text-slate-400"><i class="fa-solid fa-check mr-1 text-emerald-500"></i> Saldata</span>'
+                : `<button onclick="markQuoteAsPaid(${q.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs">Segna Pagato</button>`;
+            payAction += ` <button onclick="editQuote(${q.id})" class="ml-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print"><i class="fa-solid fa-pen"></i></button>`;
+
+            return `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="py-3.5 px-4">
+                        <div class="font-bold text-slate-900">${q.condomino_nome}</div>
+                        <div class="text-xs text-slate-500">${q.condomino_unita}</div>
+                    </td>
+                    <td class="py-3.5 px-4">${typeBadge}</td>
+                    <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(q.due_date)}</td>
+                    <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(q.amount)}</td>
+                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${q.status}</span></td>
+                    <td class="py-3.5 px-4 text-center">${payAction}</td>
+                </tr>
+            `;
+        } else {
+            return `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="py-3.5 px-4">${typeBadge}</td>
+                    <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(q.due_date)}</td>
+                    <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(q.amount)}</td>
+                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${q.status}</span></td>
+                    <td class="py-3.5 px-4 text-center text-xs text-slate-500">${q.payment_date ? formatDate(q.payment_date) : '<span class="italic text-slate-400">In attesa</span>'}</td>
+                </tr>
+            `;
+        }
+    }).join('');
+}
+
+/**
+ * Renderizza la tabella dei crediti/debiti con gestione della Privacy
+ */
+function renderReceivablesTable(recData) {
+    const tbody = document.getElementById('receivables-table-body');
+    const badgeContainer = document.getElementById('privacy-badge-container');
+    const isAdmin = state.currentUser.role === 'admin';
+
+    // Badge Privacy / Trasparenza
+    if (isAdmin) {
+        badgeContainer.innerHTML = `
+            <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                <i class="fa-solid fa-eye mr-1"></i> Nominativi in Chiaro (Vista Admin)
+            </span>
+        `;
+    } else {
+        badgeContainer.innerHTML = `
+            <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <i class="fa-solid fa-user-secret mr-1"></i> Nominativi Anonimizzati dal Backend (Privacy Tutelata)
+            </span>
+        `;
+    }
+
+    if (!recData.data || recData.data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400">Nessun credito in sospeso. Tutti i Condomini sono in regola!</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = recData.data.map(r => {
+        // Se Ë la propria quota del condomino, evidenzia con un colore differente
+        const isOwn = r.is_my_quote;
+        const nameClass = isOwn ? 'font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded' : 'font-medium text-slate-700';
+
+        return `
+            <tr class="hover:bg-slate-50 transition-colors ${isOwn ? 'bg-amber-50/30' : ''}">
+                <td class="py-3.5 px-4">
+                    <span class="${nameClass}">
+                        ${isOwn ? '<i class="fa-solid fa-user mr-1 text-amber-600"></i>' : '<i class="fa-solid fa-user-shield mr-1 text-slate-400"></i>'}
+                        ${r.debitore}
+                    </span>
+                </td>
+                <td class="py-3.5 px-4 text-xs text-slate-600">${r.unita}</td>
+                <td class="py-3.5 px-4 text-xs font-medium text-slate-800">${r.titolo_quota}</td>
+                <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(r.scadenza)}</td>
+                <td class="py-3.5 px-4 text-right font-bold text-rose-600">${formatCurrency(r.importo)}</td>
+                <td class="py-3.5 px-4 text-center">
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        In sospeso
+                    </span>
+                    ${state.currentUser.role === 'admin' ? `<button onclick="editQuote(${r.id})" class="ml-2 text-amber-500 hover:text-amber-700 no-print"><i class="fa-solid fa-pen"></i></button>` : ''}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderSuppliersTable() {
+    const tbody = document.getElementById('suppliers-table-body');
+    const isAdmin = state.currentUser.role === 'admin';
+    if (state.suppliers.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Nessuna fattura registrata.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = state.suppliers.map(s => {
+        const isPaid = s.status === 'Pagato';
+        const badge = isPaid 
+            ? '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">Pagato</span>'
+            : '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">Da Liquidare</span>';
+        const editAction = isAdmin ? ` <button onclick="editSupplier(${s.id})" class="ml-2 text-amber-500 hover:text-amber-700 no-print"><i class="fa-solid fa-pen"></i></button>` : '';
+    
+
+        return `
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="py-3.5 px-4 font-bold text-slate-900">${s.supplier_name}</td>
+                <td class="py-3.5 px-4"><span class="px-2 py-0.5 rounded text-xs bg-slate-100">${s.category}</span></td>
+                <td class="py-3.5 px-4 font-mono text-xs text-slate-600">${s.invoice_number || '-'}</td>
+                <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(s.payment_date)}</td>
+                <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(s.amount)}</td>
+                <td class="py-3.5 px-4 text-center">${badge}${editAction}</td>
+                <td class="py-3.5 px-4 text-xs text-slate-500 max-w-xs truncate">${s.notes || '-'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function markQuoteAsPaid(quoteId) {
+    if (!confirm('Confermi la registrazione dell\'avvenuto saldo per questa quota?')) return;
+
+    try {
+        const res = await fetch(`/api/quotes/${quoteId}/pay`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ payment_date: new Date().toISOString().slice(0, 10) })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Pagamento registrato con successo!', 'success');
+            loadAccountingData();
+        } else {
+            showToast(data.message || 'Errore aggiornamento quota.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione.', 'error');
+    }
+}
+
+// ============================================================================
+// 5. PANNELLO GESTIONE UTENTI (ESCLUSIVO AMMINISTRATORE)
+// ============================================================================
+
+
+async function loadUsersList() {
+    if (state.currentUser.role !== 'admin') {
+        showToast('Devi essere amministratore per vedere questa pagina', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/users', { headers: getAuthHeaders() });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            state.users = data.data;
+            if (state.users.length === 0) {
+                document.getElementById('users-table-body').innerHTML = '<tr><td colspan="7" class="text-center p-4">Nessun utente trovato nel database (Array vuoto)</td></tr>';
+            } else {
+                renderUsersTable();
+                populateQuoteUsersSelect(); populateCommUsersSelect();
+            }
+        } else {
+            showToast('Errore API Users: ' + (data.message || 'Sconosciuto'), 'error');
+            document.getElementById('users-table-body').innerHTML = '<tr><td colspan="7" class="text-center p-4 text-rose-500">Errore Server: ' + (data.message || JSON.stringify(data)) + '</td></tr>';
+        }
+    } catch (err) {
+        showToast('Errore di connessione a /api/users', 'error');
+        document.getElementById('users-table-body').innerHTML = '<tr><td colspan="7" class="text-center p-4 text-rose-500">Errore Fetch: ' + err.message + '</td></tr>';
+        console.error('Errore caricamento lista utenti:', err);
+    }
+}
+
+
+function renderUsersTable() {
+    const tbody = document.getElementById('users-table-body');
+    if (!tbody) return;
+
+    
+    try {
+        tbody.innerHTML = state.users.map(u => {
+            const isAdmin = u.role === 'admin';
+            
+            let privacyBadge = '<span class="text-xs text-slate-400 italic">N/D</span>';
+            if (!isAdmin) {
+                if (u.privacy_accepted) {
+                    privacyBadge = `<span title="Accettata il ${formatDate(u.privacy_accepted_at)}" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fa-solid fa-check mr-1"></i> Accettata</span>`;
+                } else {
+                    privacyBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200"><i class="fa-solid fa-clock mr-1"></i> In attesa</span>`;
+                }
+            } else {
+                privacyBadge = '<span class="text-[10px] text-slate-400">Admin</span>';
+            }
+            
+            const roleBadge = isAdmin
+                ? '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">Amministratore</span>'
+                : '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">condomino</span>';
+    
+            return `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="py-3.5 px-4 font-bold text-slate-900">${u.nome || 'Sconosciuto'}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-600 font-mono">${u.email || '-'}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-700">${u.telefono || '-'}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-700">${u.unita || '-'}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-700">${u.dati_catastali || '-'}</td>
+                    <td class="py-3.5 px-4 text-center">${privacyBadge}</td>
+                      <td class="py-3.5 px-4 text-center">${roleBadge}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-400">${formatDate(u.created_at)}
+            ${state.currentUser.role === 'admin' ? `<button onclick="editUser(${u.id})" class="ml-2 text-amber-500 no-print"><i class="fa-solid fa-pen"></i></button> <button onclick="deleteUser(${u.id})" class="ml-1 text-rose-500 no-print"><i class="fa-solid fa-trash"></i></button>` : ''}
+        </td>
+                </tr>
+            `;
+        }).join('');
+    } catch(e) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-rose-500 p-4">Errore rendering JS: ' + e.message + '</td></tr>';
+        console.error(e);
+    }
+
+}
+
+function populateQuoteUsersSelect() {
+    const select = document.getElementById('quote-user-id');
+    if (!select) return;
+
+    const CondominiOnly = state.users.filter(u => u.role === 'condomino');
+    select.innerHTML = CondominiOnly.map(u => `
+        <option value="${u.id}">${u.nome} (${u.unita || 'Nessuna Unit‡a'})</option>
+    `).join('');
+}
+
+async function handleCreateUser(event) {
+    event.preventDefault();
+
+    const nome = document.getElementById('new-user-nome').value.trim();
+    const email = document.getElementById('new-user-email').value.trim();
+    const password = document.getElementById('new-user-password').value;
+    const unita = document.getElementById('new-user-unita').value.trim();
+    const telefono = document.getElementById('new-user-telefono').value.trim();
+    const dati_catastali = document.getElementById('new-user-catasto').value.trim();
+    const role = document.getElementById('new-user-role').value;
+
+    const btn = document.getElementById('btn-submit-user');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Creazione in corso...';
+
+    try {
+        const res = await fetch('/api/users', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ nome, email, password, unitarole, telefono, dati_catastali })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showToast(data.message, 'success');
+            document.getElementById('form-create-user').reset();
+            loadUsersList();
+        } else {
+            showToast(data.message || 'Errore nella creazione dell\'utente.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione col server.', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Crea Credenziali Utente';
+    }
+}
+
+// ============================================================================
+// 6. AREA TICKETING & SEGNALAZIONI (FILTRO PERSONALE RBAC)
+// ============================================================================
+
+async function loadTicketsData() {
+    try {
+        const res = await fetch('/api/tickets', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            state.tickets = data.data;
+            renderTicketsTable();
+            updateTicketsBadge();
+        }
+    } catch (_) {
+        showToast('Errore caricamento segnalazioni.', 'error');
+    }
+}
+
+function renderTicketsTable() {
+    const tbody = document.getElementById('tickets-table-body');
+    const isAdmin = state.currentUser.role === 'admin';
+
+    if (state.tickets.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">Nessuna segnalazione trovata.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = state.tickets.map(t => {
+        let pColor = t.priority === 'Urgente' ? 'bg-rose-100 text-rose-800' : (t.priority === 'Alta' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800');
+        let sColor = t.status === 'Risolto' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                     (t.status === 'Chiuso' ? 'bg-slate-200 text-slate-800 border-slate-300' : 
+                     (t.status === 'In lavorazione' ? 'bg-blue-50 text-blue-700 border-blue-200' : 
+                     (t.status === 'Preso in carico' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 
+                     'bg-slate-100 text-slate-700 border-slate-200')));
+
+        const userCol = isAdmin
+            ? `<div class="font-bold text-slate-900">${t.creator_name}</div><div class="text-xs text-slate-500">${t.creator_unita}</div>`
+            : `<div class="text-xs font-medium text-slate-700">Tu (${state.currentUser.unita})</div>`;
+
+        return `
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="py-3.5 px-4 font-mono text-xs font-bold text-slate-500">#${t.id}</td>
+                <td class="py-3.5 px-4">${userCol}</td>
+                <td class="py-3.5 px-4"><span class="px-2 py-0.5 rounded text-xs bg-slate-100">${t.category}</span></td>
+                <td class="py-3.5 px-4 font-medium text-slate-900">${t.title}</td>
+                <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${pColor}">${t.priority}</span></td>
+                <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-1 rounded-full text-xs font-bold border ${sColor}">${t.status}</span></td>
+                <td class="py-3.5 px-4 text-xs text-slate-500 whitespace-nowrap">${formatDate(t.created_at)}</td>
+                <td class="py-3.5 px-4 text-center">
+                    <div class="flex items-center justify-center gap-1.5">
+                        <button onclick="openTicketDetailsModal(${t.id})" class="px-3 py-1.5 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors">
+                            Dettagli & Note
+                        </button>
+                        <button onclick="openAttachmentsModal(${t.id})" class="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors" title="Allegati PDF">
+                            <i class="fa-solid fa-paperclip"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function updateTicketsBadge() {
+    const openCount = state.tickets.filter(t => t.status !== 'Risolto' && t.status !== 'Chiuso').length;
+    const badge = document.getElementById('open-tickets-badge');
+    if (badge) badge.textContent = openCount;
+}
+
+async function loadTicketsBadge() {
+    try {
+        const res = await fetch('/api/tickets', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            state.tickets = data.data;
+            updateTicketsBadge();
+        }
+    } catch (_) {}
+}
+
+function openNewTicketModal() { document.getElementById('modal-new-ticket').classList.remove('hidden'); }
+function closeNewTicketModal() { document.getElementById('modal-new-ticket').classList.add('hidden'); }
+
+async function handleCreateTicket(event) {
+    event.preventDefault();
+    const payload = {
+        category: document.getElementById('ticket-category').value,
+        priority: document.getElementById('ticket-priority').value,
+        title: document.getElementById('ticket-title').value.trim(),
+        description: document.getElementById('ticket-description').value.trim()
+    };
+
+    try {
+        const res = await fetch('/api/tickets', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Segnalazione registrata!', 'success');
+            closeNewTicketModal();
+            loadTicketsData();
+        } else {
+            showToast(data.message || 'Errore creazione ticket.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione.', 'error');
+    }
+}
+
+async function openTicketDetailsModal(ticketId) {
+    state.currentTicketId = ticketId;
+    document.getElementById('modal-ticket-details').classList.remove('hidden');
+
+    try {
+        const res = await fetch(`/api/tickets/${ticketId}`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!data.success) return;
+
+        const ticket = data.data;
+        document.getElementById('detail-ticket-id').textContent = `#${ticket.id}`;
+        document.getElementById('detail-ticket-title').textContent = ticket.title;
+        document.getElementById('detail-ticket-meta').innerHTML = `Segnalato da <strong>${ticket.creator_name}</strong> (${ticket.creator_unita}) il ${formatDate(ticket.created_at)}`;
+        document.getElementById('detail-ticket-description').textContent = ticket.description;
+        document.getElementById('update-ticket-status-select').value = ticket.status;
+
+        const container = document.getElementById('detail-ticket-updates');
+        container.innerHTML = ticket.updates.map(up => `
+            <div class="relative timeline-item pb-3">
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="font-bold px-2 py-0.5 rounded bg-slate-100">${up.author_name}</span>
+                    <span class="text-slate-400">${formatDate(up.created_at)}</span>
+                </div>
+                <p class="text-xs text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">${up.message}</p>
+            </div>
+        `).join('');
+
+    } catch (_) {
+        showToast('Errore recupero dettagli ticket.', 'error');
+    }
+}
+
+function closeTicketDetailsModal() {
+    document.getElementById('modal-ticket-details').classList.add('hidden');
+    state.currentTicketId = null;
+}
+
+async function handleAddTicketUpdate(event) {
+    event.preventDefault();
+    if (!state.currentTicketId) return;
+
+    const message = document.getElementById('update-message').value.trim();
+    if (!message) return;
+
+    try {
+        const res = await fetch(`/api/tickets/${state.currentTicketId}/updates`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ message })
+        });
+        if (res.ok) {
+            showToast('Risposta registrata!', 'success');
+            document.getElementById('update-message').value = '';
+            openTicketDetailsModal(state.currentTicketId);
+            loadTicketsData();
+        }
+    } catch (_) {}
+}
+
+async function submitStatusUpdate() {
+    if (!state.currentTicketId) return;
+    const status = document.getElementById('update-ticket-status-select').value;
+
+    try {
+        const res = await fetch(`/api/tickets/${state.currentTicketId}/status`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ status })
+        });
+        if (res.ok) {
+            showToast(`Stato aggiornato a "${status}"`, 'success');
+            openTicketDetailsModal(state.currentTicketId);
+            loadTicketsData();
+        }
+    } catch (_) {}
+}
+
+// ============================================================================
+// 7. AREA ASSEMBLEE
+// ============================================================================
+// La funzione loadAssembliesData (con future + verbali passati) Ë definita alla sezione 10
+
+function renderAssembliesCards() {
+    const container = document.getElementById('assemblies-cards-container');
+    if (state.assemblies.length === 0) {
+        container.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400 bg-white rounded-2xl border">Nessuna assemblea in programma.</div>`;
+        return;
+    }
+
+    container.innerHTML = state.assemblies.map(item => `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 flex flex-col justify-between">
+            <div>
+                <div class="flex justify-between items-start mb-3">
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800">Assemblea ${item.type}</span>
+                    <span class="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">${item.time}</span>
+                </div>
+                <h3 class="text-lg font-bold text-slate-900 mb-2">${item.title}</h3>
+                <div class="text-xs text-slate-600 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
+                    <p><strong>Data:</strong> ${formatDate(item.date)}</p>
+                    <p><strong>Luogo:</strong> ${item.location}</p>
+                </div>
+                <h4 class="text-xs font-bold uppercase text-slate-500 mb-2">Ordine del Giorno:</h4>
+                <p class="text-xs text-slate-700 whitespace-pre-line">${item.agenda}</p>
+            </div>
+            ${item.meeting_link ? `
+                <div class="mt-4 pt-3 border-t border-slate-100">
+                    <a href="${item.meeting_link}" target="_blank" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold inline-flex items-center shadow-xs">
+                        <i class="fa-solid fa-video mr-1.5 animate-pulse"></i> Partecipa in Video Call
+                    </a>
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+// ============================================================================
+// MODALE NUOVA QUOTA (ADMIN)
+// ============================================================================
+
+function openNewQuoteModal() {
+    populateQuoteUsersSelect();
+    document.getElementById('modal-new-quote').classList.remove('hidden');
+}
+
+function closeNewQuoteModal() {
+    document.getElementById('modal-new-quote').classList.add('hidden');
+}
+
+async function handleCreateQuote(event) {
+    event.preventDefault();
+    const payload = {
+        user_id: document.getElementById('quote-user-id').value,
+        type: document.getElementById('quote-type').value,
+        title: document.getElementById('quote-title').value.trim(),
+        amount: document.getElementById('quote-amount').value,
+        due_date: document.getElementById('quote-due-date').value
+    };
+
+    try {
+        const res = await fetch('/api/quotes', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Quota assegnata con successo!', 'success');
+            closeNewQuoteModal();
+            loadAccountingData();
+        } else {
+            showToast(data.message || 'Errore assegnazione quota.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione.', 'error');
+    }
+}
+
+// ============================================================================
+// UTILITIES
+// ============================================================================
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount || 0);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const d = new Date(dateString);
+    return isNaN(d.getTime()) ? dateString : d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    let color = 'bg-white text-slate-800 border-slate-200';
+    let icon = 'fa-circle-info text-blue-500';
+
+    if (type === 'success') {
+        color = 'bg-white text-slate-900 border-emerald-300';
+        icon = 'fa-circle-check text-emerald-500';
+    } else if (type === 'error') {
+        color = 'bg-white text-slate-900 border-rose-300';
+        icon = 'fa-triangle-exclamation text-rose-500';
+    }
+
+    toast.className = `toast flex items-center p-4 text-xs font-semibold rounded-2xl shadow-xl border ${color}`;
+    toast.innerHTML = `<i class="fa-solid ${icon} text-base mr-3"></i><span class="flex-grow">${message}</span><button onclick="this.parentElement.remove()" class="ml-3 text-slate-400">&times;</button>`;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+}
+
+// ============================================================================
+// 8. MODALE REGISTRAZIONE FATTURA FORNITORE (ADMIN)
+// ============================================================================
+
+function openNewSupplierModal() {
+    document.getElementById('modal-new-supplier').classList.remove('hidden');
+}
+
+function closeNewSupplierModal() {
+    document.getElementById('modal-new-supplier').classList.add('hidden');
+}
+
+async function handleCreateSupplier(event) {
+    event.preventDefault();
+    const payload = {
+        supplier_name: document.getElementById('supplier-name').value.trim(),
+        category: document.getElementById('supplier-category').value,
+        invoice_number: document.getElementById('supplier-invoice').value.trim(),
+        amount: document.getElementById('supplier-amount').value,
+        payment_date: document.getElementById('supplier-date').value,
+        status: document.getElementById('supplier-status').value,
+        notes: document.getElementById('supplier-notes').value.trim()
+    };
+
+    try {
+        const res = await fetch('/api/supplier-payments', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Fattura registrata con successo!', 'success');
+            closeNewSupplierModal();
+            document.getElementById('supplier-name').value = '';
+            document.getElementById('supplier-invoice').value = '';
+            document.getElementById('supplier-amount').value = '';
+            document.getElementById('supplier-notes').value = '';
+            loadAccountingData();
+        } else {
+            showToast(data.message || 'Errore durante la registrazione.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione.', 'error');
+    }
+}
+
+// ============================================================================
+// 9. UPLOAD ALLEGATI PDF AI TICKET
+// ============================================================================
+
+let currentAttachmentTicketId = null;
+
+async function openAttachmentsModal(ticketId) {
+    currentAttachmentTicketId = ticketId;
+    document.getElementById('modal-attachments').classList.remove('hidden');
+    document.getElementById('attachment-ticket-id-label').textContent = `#${ticketId}`;
+    document.getElementById('attachments-list').innerHTML = '<p class="text-xs text-slate-400 text-center py-2">Caricamento allegati...</p>';
+
+    try {
+        const res = await fetch(`/api/tickets/${ticketId}/attachments`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        const listEl = document.getElementById('attachments-list');
+
+        if (data.success && data.data.length > 0) {
+            listEl.innerHTML = data.data.map(a => {
+                let icon = 'fa-file text-slate-500';
+                if (a.mimetype.startsWith('image/')) icon = 'fa-file-image text-blue-500';
+                else if (a.mimetype.startsWith('video/')) icon = 'fa-file-video text-purple-500';
+                else if (a.mimetype === 'application/pdf') icon = 'fa-file-pdf text-rose-500';
+                else if (a.mimetype.includes('spreadsheet') || a.mimetype.includes('excel')) icon = 'fa-file-excel text-green-600';
+                else if (a.mimetype.includes('word')) icon = 'fa-file-word text-blue-700';
+                else if (a.mimetype.includes('zip') || a.mimetype.includes('rar')) icon = 'fa-file-zipper text-orange-500';
+                const sizeFmt = a.size > 1024 * 1024
+                    ? `${(a.size / 1024 / 1024).toFixed(1)} MB`
+                    : `${(a.size / 1024).toFixed(0)} KB`;
+  return `
+                    <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid ${icon} text-base shrink-0"></i>
+                            <div>
+                                <p class="text-xs font-semibold text-slate-800 truncate max-w-[200px]">${a.original_name}</p>
+                                <p class="text-[11px] text-slate-400">${sizeFmt} &bull; ${formatDate(a.uploaded_at)}</p>
+                            </div>
+                        </div>
+                        <a href="${a.url}" target="_blank" download="${a.original_name}"
+                            class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold shrink-0">
+                            <i class="fa-solid fa-download mr-1"></i>Scarica
+                        </a>
+                    </div>
+                `;
+            }).join('');
+        } else if (data.success) {
+            listEl.innerHTML = '<p class="text-xs text-slate-400 text-center py-3 italic">Nessun allegato per questo ticket.</p>';
+        }
+    } catch (_) {
+        document.getElementById('attachments-list').innerHTML = '<p class="text-xs text-rose-400 text-center py-2">Errore nel caricamento allegati.</p>';
+    }
+}
+
+function closeAttachmentsModal() {
+    document.getElementById('modal-attachments').classList.add('hidden');
+    document.getElementById('attachment-file').value = '';
+    currentAttachmentTicketId = null;
+}
+
+async function handleUploadAttachment(event) {
+    event.preventDefault();
+    if (!currentAttachmentTicketId) return;
+
+    const fileInput = document.getElementById('attachment-file');
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const btn = document.getElementById('btn-upload-attachment');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Caricamento...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const uploadHeaders = { 'Authorization': `Bearer ${state.token}` };
+        if (state.activeCondominioId) {
+            uploadHeaders['x-Condominio-id'] = state.activeCondominioId;
+        }
+
+        const res = await fetch(`/api/tickets/${currentAttachmentTicketId}/attachments`, {
+            method: 'POST',
+            headers: uploadHeaders, // NO Content-Type per multipart
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message, 'success');
+            fileInput.value = '';
+            // Ricarica la lista allegati
+            await openAttachmentsModal(currentAttachmentTicketId);
+            loadTicketsData(); // aggiorna badge e tabella
+        } else {
+            showToast(data.message || 'Errore upload.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione durante l\'upload.', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-upload mr-1"></i> Carica Allegato';
+    }
+}
+
+// ============================================================================
+// 10. ASSEMBLEE PASSATE (VERBALI)
+// ============================================================================
+
+async function loadAssembliesData() {
+    try {
+        // Carica convocazioni future e assemblee passate in parallelo
+        const [futureRes, pastRes] = await Promise.all([
+            fetch('/api/assemblies?past=0', { headers: getAuthHeaders() }),
+            fetch('/api/assemblies?past=1', { headers: getAuthHeaders() })
+        ]);
+
+        const futureData = await futureRes.json();
+        const pastData = await pastRes.json();
+        if (state.currentUser.role === 'admin') loadConvocationsLog();
+
+        if (futureData.success) {
+            state.assemblies = futureData.data;
+            renderAssembliesCards();
+        }
+
+        if (pastData.success) {
+            renderPastAssemblies(pastData.data);
+        }
+    } catch (_) {
+        showToast('Errore caricamento assemblee.', 'error');
+    }
+}
+
+function renderPastAssemblies(items) {
+    const container = document.getElementById('assemblies-past-container');
+    if (!items || items.length === 0) {
+        container.innerHTML = `<div class="py-6 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Nessun verbale archiviato.</div>`;
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                <div>
+                    <span class="px-2 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600">
+                        Assemblea ${item.type} &bull; ${formatDate(item.date)}
+                    </span>
+                    <h3 class="text-base font-bold text-slate-900 mt-1">${item.title}</h3>
+                </div>
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                    <i class="fa-solid fa-check-circle mr-1"></i>Deliberata
+                </span>
+            </div>
+            ${item.minutes_summary ? `
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2"><i class="fa-solid fa-scroll mr-1"></i>Sintesi del Verbale</p>
+                    <p class="text-xs text-slate-700 leading-relaxed">${item.minutes_summary}</p>
+                </div>
+            ` : `<p class="text-xs text-slate-400 italic">Verbale non ancora pubblicato.</p>`}
+        </div>
+    `).join('');
+}
+
+
+
+// ============================================================================
+// V2.0 LOGICA AGGIUNTIVA
+// ============================================================================
+
+async function loadAnagrafica() {
+    try {
+        const res = await fetch('/api/Condominio', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success && data.data.nome) {
+            document.getElementById('Condominio-nome').value = data.data.nome || '';
+            document.getElementById('Condominio-indirizzo').value = data.data.indirizzo || '';
+            document.getElementById('Condominio-cf').value = data.data.cf || '';
+            document.getElementById('Condominio-scala').value = data.data.scala || '';
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function handleSaveCondominio(e) {
+    e.preventDefault();
+    const payload = {
+        nome: document.getElementById('Condominio-nome').value,
+        indirizzo: document.getElementById('Condominio-indirizzo').value,
+        cf: document.getElementById('Condominio-cf').value,
+        scala: document.getElementById('Condominio-scala').value,
+        piano: ''
+    };
+    try {
+        const res = await fetch('/api/Condominio', {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) showToast(data.message, 'success');
+        else showToast('Errore salvataggio', 'error');
+    } catch(err) { showToast('Errore rete', 'error'); }
+}
+
+async function loadBanca() {
+    const anagraficaContainer = document.getElementById('anagrafica-banca-container');
+    const movimentiContainer = document.getElementById('banca-container');
+    anagraficaContainer.innerHTML = 'Caricamento...';
+    movimentiContainer.innerHTML = 'Caricamento...';
+
+    try {
+        const resConti = await fetch('/api/bank-accounts', { headers: getAuthHeaders() });
+        const dataConti = await resConti.json();
+        if (dataConti.success) {
+            window.bankAccountsData = dataConti.data;
+            if (dataConti.data.length === 0) {
+                anagraficaContainer.innerHTML = '<p class="text-slate-500 italic">Nessun conto bancario configurato.</p>';
+            } else {
+                anagraficaContainer.innerHTML = '<table class="w-full text-left text-sm"><thead class="bg-slate-50 border-b"><tr><th class="p-2">Banca</th><th class="p-2">IBAN</th><th class="p-2">Intestazione</th><th class="p-2">Note</th><th class="p-2 text-right">Azioni</th></tr></thead><tbody>' +
+                    dataConti.data.map(c => `<tr><td class="p-2">${c.banca}</td><td class="p-2">${c.iban}</td><td class="p-2">${c.intestazione}</td><td class="p-2">${c.note || ''}</td><td class="p-2 text-right"><button onclick="editBankAccount(${c.id})" class="text-indigo-600 hover:text-indigo-800 mr-2 no-print"><i class="fa-solid fa-pen"></i></button><button onclick="deleteBankAccount(${c.id})" class="text-red-500 hover:text-red-700 no-print"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') +
+                    '</tbody></table>';
+            }
+        }
+    } catch(e) { anagraficaContainer.innerHTML = 'Errore caricamento conti'; }
+
+    try {
+        const resMovimenti = await fetch('/api/bank-transactions', { headers: getAuthHeaders() });
+        const dataMovimenti = await resMovimenti.json();
+        if (dataMovimenti.success) {
+            window.bankTransactionsData = dataMovimenti.data;
+            movimentiContainer.innerHTML = '<table class="w-full text-left text-sm"><thead class="bg-slate-50 border-b"><tr><th class="p-2">Data</th><th class="p-2">Causale</th><th class="p-2 text-right">Importo</th><th class="p-2">Tipo</th><th class="p-2 text-right">Azioni</th></tr></thead><tbody>' +
+                dataMovimenti.data.map(t => `<tr><td class="p-2">${formatDate(t.data)}</td><td class="p-2">${t.causale}</td><td class="p-2 text-right">${formatCurrency(t.importo)}</td><td class="p-2">${t.tipo}</td><td class="p-2 text-right"><button onclick="editBankTransaction(${t.id})" class="text-indigo-600 hover:text-indigo-800 mr-2 no-print"><i class="fa-solid fa-pen"></i></button><button onclick="deleteBankTransaction(${t.id})" class="text-red-500 hover:text-red-700 no-print"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') +
+                '</tbody></table>';
+        }
+    } catch(e) { movimentiContainer.innerHTML = 'Errore caricamento movimenti'; }
+}
+
+let editingBankAccountId = null;
+
+function addBankAccount() {
+    editingBankAccountId = null;
+    document.getElementById('form-new-bank-account').reset();
+    document.querySelector('#modal-new-bank-account h3').innerHTML = '<i class="fa-solid fa-building-columns text-indigo-600 mr-2"></i>Nuovo Conto Bancario';
+    document.getElementById('modal-new-bank-account').classList.remove('hidden');
+}
+
+function editBankAccount(id) {
+    editingBankAccountId = id;
+    const conto = window.bankAccountsData.find(c => c.id === id);
+    if (!conto) return;
+    
+    document.getElementById('bank-name').value = conto.banca;
+    document.getElementById('bank-iban').value = conto.iban;
+    document.getElementById('bank-holder').value = conto.intestazione;
+    document.getElementById('bank-notes').value = conto.note || '';
+    
+    document.querySelector('#modal-new-bank-account h3').innerHTML = '<i class="fa-solid fa-building-columns text-indigo-600 mr-2"></i>Modifica Conto Bancario';
+    document.getElementById('modal-new-bank-account').classList.remove('hidden');
+}
+
+function closeBankAccountModal() {
+    document.getElementById('modal-new-bank-account').classList.add('hidden');
+    document.getElementById('form-new-bank-account').reset();
+    editingBankAccountId = null;
+}
+
+async function handleNewBankAccountSubmit(event) {
+    event.preventDefault();
+    const banca = document.getElementById('bank-name').value.trim();
+    const iban = document.getElementById('bank-iban').value.trim();
+    const intestazione = document.getElementById('bank-holder').value.trim();
+    const note = document.getElementById('bank-notes').value.trim();
+
+    try {
+        const method = editingBankAccountId ? 'PUT' : 'POST';
+        const url = editingBankAccountId ? `/api/bank-accounts/${editingBankAccountId}` : '/api/bank-accounts';
+        
+        await fetch(url, {
+            method,
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ banca, iban, intestazione, note })
+        });
+        closeBankAccountModal();
+        loadBanca();
+    } catch(e) { alert('Errore salvataggio conto'); }
+}
+
+async function deleteBankAccount(id) {
+    if (!confirm('Sei sicuro di voler eliminare questo conto bancario?')) return;
+    try {
+        await fetch(`/api/bank-accounts/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        loadBanca();
+    } catch(e) { alert('Errore eliminazione conto'); }
+}
+
+let editingBankTransactionId = null;
+
+async function addBankTransaction() {
+    editingBankTransactionId = null;
+    document.getElementById('form-new-bank-transaction').reset();
+    document.querySelector('#modal-new-bank-transaction h3').innerHTML = '<i class="fa-solid fa-money-bill-transfer text-indigo-600 mr-2"></i>Nuovo Movimento Bancario';
+
+    try {
+        const res = await fetch('/api/bank-accounts', { headers: getAuthHeaders() });
+        const data = await res.json();
+        const select = document.getElementById('trans-account-id');
+        if (data.success && data.data.length > 0) {
+            select.innerHTML = data.data.map(c => `<option value="${c.id}">${c.banca} - ${c.intestazione}</option>`).join('');
+        } else {
+            select.innerHTML = '<option value="">Nessun conto disponibile (aggiungine uno)</option>';
+        }
+    } catch (e) {
+        console.error("Errore caricamento conti", e);
+    }
+    
+    document.getElementById('trans-date').value = new Date().toISOString().slice(0,10);
+    document.getElementById('modal-new-bank-transaction').classList.remove('hidden');
+}
+
+async function editBankTransaction(id) {
+    editingBankTransactionId = id;
+    const trans = window.bankTransactionsData.find(t => t.id === id);
+    if (!trans) return;
+
+    try {
+        const res = await fetch('/api/bank-accounts', { headers: getAuthHeaders() });
+        const data = await res.json();
+        const select = document.getElementById('trans-account-id');
+        if (data.success && data.data.length > 0) {
+            select.innerHTML = data.data.map(c => `<option value="${c.id}">${c.banca} - ${c.intestazione}</option>`).join('');
+        } else {
+            select.innerHTML = '<option value="">Nessun conto disponibile (aggiungine uno)</option>';
+        }
+    } catch (e) {}
+
+    document.getElementById('trans-account-id').value = trans.account_id;
+    document.getElementById('trans-date').value = trans.data.slice(0,10);
+    document.getElementById('trans-causale').value = trans.causale;
+    document.getElementById('trans-importo').value = trans.importo;
+    document.getElementById('trans-tipo').value = trans.tipo;
+
+    document.querySelector('#modal-new-bank-transaction h3').innerHTML = '<i class="fa-solid fa-money-bill-transfer text-indigo-600 mr-2"></i>Modifica Movimento Bancario';
+    document.getElementById('modal-new-bank-transaction').classList.remove('hidden');
+}
+
+function closeBankTransactionModal() {
+    document.getElementById('modal-new-bank-transaction').classList.add('hidden');
+    document.getElementById('form-new-bank-transaction').reset();
+    editingBankTransactionId = null;
+}
+
+async function handleNewBankTransactionSubmit(event) {
+    event.preventDefault();
+    const account_id = document.getElementById('trans-account-id').value;
+    if (!account_id) {
+        alert("Seleziona un conto bancario valido.");
+        return;
+    }
+    const data = document.getElementById('trans-date').value;
+    const causale = document.getElementById('trans-causale').value.trim();
+    const importo = document.getElementById('trans-importo').value;
+    const tipo = document.getElementById('trans-tipo').value;
+
+    try {
+        const method = editingBankTransactionId ? 'PUT' : 'POST';
+        const url = editingBankTransactionId ? `/api/bank-transactions/${editingBankTransactionId}` : '/api/bank-transactions';
+        await fetch(url, {
+            method,
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ account_id: parseInt(account_id), data, importo: parseFloat(importo), causale, tipo })
+        });
+        closeBankTransactionModal();
+        loadBanca();
+    } catch(e) { alert('Errore salvataggio movimento'); }
+}
+
+async function deleteBankTransaction(id) {
+    if (!confirm('Sei sicuro di voler eliminare questo movimento bancario?')) return;
+    try {
+        await fetch(`/api/bank-transactions/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        loadBanca();
+    } catch(e) { alert('Errore eliminazione movimento'); }
+}
+
+
+async function loadGiornale() {
+    const container = document.getElementById('giornale-container');
+    container.innerHTML = '<div class="text-center py-4 text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Caricamento...</div>';
+    try {
+        const res = await fetch('/api/journal', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            state.journal = data.data; // Store in state for editing
+            
+            let html = '<table class="w-full text-left text-sm"><thead class="bg-slate-50 border-b"><tr><th class="p-3">Data</th><th class="p-3">condomino / Conto</th><th class="p-3">Descrizione</th><th class="p-3 text-right">Entrate (Dare)</th><th class="p-3 text-right">Uscite (Avere)</th><th class="p-3 text-center">Azioni</th></tr></thead><tbody class="divide-y divide-slate-100">';
+            
+            if (data.data.length === 0) {
+                html += '<tr><td colspan="6" class="p-4 text-center text-slate-500">Nessuna registrazione presente.</td></tr>';
+            } else {
+                html += data.data.map(j => `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="p-3 whitespace-nowrap">${formatDate(j.data)}</td>
+                        <td class="p-3 font-semibold text-slate-700">${j.conto || '<span class="text-slate-400 italic">Nessuno</span>'}</td>
+                        <td class="p-3 text-slate-800">${j.descrizione}</td>
+                        <td class="p-3 text-right font-medium ${j.dare > 0 ? 'text-emerald-600' : 'text-slate-400'}">${formatCurrency(j.dare)}</td>
+                        <td class="p-3 text-right font-medium ${j.avere > 0 ? 'text-rose-600' : 'text-slate-400'}">${formatCurrency(j.avere)}</td>
+                        <td class="p-3 text-center whitespace-nowrap">
+                            <button onclick="editJournalEntry(${j.id})" class="p-1.5 text-amber-500 hover:bg-amber-50 rounded transition-colors" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="deleteJournalEntry(${j.id})" class="p-1.5 text-rose-500 hover:bg-rose-50 rounded transition-colors ml-1" title="Elimina"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+    } catch(e) { 
+        container.innerHTML = '<div class="text-rose-500 p-4">Errore caricamento giornale</div>'; 
+    }
+}
+
+async function editJournalEntry(id) {
+    const entry = state.journal.find(x => x.id === id);
+    if (!entry) return;
+    
+    currentEditType = 'journal';
+    currentEditId = id;
+    
+    document.getElementById('edit-modal-title').innerHTML = '<i class="fa-solid fa-pen text-amber-500 mr-2"></i> Modifica Registrazione';
+    
+    const fields = `
+        <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+                <label class="block text-xs font-bold text-slate-700 mb-1">Descrizione</label>
+                <input type="text" id="edit-journal-desc" value="${entry.descrizione}" class="w-full border rounded-xl p-2.5 text-sm" required>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Data</label>
+                <input type="date" id="edit-journal-data" value="${entry.data}" class="w-full border rounded-xl p-2.5 text-sm" required>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Conto</label>
+                <input type="text" id="edit-journal-conto" value="${entry.conto || ''}" class="w-full border rounded-xl p-2.5 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Dare (Ä)</label>
+                <input type="number" step="0.01" id="edit-journal-dare" value="${entry.dare}" class="w-full border rounded-xl p-2.5 text-sm text-emerald-600 font-bold" required>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Avere (Ä)</label>
+                <input type="number" step="0.01" id="edit-journal-avere" value="${entry.avere}" class="w-full border rounded-xl p-2.5 text-sm text-rose-600 font-bold" required>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('edit-modal-fields').innerHTML = fields;
+    document.getElementById('modal-edit-generic').classList.remove('hidden');
+}
+
+async function deleteJournalEntry(id) {
+    if (!confirm('Sei sicuro di voler eliminare questa registrazione dal giornale?')) return;
+    try {
+        const res = await fetch('/api/journal/' + id, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (res.ok) {
+            showToast('Registrazione eliminata', 'success');
+            loadGiornale();
+        } else {
+            showToast('Errore durante leliminazione', 'error');
+        }
+    } catch(e) { showToast('Errore di connessione', 'error'); }
+}
+
+
+
+async function addJournalEntry() {
+    document.getElementById('journal-desc').value = '';
+    document.getElementById('journal-dare').value = '0.00';
+    document.getElementById('journal-avere').value = '0.00';
+    document.getElementById('journal-data').value = new Date().toISOString().slice(0,10);
+    
+    try {
+        const [resUsers, resSuppliers] = await Promise.all([
+            fetch('/api/users', { headers: getAuthHeaders() }),
+            fetch('/api/suppliers', { headers: getAuthHeaders() })
+        ]);
+        const dataUsers = await resUsers.json();
+        const dataSuppliers = await resSuppliers.json();
+        
+        const select = document.getElementById('journal-user-id');
+        let optionsHtml = '<option value="">-- Nessuno / Altro --</option>';
+        
+        if (dataUsers.success && dataUsers.data.length > 0) {
+            optionsHtml += '<optgroup label="Condomini">';
+            optionsHtml += dataUsers.data.map(user => `<option value="${user.nome}">${user.nome}</option>`).join('');
+            optionsHtml += '</optgroup>';
+        }
+        
+        if (dataSuppliers.success && dataSuppliers.data.length > 0) {
+            optionsHtml += '<optgroup label="Fornitori">';
+            optionsHtml += dataSuppliers.data.map(supp => `<option value="${supp.ragione_sociale}">${supp.ragione_sociale}</option>`).join('');
+            optionsHtml += '</optgroup>';
+        }
+        
+        select.innerHTML = optionsHtml;
+    } catch (e) { console.error('Errore fetch users/suppliers', e); }
+    
+    document.getElementById('modal-new-journal').classList.remove('hidden');
+}
+
+function closeJournalModal() {
+    document.getElementById('modal-new-journal').classList.add('hidden');
+}
+
+async function handleNewJournalSubmit(e) {
+    e.preventDefault();
+    
+    const conto = document.getElementById('journal-user-id').value;
+    const descrizione = document.getElementById('journal-desc').value;
+    const data = document.getElementById('journal-data').value;
+    const dare = parseFloat(document.getElementById('journal-dare').value || 0);
+    const avere = parseFloat(document.getElementById('journal-avere').value || 0);
+    
+    try {
+        const res = await fetch('/api/journal', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ 
+                data, 
+                numero: '1', 
+                tipo: 'Generica', 
+                descrizione, 
+                dare, 
+                avere, 
+                conto: conto || 'Cassa' 
+            })
+        });
+        
+        if (res.ok) {
+            showToast('Registrazione salvata', 'success');
+            closeJournalModal();
+            loadGiornale();
+        } else {
+            showToast('Errore durante il salvataggio', 'error');
+        }
+    } catch(err) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+
+async function loadAudit() {
+    const container = document.getElementById('audit-container');
+    container.innerHTML = 'Caricamento...';
+    try {
+        const res = await fetch('/api/audit-log', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            container.innerHTML = '<table class="w-full text-left text-xs"><thead class="bg-slate-50 border-b"><tr><th class="p-2">Data/Ora</th><th class="p-2">Utente</th><th class="p-2">Azione</th><th class="p-2">Tabella</th><th class="p-2">IP</th></tr></thead><tbody>' +
+                data.data.map(a => `<tr><td class="p-2">${new Date(a.timestamp).toLocaleString()}</td><td class="p-2">${a.nome || 'Sistema'}</td><td class="p-2">${a.azione}</td><td class="p-2">${a.tabella}</td><td class="p-2">${a.ip}</td></tr>`).join('') +
+                '</tbody></table>';
+        }
+    } catch(e) { container.innerHTML = 'Errore caricamento audit log'; }
+}
+
+
+
+// ============================================================================
+// V2.0 SPEECH TO TEXT
+// ============================================================================
+let recognition;
+let isRecording = false;
+let transcriptText = "";
+
+function startSpeechToText() {
+    if (!('webkitSpeechRecognition' in window)) {
+        alert("Il tuo browser non supporta il riconoscimento vocale. Usa Chrome o Edge.");
+        return;
+    }
+    
+    if (!recognition) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'it-IT';
+        
+        recognition.onresult = function(event) {
+            let interimTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    transcriptText += event.results[i][0].transcript + " ";
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+            document.getElementById('speech-output').value = transcriptText + interimTranscript;
+        };
+        
+        recognition.onerror = function(event) {
+            console.error("Speech error", event.error);
+        };
+    }
+    
+    const btn = document.getElementById('btn-speech');
+    if (isRecording) {
+        recognition.stop();
+        isRecording = false;
+        btn.innerHTML = '<i class="fa-solid fa-microphone"></i> Avvia Dettatura';
+    } else {
+        recognition.start();
+        isRecording = true;
+        btn.innerHTML = '<i class="fa-solid fa-stop text-red-500"></i> Ferma Dettatura';
+    }
+}
+
+function downloadVerbale() {
+    const text = document.getElementById('speech-output').value;
+    if (!text) return;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'verbale_assemblea.txt';
+    a.click();
+}
+
+// Hide speech section and new access button for non-admins
+const oldSetupUIForRole = setupUIForRole;
+setupUIForRole = function() {
+    oldSetupUIForRole();
+    const btnNuovoAccesso = document.getElementById('btn-nuovo-accesso');
+    
+    if (state.currentUser.role !== 'admin') {
+        const speechSec = document.getElementById('speech-section');
+        if (speechSec) speechSec.classList.add('hidden');
+        if (btnNuovoAccesso) btnNuovoAccesso.classList.add('hidden');
+    } else {
+        const speechSec = document.getElementById('speech-section');
+        if (speechSec) speechSec.classList.remove('hidden');
+        if (btnNuovoAccesso) btnNuovoAccesso.classList.remove('hidden');
+    }
+}
+
+
+
+// ============================================================================
+// V2.0 MODALI INTERATTIVI DI MODIFICA
+// ============================================================================
+let currentEditType = '';
+let currentEditId = null;
+let currentEditItem = null;
+
+function openEditModal(title, type, id, item, fieldsHtml) {
+    currentEditType = type;
+    currentEditId = id;
+    currentEditItem = item;
+    document.getElementById('edit-modal-title').innerHTML = '<i class="fa-solid fa-pen text-amber-500 mr-2"></i> ' + title;
+    document.getElementById('edit-modal-fields').innerHTML = fieldsHtml;
+    document.getElementById('modal-edit-generic').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('modal-edit-generic').classList.add('hidden');
+    currentEditType = '';
+    currentEditId = null;
+}
+
+async function handleEditSubmit(e) {
+    e.preventDefault();
+    let endpoint = '';
+    let payload = {};
+
+    if (currentEditType === 'quote') {
+        endpoint = '/api/quotes/' + currentEditId;
+        payload = {
+            ...currentEditItem,
+            amount: parseFloat(document.getElementById('edit-amount').value),
+            due_date: document.getElementById('edit-date').value,
+            status: document.getElementById('edit-status').value
+        };
+    
+        } else if (currentEditType === 'journal') {
+        const dareStr = document.getElementById('edit-journal-dare').value;
+        const avereStr = document.getElementById('edit-journal-avere').value;
+        payload = {
+            descrizione: document.getElementById('edit-journal-desc').value,
+            data: document.getElementById('edit-journal-data').value,
+            conto: document.getElementById('edit-journal-conto').value,
+            dare: parseFloat(dareStr || 0),
+            avere: parseFloat(avereStr || 0),
+            tipo: 'Generica',
+            numero: '1'
+        };
+        endpoint = '/api/journal/' + currentEditId;
+    } else if (currentEditType === 'supplier') {
+        endpoint = '/api/supplier-payments/' + currentEditId;
+        payload = {
+            ...currentEditItem,
+            amount: parseFloat(document.getElementById('edit-amount').value),
+            status: document.getElementById('edit-status').value
+        };
+    } else if (currentEditType === 'user') {
+        endpoint = '/api/users/' + currentEditId;
+        payload = {
+            ...currentEditItem,
+            unita: document.getElementById('edit-unita').value,
+            role: document.getElementById('edit-role').value,
+            telefono: document.getElementById('edit-telefono').value,
+            dati_catastali: document.getElementById('edit-catasto').value
+        };
+    }
+
+    try {
+        const res = await fetch(endpoint, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Modifica salvata con successo!', 'success');
+            closeEditModal();
+            if (currentEditType === 'user') loadUsersList();
+            else if (currentEditType === 'journal') loadGiornale();
+            else loadAccountingData();
+        } else {
+            showToast('Errore durante la modifica.', 'error');
+        }
+    } catch(err) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+
+async function editQuote(id) {
+    const q = state.quotes.find(x => x.id === id) || { amount: 0, due_date: '', status: 'In sospeso', title: 'Quota' };
+    const fields = `
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Importo (Ä)</label>
+            <input type="number" step="0.01" id="edit-amount" value="${q.amount}" class="w-full border rounded-xl p-2.5 text-sm" required>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Scadenza</label>
+            <input type="date" id="edit-date" value="${q.due_date}" class="w-full border rounded-xl p-2.5 text-sm" required>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Stato</label>
+            <select id="edit-status" class="w-full border rounded-xl p-2.5 text-sm">
+                <option value="In sospeso" ${q.status === 'In sospeso' ? 'selected' : ''}>In sospeso</option>
+                <option value="Pagato" ${q.status === 'Pagato' ? 'selected' : ''}>Pagato</option>
+            </select>
+        </div>
+    `;
+    openEditModal("Modifica Quota", 'quote', id, q, fields);
+}
+
+async function editSupplier(id) {
+    const s = state.suppliers.find(x => x.id === id) || { amount: 0, status: 'Da liquidare', supplier_name: 'Fornitore' };
+    const fields = `
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Importo (Ä)</label>
+            <input type="number" step="0.01" id="edit-amount" value="${s.amount}" class="w-full border rounded-xl p-2.5 text-sm" required>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Stato Pagamento</label>
+            <select id="edit-status" class="w-full border rounded-xl p-2.5 text-sm">
+                <option value="Da liquidare" ${s.status === 'Da liquidare' ? 'selected' : ''}>Da liquidare</option>
+                <option value="In elaborazione" ${s.status === 'In elaborazione' ? 'selected' : ''}>In elaborazione</option>
+                <option value="Pagato" ${s.status === 'Pagato' ? 'selected' : ''}>Pagato</option>
+            </select>
+        </div>
+    `;
+    openEditModal("Modifica Fattura Fornitore", 'supplier', id, s, fields);
+}
+
+async function editUser(id) {
+    const u = state.users.find(x => x.id === id) || { unita: '', role: 'condomino', nome: 'Utente' };
+    const fields = `
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Telefono</label>
+            <input type="text" id="edit-telefono" value="${u.telefono || ''}" class="w-full border rounded-xl p-2.5 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Dati Catastali</label>
+            <input type="text" id="edit-catasto" value="${u.dati_catastali || ''}" class="w-full border rounded-xl p-2.5 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">unitamobiliare / Scala</label>
+            <input type="text" id="edit-unita" value="${u.unita || ''}" class="w-full border rounded-xl p-2.5 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Ruolo</label>
+            <select id="edit-role" class="w-full border rounded-xl p-2.5 text-sm">
+                <option value="condomino" ${u.role === 'condomino' ? 'selected' : ''}>condomino</option>
+                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Amministratore</option>
+            </select>
+        </div>
+    `;
+    openEditModal("Modifica Utente", 'user', id, u, fields);
+}
+async function deleteUser(id) {
+    if (!confirm("Sicuro di voler eliminare questo utente?")) return;
+    try {
+        await fetch('/api/users/'+id, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        loadUsersList();
+    } catch(e) {}
+}
+
+
+// ============================================================================
+// EXPORT EXCEL
+// ============================================================================
+async function exportExcel(e) {
+    if (e) e.preventDefault();
+    try {
+        const res = await fetch('/api/export/accounting-excel', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error("Export fallito");
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "Bilancio_Condominiale.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast('Download in corso', 'success');
+    } catch(err) {
+        showToast('Errore durante esportazione Excel', 'error');
+    }
+}
+
+// ==========================================
+// GESTIONE unitaMILLESIMI
+// ==========================================
+
+async function loadUnit‡a() {
+    const cId = state.activeCondominioId || sessionStorage.getItem('active_Condominio_id');
+    if(!cId) return;
+    
+    try {
+        const res = await fetch('/api/unita', { headers: getAuthHeaders() });
+        const data = await res.json();
+        
+        const tbody = document.getElementById('unitaist');
+        if(!tbody) return;
+        
+        if (res.ok && data.success) {
+            state.unitaList = data.data; // Salviamo nello state
+            tbody.innerHTML = data.data.map(u => `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-4">
+                        <div class="font-bold text-slate-800">${u.identificativo}</div>
+                        <div class="text-[11px] text-slate-400">Sc: ${u.scala || '-'} | P: ${u.piano || '-'}</div>
+                    </td>
+                    <td class="px-6 py-4"><span class="px-2 py-1 bg-slate-100 rounded-lg text-xs font-semibold">${u.tipo}</span></td>
+                    <td class="px-6 py-4">
+                        <div class="font-bold text-slate-700">${u.condomino_nome || 'Nessuno'}</div>
+                        ${u.condomino_email ? `<div class="text-[11px] text-slate-400">${u.condomino_email}</div>` : ''}
+                    </td>
+                    <td class="px-6 py-4 font-mono">${u.millesimi_proprieta.toFixed(2)}</td>
+                    <td class="px-6 py-4 font-mono">${u.millesimi_scale.toFixed(2)}</td>
+                    <td class="px-6 py-4 font-mono">${u.millesimi_ascensore.toFixed(2)}</td>
+                    <td class="px-6 py-4 text-right admin-only">
+                        <button onclick="openUnit‡aModal(${u.id})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        applyRoleVisibility();
+    } catch(e) {
+        console.error(e);
+    }
+}
+
+async function openUnit‡aModal(uId = null) {
+    let u = null;
+    if (uId && state.unitaList) {
+        u = state.unitaList.find(x => x.id === uId);
+    }
+
+    // Carica gli utenti per la select
+    try {
+        const res = await fetch('/api/users', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            const select = document.getElementById('unitaser-id');
+            select.innerHTML = '<option value="">-- Nessun Proprietario (Sfitto/Esterno) --</option>' + 
+                data.data.map(user => `<option value="${user.id}">${user.nome} (${user.email})</option>`).join('');
+        }
+    } catch(e) { console.error('Errore fetch users', e); }
+
+    document.getElementById('unita-modal-title').textContent = u ? 'Modifica Unit‡‡' : 'Nuova Unit‡‡';
+    document.getElementById('unitad').value = u ? u.id : '';
+    document.getElementById('unitadentificativo').value = u ? u.identificativo : '';
+    document.getElementById('unitaipo').value = u ? u.tipo : 'Appartamento';
+    document.getElementById('unitacala').value = u ? (u.scala || '') : '';
+    document.getElementById('unitaiano').value = u ? (u.piano || '') : '';
+    document.getElementById('unitaill-prop').value = u ? u.millesimi_proprieta : '0';
+    document.getElementById('unitaill-scale').value = u ? u.millesimi_scale : '0';
+    document.getElementById('unitaill-asc').value = u ? u.millesimi_ascensore : '0';
+    document.getElementById('unitaser-id').value = u ? (u.user_id || '') : '';
+    
+    document.getElementById('unita-modal').classList.remove('hidden');
+}
+
+function closeUnit‡aModal() {
+    document.getElementById('unita-modal').classList.add('hidden');
+}
+
+async function saveUnit‡a(e) {
+    e.preventDefault();
+    const id = document.getElementById('unitad').value;
+    const body = {
+        identificativo: document.getElementById('unitadentificativo').value,
+        tipo: document.getElementById('unitaipo').value,
+        scala: document.getElementById('unitacala').value,
+        piano: document.getElementById('unitaiano').value,
+        millesimi_proprieta: parseFloat(document.getElementById('unitaill-prop').value),
+        millesimi_scale: parseFloat(document.getElementById('unitaill-scale').value),
+        millesimi_ascensore: parseFloat(document.getElementById('unitaill-asc').value),
+        user_id: document.getElementById('unitaser-id').value ? parseInt(document.getElementById('unitaser-id').value) : null
+    };
+
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? '/api/unita/' + id : '/api/unita';
+
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: getAuthHeaders(),
+            body: JSON.stringify(body)
+        });
+        
+        if (res.ok) {
+            closeUnit‡aModal();
+            loadunita;
+        } else {
+            alert("Errore salvataggio unita");
+        }
+    } catch(err) {
+        console.error(err);
+    }
+}
+
+
+async function exportUsersExcel(e) {
+    if (e) e.preventDefault();
+    if (!state.users || state.users.length === 0) return;
+    
+    let csv = 'Nome,Email,Telefono,unitaati Catastali,Ruolo,Data Creazione\n';
+    state.users.forEach(u => {
+        const row = [
+            u.nome,
+            u.email,
+            u.telefono || '',
+            u.unita || '',
+            u.dati_catastali || '',
+            u.role === 'admin' ? 'Amministratore' : 'condomino',
+            formatDate(u.created_at)
+        ].map(val => '"' + String(val).replace(/"/g, '""') + '"').join(',');
+        csv += row + '\n';
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "Elenco_Utenti.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Download completato', 'success');
+}
+
+// --- ANAGRAFICA FORNITORI ---
+let editingSupplierId = null;
+
+async function loadSupplierRegistry() {
+    const container = document.getElementById('suppliers-registry-body');
+    if (!container) return;
+    try {
+        const res = await fetch('/api/suppliers', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            window.suppliersRegistryData = data.data;
+            if (data.data.length === 0) {
+                container.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500 italic">Nessun fornitore registrato</td></tr>';
+            } else {
+                container.innerHTML = data.data.map(s => `
+                    <tr>
+                        <td class="py-3 px-4 font-semibold">${s.ragione_sociale}</td>
+                        <td class="py-3 px-4">${s.partita_iva || ''} ${s.codice_fiscale ? ' / ' + s.codice_fiscale : ''}</td>
+                        <td class="py-3 px-4">${s.email || ''} ${s.telefono ? '<br>' + s.telefono : ''}</td>
+                        <td class="py-3 px-4">${s.iban || ''}</td>
+                        <td class="py-3 px-4 text-right">
+                            <button onclick="editSupplierRegistry(${s.id})" class="text-indigo-600 hover:text-indigo-800 mr-2 no-print"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="deleteSupplierRegistry(${s.id})" class="text-red-500 hover:text-red-700 no-print"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>`).join('');
+            }
+        }
+    } catch(e) { console.error('Errore caricamento anagrafica fornitori', e); }
+}
+
+function openSupplierRegistryModal() {
+    editingSupplierId = null;
+    document.getElementById('form-supplier-registry').reset();
+    document.querySelector('#modal-supplier-registry h3').innerHTML = '<i class="fa-solid fa-address-book text-indigo-600 mr-2"></i>Nuovo Fornitore';
+    document.getElementById('modal-supplier-registry').classList.remove('hidden');
+}
+
+function editSupplierRegistry(id) {
+    editingSupplierId = id;
+    const supp = window.suppliersRegistryData.find(s => s.id === id);
+    if (!supp) return;
+
+    document.getElementById('supp-name').value = supp.ragione_sociale;
+    document.getElementById('supp-piva').value = supp.partita_iva || '';
+    document.getElementById('supp-cf').value = supp.codice_fiscale || '';
+    document.getElementById('supp-address').value = supp.indirizzo || '';
+    document.getElementById('supp-email').value = supp.email || '';
+    document.getElementById('supp-phone').value = supp.telefono || '';
+    document.getElementById('supp-iban').value = supp.iban || '';
+    document.getElementById('supp-notes').value = supp.note || '';
+
+    document.querySelector('#modal-supplier-registry h3').innerHTML = '<i class="fa-solid fa-address-book text-indigo-600 mr-2"></i>Modifica Fornitore';
+    document.getElementById('modal-supplier-registry').classList.remove('hidden');
+}
+
+function closeSupplierRegistryModal() {
+    document.getElementById('modal-supplier-registry').classList.add('hidden');
+    editingSupplierId = null;
+}
+
+async function handleSupplierRegistrySubmit(event) {
+    event.preventDefault();
+    const payload = {
+        ragione_sociale: document.getElementById('supp-name').value.trim(),
+        partita_iva: document.getElementById('supp-piva').value.trim(),
+        codice_fiscale: document.getElementById('supp-cf').value.trim(),
+        indirizzo: document.getElementById('supp-address').value.trim(),
+        email: document.getElementById('supp-email').value.trim(),
+        telefono: document.getElementById('supp-phone').value.trim(),
+        iban: document.getElementById('supp-iban').value.trim(),
+        note: document.getElementById('supp-notes').value.trim()
+    };
+
+    try {
+        const method = editingSupplierId ? 'PUT' : 'POST';
+        const url = editingSupplierId ? `/api/suppliers/${editingSupplierId}` : '/api/suppliers';
+        await fetch(url, {
+            method,
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        closeSupplierRegistryModal();
+        loadSupplierRegistry();
+    } catch(e) { alert('Errore salvataggio fornitore'); }
+}
+
+async function deleteSupplierRegistry(id) {
+    if (!confirm('Sei sicuro di voler eliminare questo fornitore?')) return;
+    try {
+        await fetch(`/api/suppliers/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        loadSupplierRegistry();
+    } catch(e) { alert('Errore eliminazione fornitore'); }
+}
+
+
+// ============================================================================
+// DATI AMMINISTRATORE
+// ============================================================================
+async function loadAdminProfile() {
+    try {
+        const res = await fetch('/api/Condominio', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+            state.CondominioInfo = data.data;
+            renderAdminProfileView();
+        }
+    } catch (e) {
+        showToast('Errore caricamento dati amministratore', 'error');
+    }
+}
+
+function renderAdminProfileView() {
+    const admin = state.CondominioInfo || {};
+    const viewMode = document.getElementById('admin-view-mode');
+    
+    document.getElementById('admin-nome-input').value = admin.admin_nome || '';
+    document.getElementById('admin-cognome-input').value = admin.admin_cognome || '';
+    document.getElementById('admin-titolo-input').value = admin.admin_titolo || '';
+    document.getElementById('admin-telefono-input').value = admin.admin_telefono || '';
+    document.getElementById('admin-cellulare-input').value = admin.admin_cellulare || '';
+    document.getElementById('admin-emergenze-input').value = admin.admin_emergenze || '';
+    document.getElementById('admin-email-input').value = admin.admin_email || '';
+    document.getElementById('admin-pec-input').value = admin.admin_pec || '';
+
+    const fields = [
+        { icon: 'fa-user', label: 'Nome Completo', value: (admin.admin_titolo ? admin.admin_titolo + ' ' : '') + (admin.admin_nome || '') + ' ' + (admin.admin_cognome || '') },
+        { icon: 'fa-envelope', label: 'Email Ufficiale', value: admin.admin_email },
+        { icon: 'fa-at', label: 'PEC', value: admin.admin_pec },
+        { icon: 'fa-phone', label: 'Telefono Fisso', value: admin.admin_telefono },
+        { icon: 'fa-mobile-screen', label: 'Cellulare', value: admin.admin_cellulare },
+        { icon: 'fa-truck-medical', label: 'Emergenze', value: admin.admin_emergenze, isEmergency: true }
+    ].filter(f => f.value && f.value.trim() !== '');
+
+    if (fields.length > 0) {
+        viewMode.innerHTML = fields.map(f => {
+            const color = f.isEmergency ? 'text-rose-600 bg-rose-50' : 'text-blue-600 bg-blue-50';
+            const labelColor = f.isEmergency ? 'text-rose-500 font-bold' : 'text-slate-500';
+            return `
+                <div class="flex items-center space-x-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/50">
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${color}">
+                        <i class="fa-solid ${f.icon}"></i>
+                    </div>
+                    <div class="overflow-hidden">
+                        <p class="text-[10px] font-bold uppercase tracking-wider mb-0.5 ${labelColor}">${f.label}</p>
+                        <p class="font-bold text-slate-800 truncate">${f.value}</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } else {
+        viewMode.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">Nessun dato dell'amministratore inserito.</div>`;
+    }
+}
+
+function toggleEditAdmin(showForm) {
+    document.getElementById('admin-view-mode').classList.toggle('hidden', showForm);
+    document.getElementById('admin-edit-form').classList.toggle('hidden', !showForm);
+    document.getElementById('btn-edit-admin').classList.toggle('hidden', showForm);
+}
+
+async function saveAdminProfile(e) {
+    e.preventDefault();
+    const payload = {
+        admin_nome: document.getElementById('admin-nome-input').value,
+        admin_cognome: document.getElementById('admin-cognome-input').value,
+        admin_titolo: document.getElementById('admin-titolo-input').value,
+        admin_telefono: document.getElementById('admin-telefono-input').value,
+        admin_cellulare: document.getElementById('admin-cellulare-input').value,
+        admin_emergenze: document.getElementById('admin-emergenze-input').value,
+        admin_email: document.getElementById('admin-email-input').value,
+        admin_pec: document.getElementById('admin-pec-input').value
+    };
+
+    try {
+        const res = await fetch('/api/Condominio', {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Dati amministratore salvati', 'success');
+            toggleEditAdmin(false);
+            loadAdminProfile();
+        } else {
+            showToast('Errore nel salvataggio', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+// Inattivit‡ - Logout automatico dopo 15 minuti
+let inactivityTimer;
+const INACTIVITY_LIMIT = 15 * 60 * 1000;
+
+function resetInactivityTimer() {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        console.warn('Sessione scaduta per inattivit‡.');
+        logout();
+    }, INACTIVITY_LIMIT);
+}
+
+['mousemove', 'mousedown', 'keypress', 'touchmove', 'scroll'].forEach(event => {
+    document.addEventListener(event, resetInactivityTimer, true);
+});
+
+resetInactivityTimer();
+
+
+
+
+
+
+// ============================================================================
+// MODULO CONVOCAZIONE ASSEMBLEA
+// ============================================================================
+function openConvocazioneModal() {
+    const modal = document.getElementById('convocazione-modal');
+    if (!modal) return;
+    
+    // Popola select utenti
+    const select = document.getElementById('convocazione-user');
+    select.innerHTML = '<option value="">-- Seleziona il condomino --</option>';
+    state.users.forEach(u => {
+        select.innerHTML += `<option value="${u.id}">${u.nome} (${u.unita || 'Nessuna Unit‡a'})</option>`;
+    });
+    
+    // Set default dates (tomorrow and day after tomorrow)
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(18, 0, 0, 0);
+    const dayAfter = new Date();
+    dayAfter.setDate(dayAfter.getDate() + 2);
+    dayAfter.setHours(18, 0, 0, 0);
+    
+    document.getElementById('convocazione-data1').value = tomorrow.toISOString().slice(0, 16);
+    document.getElementById('convocazione-data2').value = dayAfter.toISOString().slice(0, 16);
+    
+    modal.classList.remove('hidden');
+}
+
+function closeConvocazioneModal() {
+    document.getElementById('convocazione-modal').classList.add('hidden');
+}
+
+function stampaConvocazione() {
+    const userId = document.getElementById('convocazione-user').value;
+    if (!userId) {
+        showToast('Seleziona un condomino destinatario.', 'error');
+        return;
+    }
+    
+    const u = state.users.find(x => x.id == userId);
+    if (!u) return;
+    
+    const d1 = document.getElementById('convocazione-data1').value;
+    const l1 = document.getElementById('convocazione-luogo1').value;
+    const d2 = document.getElementById('convocazione-data2').value;
+    const l2 = document.getElementById('convocazione-luogo2').value;
+    const odg = document.getElementById('convocazione-odg').value;
+    
+    const formatDate = (ds) => {
+        if (!ds) return '';
+        const d = new Date(ds);
+        return d.toLocaleDateString('it-IT') + ' alle ore ' + d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+    };
+    
+    const odgHtml = odg.split('\n').map(r => `<li>${r}</li>`).join('');
+    
+    const activeCondoName = state.currentUser.condomini ? state.currentUser.condomini.find(c => c.id == state.activeCondominioId)?.nome : 'Condominio';
+    
+    const printWindow = window.open('', '_blank');
+    const html = `
+        <html>
+        <head>
+            <title>Convocazione Assemblea - ${u.nome}</title>
+            <style>
+                body { font-family: 'Arial', sans-serif; padding: 40px; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; }
+                h1, h2 { text-align: center; }
+                .mittente, .destinatario { margin-bottom: 20px; }
+                .destinatario { text-align: right; }
+                .oggetto { font-weight: bold; margin: 30px 0; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+                .details { margin: 20px 0; }
+                .firma { margin-top: 50px; text-align: right; }
+                .delega { margin-top: 50px; border-top: 2px dashed #999; padding-top: 30px; }
+            </style>
+        </head>
+        <body>
+            <div class="mittente">
+                <strong>MITTENTE:</strong><br>
+                Amministratore del Condominio "${activeCondoName}"<br>
+                Email: ${state.currentUser.email}<br>
+            </div>
+            
+            <div class="destinatario">
+                <strong>DESTINATARIO:</strong><br>
+                Gent.le Sig./Sig.ra ${u.nome}<br>
+                Unit‡‡: ${u.unita || ''}<br>
+            </div>
+            
+            <p><strong>Data:</strong> ${new Date().toLocaleDateString('it-IT')}</p>
+            
+            <div class="oggetto">
+                OGGETTO: Convocazione Assemblea Condominiale
+            </div>
+            
+            <p>Gentile condomino/a,</p>
+            <p>La S.V. &egrave; invitata a partecipare all'Assemblea del Condominio "${activeCondoName}", che si terr&agrave;:</p>
+            
+            <ul class="details">
+                <li><strong>In prima convocazione:</strong> Il giorno ${formatDate(d1)}, presso ${l1}.</li>
+                <li><strong>In seconda convocazione:</strong> (qualora la prima andasse deserta) Il giorno <strong>${formatDate(d2)}</strong>, presso <strong>${l2}</strong>.</li>
+            </ul>
+            
+            <p>L'assemblea Ë convocata per discutere e deliberare sul seguente:</p>
+            
+            <h3>ORDINE DEL GIORNO</h3>
+            <ol>
+                ${odgHtml}
+            </ol>
+            
+            <p>Data l'importanza degli argomenti da trattare, si raccomanda la massima partecipazione. Nel caso in cui Lei fosse impossibilitato/a a intervenire personalmente, La invitiamo a farsi rappresentare da persona di Sua fiducia compilando la delega sottostante.</p>
+            
+            <div class="firma">
+                L'Amministratore<br>
+                ___________________________
+            </div>
+            
+            <div class="delega">
+                <h2>DELEGA PER ASSEMBLEA CondominiALE</h2>
+                <p>Il/La sottoscritto/a <strong>${u.nome}</strong>, proprietario/a dell'unit‡ <strong>${u.unita || ''}</strong>,</p>
+                <p><strong>DELEGA</strong></p>
+                <p>Il/La Sig./Sig.ra ________________________________________________________________________, a rappresentarlo/a nell'Assemblea Condominiale convocata per il giorno <strong>${formatDate(d2)}</strong> in seconda convocazione, conferendogli/le il pi&ugrave; ampio potere di discussione e votazione su tutti gli argomenti posti all'ordine del giorno.</p>
+                <br>
+                <p>Luogo e Data: ___________________________</p>
+                <p>Firma del Delegante: ___________________________</p>
+            </div>
+            
+            <script>
+                window.onload = function() { window.print(); }
+            </script>
+        </body>
+        </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    closeConvocazioneModal();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+async function inviaConvocazioneEmail() {
+    const userId = document.getElementById('convocazione-user').value;
+    const data1 = document.getElementById('convocazione-data1').value;
+    const data2 = document.getElementById('convocazione-data2').value;
+    const luogo1 = document.getElementById('convocazione-luogo1').value;
+    const luogo2 = document.getElementById('convocazione-luogo2').value;
+    const odg = document.getElementById('convocazione-odg').value;
+    
+    if (!userId || !data1 || !data2 || !odg) {
+        alert('Compila tutti i campi obbligatori (Destinatario, Date e ODG).');
+        return;
+    }
+    
+    const u = state.users.find(x => x.id == userId);
+    if (!u) return;
+
+    if (!u.email) {
+        alert('Questo condomino non ha un indirizzo email configurato nel sistema.');
+        return;
+    }
+    
+    const formatDate = (ds) => {
+        if (!ds) return '';
+        const d = new Date(ds);
+        return d.toLocaleDateString('it-IT') + ' alle ore ' + d.toLocaleTimeString('it-IT', {hour: '2-digit', minute:'2-digit'});
+    };
+    
+    const odgHtml = odg.split('\n').map(r => '<li>' + r + '</li>').join('');
+    
+    const activeCondoName = state.currentUser.condomini ? state.currentUser.condomini.find(c => c.id == state.activeCondominioId)?.nome : 'Condominio';
+    
+    const html = `
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; padding: 20px; }
+                .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+                .destinatario { margin-bottom: 40px; text-align: right; }
+                .oggetto { font-weight: bold; margin-bottom: 30px; text-decoration: underline; }
+                .content { margin-bottom: 40px; }
+                .odg { margin-left: 20px; }
+                .footer { margin-top: 50px; text-align: right; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>AMMINISTRAZIONE CONDOMINIO</h2>
+                <h3>${activeCondoName}</h3>
+            </div>
+            
+            <div class="destinatario">
+                <strong>DESTINATARIO:</strong><br>
+                Gent.le Sig./Sig.ra ${u.nome}<br>
+                Unit‡‡: ${u.unita || ''}<br>
+            </div>
+            
+            <div class="oggetto">
+                OGGETTO: Convocazione Assemblea Condominiale
+            </div>
+            
+            <div class="content">
+                <p>La S.V. Ë invitata a partecipare all'Assemblea del Condominio "${activeCondoName}", che si terr‡:</p>
+                
+                <p>
+                    <strong>In prima convocazione:</strong><br>
+                    Il ${formatDate(data1)}<br>
+                    Luogo: ${luogo1}
+                </p>
+                
+                <p>
+                    <strong>In seconda convocazione:</strong><br>
+                    Il ${formatDate(data2)}<br>
+                    Luogo: ${luogo2}
+                </p>
+                
+                <p>Per discutere e deliberare sul seguente:</p>
+                
+                <p><strong>ORDINE DEL GIORNO</strong></p>
+                <ol class="odg">
+                    ${odgHtml}
+                </ol>
+            </div>
+            
+            <div class="footer">
+                L'Amministratore<br>
+                <em>_______________________</em>
+            </div>
+        </body>
+        </html>
+    `;
+
+    try {
+        showToast('Invio email in corso...', 'info');
+        const res = await fetch('/api/assemblies/send-convocation', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ userId: u.id, email: u.email, nome: u.nome, htmlContent: html, activeCondoName })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            showToast('Email inviata con successo!', 'success');
+            if (data.previewUrl) {
+                console.log("Email Preview URL:", data.previewUrl);
+                alert("Email di test generata! Clicca OK per aprire l'anteprima in una nuova scheda.");
+                window.open(data.previewUrl, '_blank');
+            }
+            closeConvocazioneModal();
+        } else {
+            showToast('Errore invio email: ' + data.message, 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Errore di connessione durante l\'invio dell\'email.', 'error');
+    }
+}
+
+
+
+async function loadConvocationsLog() {
+    if (state.currentUser.role !== 'admin') return;
+    try {
+        const res = await fetch('/api/assemblies/convocations-log', { headers: getAuthHeaders() });
+        const data = await res.json();
+        
+        const container = document.getElementById('assemblies-log-container');
+        if (!container) return;
+        
+        if (data.success && data.data.length > 0) {
+            container.innerHTML = data.data.map(log => `
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-slate-900">${log.destinatario}</div>
+                        <div class="text-xs text-slate-500">${log.email}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs font-bold text-slate-700">${formatDate(log.data_invio)}</div>
+                        ${log.preview_url ? `<a href="${log.preview_url}" target="_blank" class="text-[10px] text-blue-600 hover:underline">Vedi Email Inviata</a>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = `<div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Nessuna convocazione inviata finora.</div>`;
+        }
+    } catch (e) {
+        console.error("Errore caricamento log", e);
+    }
+}
+
+
+async function sendReceipt(quoteId) {
+    if (!confirm('Vuoi generare e inviare via email la ricevuta di pagamento in formato PDF al condomino?')) return;
+    try {
+        showToast('Generazione ricevuta in corso...', 'info');
+        const activeCondoName = state.currentUser.condomini ? state.currentUser.condomini.find(c => c.id == state.activeCondominioId)?.nome : 'Condominio';
+        const res = await fetch(`/api/quotes/${quoteId}/send-receipt`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ activeCondoName })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Ricevuta inviata con successo!', 'success');
+        } else {
+            showToast('Errore: ' + data.message, 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+
+async function sendReminder(quoteId) {
+    if (!confirm('Vuoi generare e inviare via email un formale sollecito di pagamento in formato PDF al condomino?')) return;
+    try {
+        showToast('Generazione sollecito in corso...', 'info');
+        const activeCondoName = state.currentUser.condomini ? state.currentUser.condomini.find(c => c.id == state.activeCondominioId)?.nome : 'Condominio';
+        const res = await fetch(`/api/quotes/${quoteId}/send-reminder`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ activeCondoName })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Sollecito inviato con successo!', 'success');
+        } else {
+            showToast('Errore: ' + data.message, 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+
+
+async function populateCommUsersSelect() {
+    const select = document.getElementById('comm-user');
+    if (!select) return;
+    
+    // Reset but keep first option
+    const firstOpt = select.options[0];
+    select.innerHTML = '';
+    select.appendChild(firstOpt);
+    
+    state.users.forEach(u => {
+        if (u.email) {
+            select.innerHTML += `<option value="${u.id}">${u.nome} (${u.unita || 'Nessuna Unit‡'})</option>`;
+        }
+    });
+}
+
+// Ensure this is called when loading users
+const loadUsersListTarget = "populateQuoteUsersSelect();";
+
+
+async function sendCommunication() {
+    const userId = document.getElementById('comm-user').value;
+    const subject = document.getElementById('comm-subject').value;
+    const message = document.getElementById('comm-message').value;
+    
+    if (!subject.trim() || !message.trim()) {
+        alert('Compila sia l\'oggetto che il testo della comunicazione.');
+        return;
+    }
+    
+    if (!confirm('Vuoi generare e inviare questa comunicazione in formato PDF ai destinatari selezionati?')) return;
+    
+    try {
+        showToast('Generazione PDF e invio in corso...', 'info');
+        const activeCondoName = state.currentUser.condomini ? state.currentUser.condomini.find(c => c.id == state.activeCondominioId)?.nome : 'Condominio';
+        
+        const res = await fetch('/api/communications/send', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ userId, subject, message, activeCondoName })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            showToast('Comunicazione inviata con successo!', 'success');
+            document.getElementById('comm-subject').value = '';
+            document.getElementById('comm-message').value = '';
+        } else {
+            showToast('Errore: ' + data.message, 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+
+
+// Gestione Privacy Form
+document.addEventListener('DOMContentLoaded', () => {
+    // Checkbox abilitazione pulsante
+    setTimeout(() => {
+        const checkbox = document.getElementById('privacy-checkbox');
+        const btn = document.getElementById('btn-accept-privacy');
+        if (checkbox && btn) {
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    btn.classList.remove('bg-slate-300', 'text-slate-500', 'cursor-not-allowed');
+                    btn.classList.add('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'shadow-lg');
+                    btn.disabled = false;
+                } else {
+                    btn.classList.add('bg-slate-300', 'text-slate-500', 'cursor-not-allowed');
+                    btn.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'shadow-lg');
+                    btn.disabled = true;
+                }
+            });
+        }
+    }, 1000);
+});
+
+function checkPrivacyStatus() {
+    if (state.currentUser.role !== 'admin' && state.currentUser.privacy_accepted !== 1) {
+        document.getElementById('modal-privacy').classList.remove('hidden');
+    }
+}
+
+async function acceptPrivacy() {
+    try {
+        const res = await fetch('/api/users/accept-privacy', {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (data.success) {
+            state.currentUser.privacy_accepted = 1;
+            document.getElementById('modal-privacy').classList.add('hidden');
+            showToast('Consenso Privacy registrato con successo.', 'success');
+        } else {
+            showToast('Errore durante la registrazione del consenso.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione', 'error');
+    }
+}
+ 
+ 
