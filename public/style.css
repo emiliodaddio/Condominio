@@ -1,52 +1,182 @@
 /* ==========================================================================
-   GESTIONE CONDOMINIALE - Stili Personalizzati Aggiuntivi
+   CONDOTRANSPARENT - Design System Moderno & UI/UX Pulita
    ========================================================================== */
 
-/* Font primario pulito e moderno */
+/* Font primario pulito e moderno (Plus Jakarta Sans) */
 body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #f8fafc;
-    color: #1e293b;
+    color: #0f172a;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-/* Transizioni fluide per schede e modali */
-.tab-pane {
-    transition: opacity 0.25s ease-in-out, transform 0.25s ease-in-out;
-}
-
-.tab-pane.hidden {
-    display: none !important;
-}
-
-/* Scrollbar personalizzata elegante */
+/* Scrollbar personalizzata ultra-delicata */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
 }
-
 ::-webkit-scrollbar-track {
-    background: #f1f5f9;
-
-    
-
-
-    
+    background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
     background: #cbd5e1;
     border-radius: 9999px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
 }
 
-/* Effetto Blur e Animazione Modale */
+/* Transizioni fluide per schede (SPA) */
+.tab-pane {
+    animation: fadeInTab 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tab-pane.hidden {
+    display: none !important;
+}
+
+@keyframes fadeInTab {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ==========================================================================
+   NAVIGAZIONE A SCHEDE (TAB-BTN PILL MODERN STYLE)
+   ========================================================================== */
+.tab-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #64748b;
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    white-space: nowrap;
+}
+
+.tab-btn:hover {
+    color: #1e293b;
+    background-color: #f1f5f9;
+}
+
+/* Quando la classe border-blue-600 è applicata da switchTab() */
+.tab-btn.border-blue-600 {
+    color: #2563eb !important;
+    background-color: #eff6ff !important;
+    border-color: #dbeafe !important;
+    border-bottom: 2px solid #2563eb !important;
+    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.06);
+}
+
+/* Distinzione delicata per le tab speciali di amministrazione */
+.tab-btn.admin-tab {
+    color: #475569;
+}
+.tab-btn.admin-tab:hover {
+    color: #4338ca;
+    background-color: #eef2ff;
+}
+.tab-btn.admin-tab.border-blue-600 {
+    color: #4f46e5 !important;
+    background-color: #eef2ff !important;
+    border-color: #c7d2fe !important;
+    border-bottom: 2px solid #4f46e5 !important;
+}
+
+/* ==========================================================================
+   CARD & CONTENITORI
+   ========================================================================== */
+.card-friendly {
+    background-color: #ffffff;
+    border-radius: 1.25rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-friendly:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+    transform: translateY(-2px);
+}
+
+/* KPI Stat Cards */
+.kpi-stat-card {
+    background-color: #ffffff;
+    border-radius: 1.25rem;
+    border: 1px solid #e2e8f0;
+    padding: 1.25rem;
+    transition: all 0.2s ease;
+}
+.kpi-stat-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+/* ==========================================================================
+   TABELLE MODERNE
+   ========================================================================== */
+.table-container {
+    background-color: #ffffff;
+    border-radius: 1.25rem;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.table-modern {
+    width: 100%;
+    text-align: left;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-modern thead th {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.table-modern tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.table-modern tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+.table-modern tbody td {
+    padding: 0.875rem 1rem;
+    font-size: 0.8125rem;
+    color: #1e293b;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.table-modern tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ==========================================================================
+   MODALI & OVERLAY
+   ========================================================================== */
 .modal-backdrop {
-    background-color: rgba(15, 23, 42, 0.65);
-    backdrop-filter: blur(4px);
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(6px);
     transition: opacity 0.2s ease-out;
 }
 
@@ -57,7 +187,7 @@ body {
 @keyframes modalSlideIn {
     from {
         opacity: 0;
-        transform: translateY(16px) scale(0.98);
+        transform: translateY(12px) scale(0.97);
     }
     to {
         opacity: 1;
@@ -65,21 +195,9 @@ body {
     }
 }
 
-/* Linea temporale per la cronologia aggiornamenti ticket */
-.timeline-item::before {
-    content: '';
-    position: absolute;
-    left: -21px;
-    top: 6px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background-color: #3b82f6;
-    border: 2px solid #ffffff;
-    box-shadow: 0 0 0 2px #bfdbfe;
-}
-
-/* Stili badge personalizzati */
+/* ==========================================================================
+   BADGE & ELEMENTI SPECIALI
+   ========================================================================== */
 .badge-pulse {
     position: relative;
 }
@@ -102,7 +220,40 @@ body {
     }
 }
 
-/* Toast di notifica */
+/* Badge di Ruolo moderni */
+.role-badge-admin {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+.role-badge-condomino {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background-color: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+
+/* ==========================================================================
+   TOAST DI NOTIFICA
+   ========================================================================== */
 #toast-container {
     position: fixed;
     bottom: 1.5rem;
@@ -118,15 +269,55 @@ body {
     pointer-events: auto;
     animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     transition: all 0.3s ease;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    border-radius: 1rem;
 }
 
 @keyframes toastIn {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(20px) scale(0.95);
     }
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
     }
+}
+
+/* ==========================================================================
+   ANIMAZIONE LAMPEGGIO SEGNALAZIONI GUASTI ATTIVI
+   ========================================================================== */
+@keyframes ticketCardPulseGlow {
+    0%, 100% {
+        border-color: #fecdd3;
+        box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.4), 0 2px 8px rgba(225, 29, 72, 0.08);
+        background-color: #ffffff;
+    }
+    50% {
+        border-color: #e11d48;
+        box-shadow: 0 0 0 6px rgba(225, 29, 72, 0.22), 0 8px 24px rgba(225, 29, 72, 0.2);
+        background-color: #fff1f2;
+    }
+}
+
+@keyframes ticketIconBlink {
+    0%, 100% {
+        transform: scale(1);
+        background-color: #ffe4e6;
+        color: #e11d48;
+    }
+    50% {
+        transform: scale(1.08);
+        background-color: #e11d48;
+        color: #ffffff;
+        box-shadow: 0 0 14px rgba(225, 29, 72, 0.55);
+    }
+}
+
+.ticket-blinking-alert {
+    animation: ticketCardPulseGlow 1.4s ease-in-out infinite !important;
+}
+
+.ticket-icon-blink {
+    animation: ticketIconBlink 1.4s ease-in-out infinite !important;
 }

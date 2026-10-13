@@ -1,5 +1,4 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
@@ -11,9 +10,22 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
 
+let transporter = null;
+nodemailer.createTestAccount().then(testAccount => {
+    transporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+    });
+    console.log('📧 Servizio email di test (Ethereal) inizializzato.');
+}).catch(err => {
+    console.warn('Avviso inizializzazione email di test:', err.message);
+});
+
 const app = express();
 
-app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, async (req, res) => {
+app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, checkCondoLicenseWrite, async (req, res) => {
     try {
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'CondoTransparent';
@@ -134,13 +146,14 @@ const upload = multer({
     }
 });
 
-// Database
-const db = new sqlite3.Database(path.join(__dirname, 'condominio.db'), (err) => {
-    if (err) console.error('Errore connessione DB:', err.message);
-    else console.log('✅ Connesso al database SQLite Multi-Tenant');
-});
+// Database (Supporta sia MySQL che SQLite tramite ./db.js)
+const db = require('./db');
 
 function initDatabase() {
+    if (db.type === 'mysql') {
+        console.log('✅ Inizializzazione schema MySQL verificata.');
+        return;
+    }
     db.serialize(() => {
         db.run('PRAGMA foreign_keys = ON');
 
@@ -315,6 +328,18 @@ db.run(`CREATE TABLE IF NOT EXISTS assemblies (
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )`);
 
+        // TICKET UPDATES
+        db.run(`CREATE TABLE IF NOT EXISTS ticket_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL,
+            user_id INTEGER,
+            author_name TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )`);
+
         // BANK ACCOUNTS
         db.run(`CREATE TABLE IF NOT EXISTS bank_accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -368,6 +393,52 @@ db.run(`CREATE TABLE IF NOT EXISTS assemblies (
             FOREIGN KEY(condominio_id) REFERENCES condominios(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )`);
+
+        // CONDO FEATURES (Gestione Moduli & Funzioni per Condominio da SuperUser)
+        db.run(`CREATE TABLE IF NOT EXISTS condo_features (
+            condominio_id INTEGER PRIMARY KEY,
+            module_contabilita BOOLEAN DEFAULT 1,
+            module_segnalazioni BOOLEAN DEFAULT 1,
+            module_assemblee BOOLEAN DEFAULT 1,
+            module_comunicazioni BOOLEAN DEFAULT 1,
+            module_banca BOOLEAN DEFAULT 1,
+            module_anagrafica BOOLEAN DEFAULT 1,
+            FOREIGN KEY(condominio_id) REFERENCES condominios(id) ON DELETE CASCADE
+        )`, () => {
+            db.run(`INSERT OR IGNORE INTO condo_features (condominio_id) SELECT id FROM condominios`);
+        });
+
+        // CONDO LICENSES (Gestione Licenze e Abbonamenti SaaS per Condominio)
+        db.run(`CREATE TABLE IF NOT EXISTS condo_licenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            condominio_id INTEGER NOT NULL UNIQUE,
+            plan_type TEXT DEFAULT 'completo',
+            license_status TEXT DEFAULT 'active',
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            payment_status TEXT DEFAULT 'paid',
+            payment_reference TEXT,
+            payment_amount REAL DEFAULT 240.00,
+            payment_date TEXT,
+            max_units INTEGER DEFAULT 50,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(condominio_id) REFERENCES condominios(id) ON DELETE CASCADE
+        )`, () => {
+            // Seed default licenses for existing condomini if not present
+            db.all('SELECT id FROM condominios', [], (err, conds) => {
+                if (!err && conds && conds.length > 0) {
+                    conds.forEach(c => {
+                        db.run(`
+                            INSERT OR IGNORE INTO condo_licenses 
+                            (condominio_id, plan_type, license_status, start_date, end_date, payment_status, payment_reference, payment_amount, payment_date, max_units, notes)
+                            VALUES (?, 'completo', 'active', '2026-01-01', '2026-12-31', 'paid', 'Bonifico CRO ' || (840000 + ? * 100), 240.00, '2026-01-02', 50, 'Canone Annuale SaaS 2026')
+                        `, [c.id, c.id]);
+                    });
+                }
+            });
+        });
 
         seedInitialData();
     });
@@ -446,6 +517,80 @@ function isAdmin(req, res, next) {
     }
 }
 
+function requireSuperAdmin(req, res, next) {
+    if (req.user && req.user.is_superadmin) {
+        return next();
+    }
+    return res.status(403).json({ success: false, message: 'Accesso negato: operazione riservata al SuperUser (Proprietario).' });
+}
+
+function computeLicenseInfo(license) {
+    if (!license) {
+        return {
+            plan_type: 'completo',
+            license_status: 'active',
+            start_date: new Date().toISOString().slice(0, 10),
+            end_date: new Date(Date.now() + 365*24*3600*1000).toISOString().slice(0, 10),
+            payment_status: 'paid',
+            payment_reference: 'Licenza di default',
+            payment_amount: 0,
+            payment_date: new Date().toISOString().slice(0, 10),
+            max_units: 50,
+            notes: '',
+            days_remaining: 365,
+            is_expired: false,
+            is_expiring: false,
+            is_suspended: false,
+            is_read_only: false,
+            computed_status: 'active'
+        };
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const today = new Date(todayStr);
+    const endDate = new Date(license.end_date || todayStr);
+    const diffTime = endDate.getTime() - today.getTime();
+    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    const is_suspended = license.license_status === 'suspended';
+    const is_expired = is_suspended || daysRemaining < 0;
+    const is_expiring = !is_expired && daysRemaining <= 15;
+    const is_read_only = is_expired;
+
+    let computed_status = 'active';
+    if (is_suspended) computed_status = 'suspended';
+    else if (is_expired) computed_status = 'expired';
+    else if (is_expiring) computed_status = 'expiring';
+
+    return {
+        ...license,
+        days_remaining: daysRemaining,
+        is_expired,
+        is_expiring,
+        is_suspended,
+        is_read_only,
+        computed_status
+    };
+}
+
+function checkCondoLicenseWrite(req, res, next) {
+    const cId = req.condominio_id || req.headers['x-condominio-id'] || req.body?.condominio_id || req.params?.condominio_id;
+    if (!cId) return next();
+
+    db.get('SELECT * FROM condo_licenses WHERE condominio_id = ?', [cId], (err, lic) => {
+        if (err || !lic) return next();
+        const info = computeLicenseInfo(lic);
+        if (info.is_read_only) {
+            return res.status(403).json({
+                success: false,
+                is_license_expired: true,
+                message: `Operazione bloccata: la licenza per questo condominio è scaduta (il ${lic.end_date}) o sospesa. Il fabbricato è attivo in SOLA LETTURA. Per inserire o modificare dati ed esportare i prospetti in Excel è necessario rinnovare o riattivare la licenza.`
+            });
+        }
+        next();
+    });
+}
+
 function logAudit(userId, condominioId, azione, tabella, recordId, valoriPrecedenti, ip) {
     db.run(
         `INSERT INTO audit_log (user_id, condominio_id, azione, tabella, record_id, valori_precedenti, ip) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -473,10 +618,8 @@ app.post('/api/auth/login', (req, res) => {
 
         
         if (!user.two_factor_enabled) {
-            const tokenPayload = { id: user.id, nome: user.nome, email: user.email, is_superadmin: user.is_superadmin, privacy_accepted: user.privacy_accepted };
-            const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '8h' });
             logAudit(user.id, null, 'Login Riuscito', 'users', user.id, null, req.ip);
-            return res.json({ success: true, token, user: { id: user.id, nome: user.nome, email: user.email, is_superadmin: user.is_superadmin, privacy_accepted: user.privacy_accepted } });
+            return issueToken(user, res);
         }
 
         // Genera OTP di 6 cifre
@@ -538,12 +681,88 @@ app.post('/api/auth/login/verify-otp', (req, res) => {
 
 
 // ==========================================
+// REGISTRAZIONE UTENTI (MySQL & SQLite)
+// ==========================================
+app.get('/api/auth/condominios', (req, res) => {
+    db.all('SELECT id, nome, indirizzo, cf, scala FROM condominios ORDER BY nome ASC', [], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: 'Errore recupero lista condomini' });
+        res.json({ success: true, data: rows || [] });
+    });
+});
+
+app.post('/api/auth/register', (req, res) => {
+    const { nome, email, password, telefono, condominio_id, unita } = req.body;
+
+    if (!nome || !email || !password) {
+        return res.status(400).json({ success: false, message: 'Nome, email e password sono obbligatori.' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+        return res.status(400).json({ success: false, message: 'Formato email non valido.' });
+    }
+
+    const pwdRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+    if (!pwdRegex.test(password)) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'La password deve contenere almeno 8 caratteri, una maiuscola, un numero e un carattere speciale.' 
+        });
+    }
+
+    const hash = bcrypt.hashSync(password, 10);
+
+    db.run(
+        'INSERT INTO users (nome, email, password_hash, telefono) VALUES (?, ?, ?, ?)',
+        [nome.trim(), trimmedEmail, hash, telefono ? telefono.trim() : null],
+        function (err) {
+            if (err) {
+                const isDup = err.code === 'ER_DUP_ENTRY' ||
+                    (err.message && (err.message.includes('UNIQUE constraint failed') || err.message.includes('Duplicate entry')));
+                if (isDup) {
+                    return res.status(409).json({ success: false, message: 'Un account con questa email è già registrato.' });
+                }
+                return res.status(500).json({ success: false, message: 'Errore durante la registrazione sul database.' });
+            }
+
+            const newUserId = this.lastID;
+
+            // Se è stato selezionato un condominio, crea subito il collegamento
+            if (condominio_id) {
+                db.run(
+                    'INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)',
+                    [newUserId, parseInt(condominio_id, 10), 'condomino', unita ? unita.trim() : 'Da assegnare'],
+                    (errCondo) => {
+                        if (errCondo) console.error('Errore associazione condominio in registrazione:', errCondo);
+                    }
+                );
+            }
+
+            logAudit(newUserId, condominio_id || null, 'Registrazione Portale', 'users', newUserId, null, req.ip);
+            db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', [newUserId, 'Registrazione completata sul portale']);
+
+            return res.json({ 
+                success: true, 
+                message: 'Registrazione completata con successo! Ora puoi accedere.',
+                userId: newUserId 
+            });
+        }
+    );
+});
+
+// ==========================================
 // RESTORED: /api/auth/me
 // ==========================================
 app.get('/api/auth/me', authenticateToken, (req, res) => {
     db.get('SELECT id, nome, email, is_superadmin, two_factor_enabled, privacy_accepted FROM users WHERE id = ?', [req.user.id], (err, user) => {
         if (!user) return res.status(404).json({ success: false });
-        db.all('SELECT c.id, c.nome, c.indirizzo, c.cf, c.scala, uc.role, uc.unita FROM user_condominios uc JOIN condominios c ON uc.condominio_id = c.id WHERE uc.user_id = ?', [user.id], (err, condomini) => {
+        const fetchCondosQuery = user.is_superadmin
+            ? "SELECT id, nome, indirizzo, cf, scala, 'admin' as role, 'Proprietario' as unita FROM condominios"
+            : 'SELECT c.id, c.nome, c.indirizzo, c.cf, c.scala, uc.role, uc.unita FROM user_condominios uc JOIN condominios c ON uc.condominio_id = c.id WHERE uc.user_id = ?';
+        const params = user.is_superadmin ? [] : [user.id];
+
+        db.all(fetchCondosQuery, params, (err, condomini) => {
             res.json({ success: true, user: { ...user, condomini: condomini || [] } });
         });
     });
@@ -583,7 +802,12 @@ app.post('/api/2fa/validate', (req, res) => {
 });
 
 function issueToken(user, res) {
-    db.all('SELECT c.id, c.nome, c.indirizzo, c.cf, c.scala, uc.role, uc.unita FROM user_condominios uc JOIN condominios c ON uc.condominio_id = c.id WHERE uc.user_id = ?', [user.id], (err, condomini) => {
+    const fetchCondosQuery = user.is_superadmin
+        ? "SELECT id, nome, indirizzo, cf, scala, 'admin' as role, 'Proprietario' as unita FROM condominios"
+        : 'SELECT c.id, c.nome, c.indirizzo, c.cf, c.scala, uc.role, uc.unita FROM user_condominios uc JOIN condominios c ON uc.condominio_id = c.id WHERE uc.user_id = ?';
+    const params = user.is_superadmin ? [] : [user.id];
+
+    db.all(fetchCondosQuery, params, (err, condomini) => {
         const tokenPayload = { id: user.id, nome: user.nome, email: user.email, is_superadmin: user.is_superadmin, privacy_accepted: user.privacy_accepted };
         const jwtToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
         res.json({ success: true, token: jwtToken, user: { ...tokenPayload, condomini: condomini || [] } });
@@ -652,7 +876,7 @@ app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, r
     });
 });
 
-app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes } = req.body;
     db.run(`INSERT INTO anagrafica_persone (condominio_id, nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -663,7 +887,7 @@ app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmi
     });
 });
 
-app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes } = req.body;
     db.run(`UPDATE anagrafica_persone 
             SET nome = ?, cognome = ?, codice_fiscale = ?, telefono = ?, cellulare = ?, email = ?, ruolo_default = ?, notes = ? 
@@ -675,7 +899,7 @@ app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isA
     });
 });
 
-app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     db.run('DELETE FROM anagrafica_persone WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], function(err) {
         if (err) return res.status(500).json({ success: false, message: err.message });
         res.json({ success: true });
@@ -692,19 +916,34 @@ app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
     });
 });
 
-app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore } = req.body;
-    db.run(`INSERT INTO unita_immobiliari (condominio_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, conduttore_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.condominio_id, user_id || null, tipo || 'Appartamento', identificativo, scala, piano, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null], 
-        function(err) {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            logAudit(req.user.id, req.condominio_id, 'Creata Unità Immobiliare', 'unita_immobiliari', this.lastID, null, req.ip);
-            res.json({ success: true });
+    
+    // Controllo limite massimo unità consentite dalla licenza
+    db.get('SELECT max_units FROM condo_licenses WHERE condominio_id = ?', [req.condominio_id], (errLic, licRow) => {
+        const maxUnits = (licRow && licRow.max_units) ? licRow.max_units : 50;
+        db.get('SELECT COUNT(*) as total FROM unita_immobiliari WHERE condominio_id = ?', [req.condominio_id], (errCnt, cntRow) => {
+            const currentUnits = (cntRow && cntRow.total) ? cntRow.total : 0;
+            if (!req.user.is_superadmin && currentUnits >= maxUnits) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Limite massimo di ${maxUnits} unità raggiunto per la licenza di questo condominio. Contatta il fornitore/proprietario per l'upgrade del piano.`
+                });
+            }
+
+            db.run(`INSERT INTO unita_immobiliari (condominio_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, conduttore_id) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [req.condominio_id, user_id || null, tipo || 'Appartamento', identificativo, scala, piano, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null], 
+                function(err) {
+                    if (err) return res.status(500).json({ success: false, message: err.message });
+                    logAudit(req.user.id, req.condominio_id, 'Creata Unità Immobiliare', 'unita_immobiliari', this.lastID, null, req.ip);
+                    res.json({ success: true });
+            });
+        });
     });
 });
 
-app.put('/api/unita/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/unita/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore } = req.body;
     db.run(`UPDATE unita_immobiliari 
             SET user_id = ?, tipo = ?, identificativo = ?, scala = ?, piano = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, proprietario_id = ?, conduttore_id = ?
@@ -767,7 +1006,7 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
     });
 });
 
-app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { persona_id, unita_id, type, title, amount, due_date } = req.body;
     const status = 'In sospeso';
     db.run(
@@ -780,7 +1019,7 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, (req, res
     );
 });
 
-app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     const { amount, due_date, status } = req.body;
     let payment_date = null;
@@ -797,7 +1036,7 @@ app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, (req, 
     );
 });
 
-app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     const paymentDate = new Date().toISOString().split('T')[0];
     db.run("UPDATE quotes SET status = 'Pagato', payment_date = ? WHERE id = ? AND condominio_id = ?",
@@ -809,7 +1048,7 @@ app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, 
     );
 });
 
-app.delete('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.delete('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     db.run("DELETE FROM quotes WHERE id = ? AND condominio_id = ?", [id, req.condominio_id], function(err) {
         if (err) return res.status(500).json({ success: false, message: err.message });
@@ -825,7 +1064,7 @@ app.get('/api/bank-accounts', authenticateToken, requireCondominio, isAdmin, (re
     });
 });
 
-app.post('/api/bank-transactions', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/bank-transactions', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { account_id, data, importo, causale, tipo } = req.body;
     db.run(`INSERT INTO bank_transactions (account_id, data, importo, causale, tipo) VALUES (?, ?, ?, ?, ?)`,
     [account_id, data, importo, causale, tipo], function(err) {
@@ -841,7 +1080,7 @@ app.get('/api/journal-entries', authenticateToken, requireCondominio, isAdmin, (
     });
 });
 
-app.post('/api/journal-entries', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/journal-entries', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { data, numero, tipo, descrizione, dare, avere, conto } = req.body;
     db.run(`INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [req.condominio_id, data, numero, tipo, descrizione, dare, avere, conto], function(err) {
@@ -851,7 +1090,7 @@ app.post('/api/journal-entries', authenticateToken, requireCondominio, isAdmin, 
 });
 
 // Correzione Errori (Override / Aggiornamento generico con Audit Log)
-app.put('/api/override/:table/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/override/:table/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const table = req.params.table;
     const allowedTables = ['journal_entries', 'bank_transactions', 'quotes', 'supplier_payments'];
     if (!allowedTables.includes(table)) return res.status(400).json({ success: false, message: 'Tabella non supportata' });
@@ -899,64 +1138,42 @@ app.get('/api/users', authenticateToken, requireCondominio, isAdmin, (req, res) 
     });
 });
 
-app.post('/api/users', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/users', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { nome, email, password, unita, role, telefono, dati_catastali } = req.body;
+    if (!nome || !email || !password) {
+        return res.status(400).json({ success: false, message: 'Nome, email e password sono obbligatori.' });
+    }
     const hash = bcrypt.hashSync(password, 10);
+    const cleanEmail = email.trim().toLowerCase();
     
     // Inserisce utente e mappa il condominio
-    db.run('INSERT INTO users (nome, email, password_hash, telefono) VALUES (?, ?, ?, ?)', [nome, email, hash, telefono || null], function(err) {
+    db.run('INSERT INTO users (nome, email, password_hash, telefono) VALUES (?, ?, ?, ?)', [nome.trim(), cleanEmail, hash, telefono || null], function(err) {
         if (err) {
+            const isDup = err.code === 'ER_DUP_ENTRY' || 
+                (err.message && (err.message.includes('UNIQUE constraint failed') || err.message.includes('Duplicate entry')));
             // Se l'email esiste già, prova solo ad assegnarlo al condominio
-            if (err.message.includes('UNIQUE constraint failed')) {
-                db.get('SELECT id FROM users WHERE email = ?', [email], (err, existingUser) => {
+            if (isDup) {
+                db.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail], (err2, existingUser) => {
                     if (existingUser) {
                         db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita, dati_catastali) VALUES (?, ?, ?, ?, ?)', 
-                            [existingUser.id, req.condominio_id, role || 'condomino', unita || '', dati_catastali || null], (err2) => {
-                            if (err2) return res.status(500).json({ success: false, message: 'Utente già nel condominio' });
+                            [existingUser.id, req.condominio_id, role || 'condomino', unita || '', dati_catastali || null], (err3) => {
+                            if (err3) return res.status(500).json({ success: false, message: 'Utente già presente in questo condominio' });
+                            logAudit(req.user.id, req.condominio_id, 'Assegnazione Utente Esistente', 'user_condominios', existingUser.id, null, req.ip);
                             return res.json({ success: true, message: 'Utente esistente aggiunto al condominio' });
                         });
+                    } else {
+                        return res.status(500).json({ success: false, message: 'Errore identificazione utente esistente' });
                     }
                 });
                 return;
             }
-            return res.status(500).json({ success: false, message: 'Errore inserimento utente' });
+            return res.status(500).json({ success: false, message: 'Errore inserimento utente nel database' });
         }
         
         const newUserId = this.lastID;
         db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita, dati_catastali) VALUES (?, ?, ?, ?, ?)', 
-            [newUserId, req.condominio_id, role || 'condomino', unita || '', dati_catastali || null], function(err) {
-            logAudit(req.user.id, req.condominio_id, 'Creazione Utente', 'users', newUserId, null, req.ip);
-            res.json({ success: true, message: 'Utente creato con successo' });
-        });
-    });
-});
-
-app.post('/api/users', authenticateToken, requireCondominio, isAdmin, (req, res) => {
-    const { nome, email, password, unita, role } = req.body;
-    const hash = bcrypt.hashSync(password, 10);
-    
-    // Inserisce utente e mappa il condominio
-    db.run('INSERT INTO users (nome, email, password_hash) VALUES (?, ?, ?)', [nome, email, hash], function(err) {
-        if (err) {
-            // Se l'email esiste già, prova solo ad assegnarlo al condominio
-            if (err.message.includes('UNIQUE constraint failed')) {
-                db.get('SELECT id FROM users WHERE email = ?', [email], (err, existingUser) => {
-                    if (existingUser) {
-                        db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)', 
-                            [existingUser.id, req.condominio_id, role || 'condomino', unita || ''], (err2) => {
-                            if (err2) return res.status(500).json({ success: false, message: 'Utente già nel condominio' });
-                            return res.json({ success: true, message: 'Utente esistente aggiunto al condominio' });
-                        });
-                    }
-                });
-                return;
-            }
-            return res.status(500).json({ success: false, message: 'Errore inserimento utente' });
-        }
-        
-        const newUserId = this.lastID;
-        db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)', 
-            [newUserId, req.condominio_id, role || 'condomino', unita || ''], function(err) {
+            [newUserId, req.condominio_id, role || 'condomino', unita || '', dati_catastali || null], function(err2) {
+            if (err2) return res.status(500).json({ success: false, message: 'Errore associazione condominio' });
             logAudit(req.user.id, req.condominio_id, 'Creazione Utente', 'users', newUserId, null, req.ip);
             res.json({ success: true, message: 'Utente creato con successo' });
         });
@@ -972,7 +1189,7 @@ app.post('/api/users/accept-privacy', authenticateToken, (req, res) => {
     });
 });
 
-app.put('/api/users/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/users/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { unita, role, telefono, dati_catastali, nome, email, password } = req.body;
     
     if (password && password.trim() !== '') {
@@ -1012,7 +1229,7 @@ app.put('/api/users/:id', authenticateToken, requireCondominio, isAdmin, (req, r
     });
 });
 
-app.delete('/api/users/:id', authenticateToken, isAdmin, (req, res) => {
+app.delete('/api/users/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     db.run('DELETE FROM users WHERE id = ?', [req.params.id], function(err) {
         if (err) return res.status(500).json({ success: false });
         res.json({ success: true });
@@ -1031,7 +1248,7 @@ app.get('/api/suppliers', authenticateToken, requireCondominio, (req, res) => {
     });
 });
 
-app.post('/api/suppliers', authenticateToken, requireCondominio, (req, res) => {
+app.post('/api/suppliers', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
     if (req.role_in_condominio !== 'admin') return res.status(403).json({ success: false });
     const { ragione_sociale, piva, email, telefono, iban } = req.body;
     db.run('INSERT INTO suppliers (condominio_id, ragione_sociale, piva, email, telefono, iban) VALUES (?, ?, ?, ?, ?, ?)',
@@ -1040,7 +1257,7 @@ app.post('/api/suppliers', authenticateToken, requireCondominio, (req, res) => {
         });
 });
 
-app.put('/api/suppliers/:id', authenticateToken, requireCondominio, (req, res) => {
+app.put('/api/suppliers/:id', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
     if (req.role_in_condominio !== 'admin') return res.status(403).json({ success: false });
     const { ragione_sociale, piva, email, telefono, iban } = req.body;
     db.run('UPDATE suppliers SET ragione_sociale = ?, piva = ?, email = ?, telefono = ?, iban = ? WHERE id = ? AND condominio_id = ?',
@@ -1055,14 +1272,14 @@ app.get('/api/supplier-payments', authenticateToken, requireCondominio, (req, re
     });
 });
 
-app.post('/api/supplier-payments', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/supplier-payments', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { supplier_name, category, invoice_number, amount, payment_date, status, notes } = req.body;
     db.run('INSERT INTO supplier_payments (condominio_id, supplier_name, category, invoice_number, amount, payment_date, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [req.condominio_id, supplier_name, category, invoice_number, amount, payment_date, status, notes], function(err) {
             res.json({ success: !err });
         });
 });
-app.put('/api/supplier-payments/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/supplier-payments/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { amount, status } = req.body;
     db.run('UPDATE supplier_payments SET amount = ?, status = ? WHERE id = ? AND condominio_id = ?',
         [amount, status, req.params.id, req.condominio_id], function(err) {
@@ -1095,23 +1312,134 @@ app.get('/api/accounting-summary', authenticateToken, requireCondominio, (req, r
 });
 
 app.get('/api/tickets', authenticateToken, requireCondominio, (req, res) => {
-    let query = 'SELECT t.*, u.nome as creator_name, uc.unita as creator_unita FROM tickets t JOIN users u ON t.user_id = u.id JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = t.condominio_id WHERE t.condominio_id = ?';
+    let query = `
+        SELECT t.*, u.nome as creator_name, uc.unita as creator_unita 
+        FROM tickets t 
+        LEFT JOIN users u ON t.user_id = u.id 
+        LEFT JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = t.condominio_id 
+        WHERE t.condominio_id = ?
+    `;
     const params = [req.condominio_id];
     if (req.role_in_condominio !== 'admin') {
         query += ' AND t.user_id = ?';
         params.push(req.user.id);
     }
+    query += ' ORDER BY t.id DESC';
+
     db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: 'Database error' });
         res.json({ success: true, data: rows || [] });
     });
 });
 
-app.post('/api/tickets', authenticateToken, requireCondominio, (req, res) => {
+app.get('/api/tickets/:id', authenticateToken, requireCondominio, (req, res) => {
+    let query = `
+        SELECT t.*, u.nome as creator_name, uc.unita as creator_unita 
+        FROM tickets t 
+        LEFT JOIN users u ON t.user_id = u.id 
+        LEFT JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = t.condominio_id 
+        WHERE t.id = ? AND t.condominio_id = ?
+    `;
+    const params = [req.params.id, req.condominio_id];
+    if (req.role_in_condominio !== 'admin') {
+        query += ' AND t.user_id = ?';
+        params.push(req.user.id);
+    }
+
+    db.get(query, params, (err, ticket) => {
+        if (err) {
+            console.error('Ticket get error:', err);
+            return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        if (!ticket) {
+            return res.status(404).json({ success: false, message: 'Segnalazione non trovata' });
+        }
+
+        db.all('SELECT * FROM ticket_updates WHERE ticket_id = ? ORDER BY created_at ASC, id ASC', [req.params.id], (err2, updates) => {
+            if (err2) {
+                console.error('Ticket updates fetch error:', err2);
+                return res.status(500).json({ success: false, message: 'Database error' });
+            }
+            ticket.updates = updates || [];
+            res.json({ success: true, data: ticket });
+        });
+    });
+});
+
+app.post('/api/tickets', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
     const { category, title, description, priority } = req.body;
     db.run('INSERT INTO tickets (condominio_id, user_id, category, title, description, priority) VALUES (?, ?, ?, ?, ?, ?)',
         [req.condominio_id, req.user.id, category, title, description, priority], function(err) {
-            res.json({ success: !err });
+            if (err) return res.status(500).json({ success: false, message: 'Errore creazione ticket' });
+            res.json({ success: true, id: this.lastID });
         });
+});
+
+app.post('/api/tickets/:id/updates', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+        return res.status(400).json({ success: false, message: 'Il messaggio non può essere vuoto' });
+    }
+
+    let checkQuery = 'SELECT id, user_id FROM tickets WHERE id = ? AND condominio_id = ?';
+    const checkParams = [req.params.id, req.condominio_id];
+    if (req.role_in_condominio !== 'admin') {
+        checkQuery += ' AND user_id = ?';
+        checkParams.push(req.user.id);
+    }
+
+    db.get(checkQuery, checkParams, (err, ticket) => {
+        if (err) return res.status(500).json({ success: false, message: 'Database error' });
+        if (!ticket) return res.status(404).json({ success: false, message: 'Segnalazione non trovata' });
+
+        const authorName = req.user.nome || (req.role_in_condominio === 'admin' ? 'Studio Amministrazione' : 'Utente');
+
+        db.run(
+            'INSERT INTO ticket_updates (ticket_id, user_id, author_name, message) VALUES (?, ?, ?, ?)',
+            [req.params.id, req.user.id, authorName, message.trim()],
+            function(err2) {
+                if (err2) {
+                    console.error('Ticket update insert error:', err2);
+                    return res.status(500).json({ success: false, message: 'Errore durante la registrazione della risposta' });
+                }
+
+                db.run('UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.params.id]);
+                res.json({ success: true, message: 'Risposta registrata!' });
+            }
+        );
+    });
+});
+
+app.put('/api/tickets/:id/status', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
+    if (req.role_in_condominio !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accesso negato: operazione riservata all\'amministratore' });
+    }
+
+    const { status } = req.body;
+    const validStatuses = ['Segnalato', 'Preso in carico', 'In lavorazione', 'Risolto', 'Chiuso'];
+    if (!validStatuses.includes(status)) {
+        return res.status(400).json({ success: false, message: 'Stato non valido' });
+    }
+
+    db.get('SELECT id, status FROM tickets WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], (err, ticket) => {
+        if (err) return res.status(500).json({ success: false, message: 'Database error' });
+        if (!ticket) return res.status(404).json({ success: false, message: 'Segnalazione non trovata' });
+
+        const oldStatus = ticket.status;
+        db.run('UPDATE tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id], function(err2) {
+            if (err2) return res.status(500).json({ success: false, message: 'Errore aggiornamento stato' });
+
+            const authorName = req.user.nome || 'Amministratore';
+            const logMsg = `Stato modificato da "${oldStatus}" a "${status}"`;
+            db.run(
+                'INSERT INTO ticket_updates (ticket_id, user_id, author_name, message) VALUES (?, ?, ?, ?)',
+                [req.params.id, req.user.id, authorName, logMsg],
+                () => {}
+            );
+
+            res.json({ success: true, message: `Stato aggiornato a "${status}"` });
+        });
+    });
 });
 
 app.get('/api/assemblies', authenticateToken, requireCondominio, (req, res) => {
@@ -1122,12 +1450,57 @@ app.get('/api/assemblies', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.get('/api/condominio', authenticateToken, requireCondominio, (req, res) => {
-    db.get('SELECT * FROM condominios WHERE id = ?', [req.condominio_id], (err, row) => {
-        res.json({ success: true, data: row || {} });
+    db.get(`
+        SELECT c.*, 
+            COALESCE(cf.module_contabilita, 1) as module_contabilita,
+            COALESCE(cf.module_segnalazioni, 1) as module_segnalazioni,
+            COALESCE(cf.module_assemblee, 1) as module_assemblee,
+            COALESCE(cf.module_comunicazioni, 1) as module_comunicazioni,
+            COALESCE(cf.module_banca, 1) as module_banca,
+            COALESCE(cf.module_anagrafica, 1) as module_anagrafica,
+            cl.plan_type,
+            cl.license_status,
+            cl.start_date as license_start_date,
+            cl.end_date as license_end_date,
+            cl.payment_status as license_payment_status,
+            cl.payment_reference as license_payment_reference,
+            cl.payment_amount as license_payment_amount,
+            cl.payment_date as license_payment_date,
+            COALESCE(cl.max_units, 50) as license_max_units,
+            cl.notes as license_notes,
+            (SELECT COUNT(*) FROM unita_immobiliari WHERE condominio_id = c.id) as current_units_count
+        FROM condominios c 
+        LEFT JOIN condo_features cf ON c.id = cf.condominio_id 
+        LEFT JOIN condo_licenses cl ON c.id = cl.condominio_id
+        WHERE c.id = ?
+    `, [req.condominio_id], (err, row) => {
+        if (!row) return res.json({ success: true, data: {} });
+
+        const licenseRaw = {
+            plan_type: row.plan_type || 'completo',
+            license_status: row.license_status || 'active',
+            start_date: row.license_start_date || '2026-01-01',
+            end_date: row.license_end_date || '2026-12-31',
+            payment_status: row.license_payment_status || 'paid',
+            payment_reference: row.license_payment_reference || '',
+            payment_amount: row.license_payment_amount || 0,
+            payment_date: row.license_payment_date || '',
+            max_units: row.license_max_units || 50,
+            notes: row.license_notes || ''
+        };
+        const computedLicense = computeLicenseInfo(licenseRaw);
+
+        res.json({ 
+            success: true, 
+            data: {
+                ...row,
+                license: computedLicense
+            }
+        });
     });
 });
 
-app.put('/api/condominio', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/condominio', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const fields = ['nome', 'indirizzo', 'cf', 'scala', 'admin_nome', 'admin_cognome', 'admin_titolo', 'admin_telefono', 'admin_cellulare', 'admin_emergenze', 'admin_email', 'admin_pec'];
     let updatePairs = [];
     let params = [];
@@ -1157,7 +1530,7 @@ app.get('/api/journal', authenticateToken, requireCondominio, isAdmin, (req, res
     });
 });
 
-app.post('/api/journal', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.post('/api/journal', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { data, numero, tipo, descrizione, dare, avere, conto } = req.body;
     db.run('INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [req.condominio_id, data, numero, tipo, descrizione, dare, avere, conto], function(err) {
@@ -1165,7 +1538,7 @@ app.post('/api/journal', authenticateToken, requireCondominio, isAdmin, (req, re
     });
 });
 
-app.put('/api/journal/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.put('/api/journal/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { data, numero, tipo, descrizione, dare, avere, conto } = req.body;
     db.run('UPDATE journal_entries SET data = ?, numero = ?, tipo = ?, descrizione = ?, dare = ?, avere = ?, conto = ? WHERE id = ? AND condominio_id = ?',
     [data, numero, tipo, descrizione, dare, avere, conto, req.params.id, req.condominio_id], function(err) {
@@ -1174,7 +1547,7 @@ app.put('/api/journal/:id', authenticateToken, requireCondominio, isAdmin, (req,
     });
 });
 
-app.delete('/api/journal/:id', authenticateToken, requireCondominio, isAdmin, (req, res) => {
+app.delete('/api/journal/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     db.run('DELETE FROM journal_entries WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], function(err) {
         if (err) return res.status(500).json({ success: false });
         res.json({ success: this.changes > 0 });
@@ -1275,7 +1648,7 @@ app.get('/api/security-logs', authenticateToken, requireCondominio, isAdmin, (re
 });
 
 
-app.post('/api/assemblies/send-convocation', authenticateToken, requireCondominio, isAdmin, async (req, res) => {
+app.post('/api/assemblies/send-convocation', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const { userId, email, nome, htmlContent, activeCondoName } = req.body;
     
     if (!email) {
@@ -1287,7 +1660,7 @@ app.post('/api/assemblies/send-convocation', authenticateToken, requireCondomini
         if (!transporter) throw new Error("Servizio email non pronto");
         
         console.log("Generazione PDF in corso...");
-        browser = await puppeteer.launch();
+        browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         const pdfBuffer = await page.pdf({ 
@@ -1357,7 +1730,7 @@ app.get('/api/assemblies/convocations-log', authenticateToken, requireCondominio
 // ---------------------------------------------------------
 // INVIO RICEVUTA PAGAMENTO
 // ---------------------------------------------------------
-app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, isAdmin, async (req, res) => {
+app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const quoteId = req.params.id;
     const { activeCondoName } = req.body;
     
@@ -1370,7 +1743,7 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
             
             let browser;
             try {
-                browser = await puppeteer.launch();
+                browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
                 const page = await browser.newPage();
                 
                 const htmlContent = `
@@ -1379,8 +1752,8 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
                         <h2 style="text-align:center; border-bottom: 2px solid #333; padding-bottom:10px;">AMMINISTRAZIONE CONDOMINIO<br>${activeCondoName}</h2>
                         <h1 style="text-align:center; color: #16a34a; margin-top:40px;">RICEVUTA DI PAGAMENTO</h1>
                         <p style="text-align:right; margin-bottom:40px;">Data: ${new Date().toLocaleDateString('it-IT')}</p>
-                        <p>Si attesta di aver ricevuto dal Sig./Sig.ra <b>${quote.nome}</b> (Unit�: ${quote.unita || 'N/D'})</p>
-                        <p>La somma di: <b style="font-size:24px;">� ${quote.amount.toFixed(2)}</b></p>
+                        <p>Si attesta di aver ricevuto dal Sig./Sig.ra <b>${quote.nome}</b> (Unit: ${quote.unita || 'N/D'})</p>
+                        <p>La somma di: <b style="font-size:24px;"> ${quote.amount.toFixed(2)}</b></p>
                         <p>A titolo di saldo per la seguente causale:</p>
                         <div style="background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
                             <strong>${quote.title}</strong><br>
@@ -1424,7 +1797,7 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
 // ---------------------------------------------------------
 // INVIO SOLLECITO PAGAMENTO
 // ---------------------------------------------------------
-app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, isAdmin, async (req, res) => {
+app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const quoteId = req.params.id;
     const { activeCondoName } = req.body;
     
@@ -1437,7 +1810,7 @@ app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, 
             
             let browser;
             try {
-                browser = await puppeteer.launch();
+                browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
                 const page = await browser.newPage();
                 
                 const htmlContent = `
@@ -1502,7 +1875,7 @@ app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, 
 // ---------------------------------------------------------
 // COMUNICAZIONI LIBERE E CIRCOLARI
 // ---------------------------------------------------------
-app.post('/api/communications/send', authenticateToken, requireCondominio, isAdmin, async (req, res) => {
+app.post('/api/communications/send', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const { userId, subject, message, activeCondoName } = req.body;
     
     if (!subject || !message) {
@@ -1528,7 +1901,7 @@ app.post('/api/communications/send', authenticateToken, requireCondominio, isAdm
 
             let browser;
             try {
-                browser = await puppeteer.launch();
+                browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
                 
                 // Formatta il messaggio con br per l'HTML
                 const formattedMessage = message.replace(/\\n/g, '<br>');
@@ -1590,6 +1963,290 @@ app.post('/api/communications/send', authenticateToken, requireCondominio, isAdm
     }
 });
 
+
+// ============================================================================
+// SUPERUSER / PROPRIETARIO API (Cabina di Regia)
+// ============================================================================
+
+app.get('/api/superuser/overview', authenticateToken, requireSuperAdmin, (req, res) => {
+    const condominiQuery = `
+        SELECT c.*, 
+            COALESCE(cf.module_contabilita, 1) as module_contabilita,
+            COALESCE(cf.module_segnalazioni, 1) as module_segnalazioni,
+            COALESCE(cf.module_assemblee, 1) as module_assemblee,
+            COALESCE(cf.module_comunicazioni, 1) as module_comunicazioni,
+            COALESCE(cf.module_banca, 1) as module_banca,
+            COALESCE(cf.module_anagrafica, 1) as module_anagrafica,
+            cl.plan_type,
+            cl.license_status,
+            cl.start_date as license_start_date,
+            cl.end_date as license_end_date,
+            cl.payment_status as license_payment_status,
+            cl.payment_reference as license_payment_reference,
+            cl.payment_amount as license_payment_amount,
+            cl.payment_date as license_payment_date,
+            COALESCE(cl.max_units, 50) as license_max_units,
+            cl.notes as license_notes,
+            (SELECT u.nome FROM user_condominios uc JOIN users u ON uc.user_id = u.id WHERE uc.condominio_id = c.id AND uc.role = 'admin' LIMIT 1) as admin_nome,
+            (SELECT COUNT(*) FROM unita_immobiliari WHERE condominio_id = c.id) as current_units_count,
+            (SELECT COUNT(*) FROM user_condominios WHERE condominio_id = c.id) as total_units
+        FROM condominios c
+        LEFT JOIN condo_features cf ON c.id = cf.condominio_id
+        LEFT JOIN condo_licenses cl ON c.id = cl.condominio_id
+        ORDER BY c.id ASC
+    `;
+
+    const usersQuery = `
+        SELECT u.id, u.nome, u.email, u.is_superadmin, u.two_factor_enabled, u.privacy_accepted, u.created_at,
+            (SELECT COUNT(*) FROM user_condominios uc WHERE uc.user_id = u.id) as condo_count,
+            (SELECT GROUP_CONCAT(DISTINCT c.nome) FROM user_condominios uc JOIN condominios c ON uc.condominio_id = c.id WHERE uc.user_id = u.id) as condo_names,
+            (SELECT MAX(CASE WHEN uc.role = 'admin' THEN 1 ELSE 0 END) FROM user_condominios uc WHERE uc.user_id = u.id) as is_admin_role
+        FROM users u
+        ORDER BY u.is_superadmin DESC, is_admin_role DESC, u.nome ASC
+    `;
+
+    db.all(condominiQuery, [], (err, condomini) => {
+        if (err) return res.status(500).json({ success: false, message: 'Database error condomini' });
+        
+        db.all(usersQuery, [], (err2, users) => {
+            if (err2) return res.status(500).json({ success: false, message: 'Database error users' });
+
+            db.get(`
+                SELECT 
+                    (SELECT COUNT(*) FROM condominios) as total_condomini,
+                    (SELECT COUNT(*) FROM users) as total_users,
+                    (SELECT COUNT(DISTINCT user_id) FROM user_condominios WHERE role = 'admin') as total_admins,
+                    (SELECT COUNT(*) FROM tickets) as total_tickets,
+                    (SELECT COUNT(*) FROM journal_entries) as total_journal
+            `, [], (err3, stats) => {
+                const condominiWithLicense = (condomini || []).map(c => {
+                    const rawLicense = {
+                        plan_type: c.plan_type || 'completo',
+                        license_status: c.license_status || 'active',
+                        start_date: c.license_start_date || '2026-01-01',
+                        end_date: c.license_end_date || '2026-12-31',
+                        payment_status: c.license_payment_status || 'paid',
+                        payment_reference: c.license_payment_reference || '',
+                        payment_amount: c.license_payment_amount || 0,
+                        payment_date: c.license_payment_date || '',
+                        max_units: c.license_max_units || 50,
+                        notes: c.license_notes || ''
+                    };
+                    return {
+                        ...c,
+                        license: computeLicenseInfo(rawLicense)
+                    };
+                });
+
+                res.json({
+                    success: true,
+                    data: {
+                        condomini: condominiWithLicense,
+                        users: users || [],
+                        stats: stats || {}
+                    }
+                });
+            });
+        });
+    });
+});
+
+app.post('/api/superuser/condo-license', authenticateToken, requireSuperAdmin, (req, res) => {
+    const { 
+        condominioId, 
+        plan_type, 
+        license_status, 
+        start_date, 
+        end_date, 
+        payment_status, 
+        payment_reference, 
+        payment_amount, 
+        payment_date, 
+        max_units, 
+        notes,
+        sync_modules
+    } = req.body;
+
+    if (!condominioId || !start_date || !end_date) {
+        return res.status(400).json({ success: false, message: 'Condominio, Data Inizio e Data Fine obbligatorie' });
+    }
+
+    db.run(`
+        INSERT INTO condo_licenses (
+            condominio_id, plan_type, license_status, start_date, end_date, 
+            payment_status, payment_reference, payment_amount, payment_date, 
+            max_units, notes, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(condominio_id) DO UPDATE SET
+            plan_type = excluded.plan_type,
+            license_status = excluded.license_status,
+            start_date = excluded.start_date,
+            end_date = excluded.end_date,
+            payment_status = excluded.payment_status,
+            payment_reference = excluded.payment_reference,
+            payment_amount = excluded.payment_amount,
+            payment_date = excluded.payment_date,
+            max_units = excluded.max_units,
+            notes = excluded.notes,
+            updated_at = CURRENT_TIMESTAMP
+    `, [
+        condominioId,
+        plan_type || 'completo',
+        license_status || 'active',
+        start_date,
+        end_date,
+        payment_status || 'paid',
+        payment_reference || '',
+        parseFloat(payment_amount) || 0,
+        payment_date || null,
+        parseInt(max_units, 10) || 50,
+        notes || ''
+    ], function(err) {
+        if (err) {
+            console.error('Error saving condo license:', err);
+            return res.status(500).json({ success: false, message: 'Errore salvataggio licenza' });
+        }
+
+        // Se richiesto, sincronizza i moduli attivi in base al piano scelto
+        if (sync_modules) {
+            let m_contab = 1, m_guasti = 1, m_assem = 1, m_comun = 1, m_banca = 1, m_anagr = 1;
+            if (plan_type === 'base') {
+                m_contab = 1; m_guasti = 0; m_assem = 0; m_comun = 0; m_banca = 0; m_anagr = 1;
+            } else if (plan_type === 'standard') {
+                m_contab = 1; m_guasti = 1; m_assem = 0; m_comun = 1; m_banca = 0; m_anagr = 1;
+            }
+            db.run(`
+                INSERT INTO condo_features (condominio_id, module_contabilita, module_segnalazioni, module_assemblee, module_comunicazioni, module_banca, module_anagrafica)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(condominio_id) DO UPDATE SET
+                    module_contabilita = excluded.module_contabilita,
+                    module_segnalazioni = excluded.module_segnalazioni,
+                    module_assemblee = excluded.module_assemblee,
+                    module_comunicazioni = excluded.module_comunicazioni,
+                    module_banca = excluded.module_banca,
+                    module_anagrafica = excluded.module_anagrafica
+            `, [condominioId, m_contab, m_guasti, m_assem, m_comun, m_banca, m_anagr]);
+        }
+
+        logAudit(req.user.id, condominioId, `SuperUser Rilascio Licenza (${plan_type})`, 'condo_licenses', condominioId, req.body, req.ip);
+        res.json({ success: true, message: 'Licenza condominiale rilasciata e attivata con successo!' });
+    });
+});
+
+app.post('/api/superuser/condo-features', authenticateToken, requireSuperAdmin, (req, res) => {
+    const { condominioId, module_contabilita, module_segnalazioni, module_assemblee, module_comunicazioni, module_banca, module_anagrafica } = req.body;
+    if (!condominioId) return res.status(400).json({ success: false, message: 'ID Condominio mancante' });
+
+    db.run(`
+        INSERT INTO condo_features (condominio_id, module_contabilita, module_segnalazioni, module_assemblee, module_comunicazioni, module_banca, module_anagrafica)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(condominio_id) DO UPDATE SET
+            module_contabilita = excluded.module_contabilita,
+            module_segnalazioni = excluded.module_segnalazioni,
+            module_assemblee = excluded.module_assemblee,
+            module_comunicazioni = excluded.module_comunicazioni,
+            module_banca = excluded.module_banca,
+            module_anagrafica = excluded.module_anagrafica
+    `, [condominioId, module_contabilita ? 1 : 0, module_segnalazioni ? 1 : 0, module_assemblee ? 1 : 0, module_comunicazioni ? 1 : 0, module_banca ? 1 : 0, module_anagrafica ? 1 : 0], function(err) {
+        if (err) {
+            console.error('Error saving condo features:', err);
+            return res.status(500).json({ success: false, message: 'Errore salvataggio permessi moduli' });
+        }
+        logAudit(req.user.id, condominioId, 'SuperUser Aggiornamento Moduli', 'condo_features', condominioId, req.body, req.ip);
+        res.json({ success: true, message: 'Impostazioni moduli aggiornate con successo' });
+    });
+});
+
+app.post('/api/superuser/reset-user-password', authenticateToken, requireSuperAdmin, (req, res) => {
+    const { userId, newPassword, temporaryPassword } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'ID Utente mancante' });
+
+    const passwordToSet = (newPassword && newPassword.trim()) || (temporaryPassword && temporaryPassword.trim()) || 'SuperReset2026!';
+    const passwordHash = bcrypt.hashSync(passwordToSet, 10);
+
+    db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId], function(err) {
+        if (err) return res.status(500).json({ success: false, message: 'Errore durante il reset della password' });
+        logAudit(req.user.id, null, 'SuperUser Reset Password Utente', 'users', userId, null, req.ip);
+        res.json({ 
+            success: true, 
+            message: `Password reimpostata con successo per l'utente #${userId}`, 
+            temporaryPassword: passwordToSet 
+        });
+    });
+});
+
+app.post('/api/superuser/reset-user-2fa', authenticateToken, requireSuperAdmin, (req, res) => {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'ID Utente mancante' });
+
+    db.run('UPDATE users SET two_factor_enabled = 0, two_factor_secret = NULL, backup_codes = NULL, otp_code = NULL, otp_expires = NULL WHERE id = ?', [userId], function(err) {
+        if (err) return res.status(500).json({ success: false, message: 'Errore durante l\'azzeramento del 2FA' });
+        logAudit(req.user.id, null, 'SuperUser Reset 2FA Utente', 'users', userId, null, req.ip);
+        res.json({ success: true, message: 'Doppia autenticazione (2FA) rimossa con successo per l\'utente' });
+    });
+});
+
+app.post('/api/superuser/toggle-user-role', authenticateToken, requireSuperAdmin, (req, res) => {
+    const { userId, makeAdmin, condominioId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'ID Utente mancante' });
+
+    const newRole = makeAdmin ? 'admin' : 'condomino';
+    let query = 'UPDATE user_condominios SET role = ? WHERE user_id = ?';
+    const params = [newRole, userId];
+    if (condominioId) {
+        query += ' AND condominio_id = ?';
+        params.push(condominioId);
+    }
+
+    db.run(query, params, function(err) {
+        if (err) return res.status(500).json({ success: false, message: 'Errore aggiornamento ruolo' });
+        logAudit(req.user.id, condominioId || null, `SuperUser Cambio Ruolo (${newRole})`, 'user_condominios', userId, { newRole }, req.ip);
+        res.json({ success: true, message: `Ruolo aggiornato a "${newRole}"` });
+    });
+});
+
+app.post('/api/superuser/reset-condo-data', authenticateToken, requireSuperAdmin, (req, res) => {
+    const { condominioId, resetType } = req.body;
+    if (!condominioId || !resetType) return res.status(400).json({ success: false, message: 'Parametri mancanti per il reset' });
+
+    db.serialize(() => {
+        if (resetType === 'contabilita') {
+            db.run('DELETE FROM journal_entries WHERE condominio_id = ?', [condominioId]);
+            db.run('DELETE FROM supplier_payments WHERE condominio_id = ?', [condominioId]);
+            db.run('DELETE FROM quotes WHERE condominio_id = ?', [condominioId]);
+            logAudit(req.user.id, condominioId, 'SuperUser Reset Contabilità', 'journal_entries/quotes', condominioId, null, req.ip);
+            return res.json({ success: true, message: 'Tutti i movimenti contabili di test del condominio sono stati azzerati!' });
+        } else if (resetType === 'tickets') {
+            db.run('DELETE FROM ticket_updates WHERE ticket_id IN (SELECT id FROM tickets WHERE condominio_id = ?)', [condominioId]);
+            db.run('DELETE FROM tickets WHERE condominio_id = ?', [condominioId]);
+            logAudit(req.user.id, condominioId, 'SuperUser Reset Segnalazioni', 'tickets', condominioId, null, req.ip);
+            return res.json({ success: true, message: 'Tutte le segnalazioni e comunicazioni di prova sono state azzerate!' });
+        } else {
+            return res.status(400).json({ success: false, message: 'Tipo di reset non supportato' });
+        }
+    });
+});
+
+app.get('/api/superuser/audit-logs', authenticateToken, requireSuperAdmin, (req, res) => {
+    db.all(`
+        SELECT a.*, u.nome as user_name, u.email as user_email, c.nome as condo_name
+        FROM audit_log a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN condominios c ON a.condominio_id = c.id
+        ORDER BY a.id DESC
+        LIMIT 60
+    `, [], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: 'Database error audit' });
+        res.json({ success: true, data: rows || [] });
+    });
+});
+
+
+// 404 per richieste API non trovate
+app.use('/api', (req, res) => {
+    res.status(404).json({ success: false, message: 'Endpoint API non trovato' });
+});
 
 // Fallback Frontend SPA
 app.use((req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

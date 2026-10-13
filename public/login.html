@@ -3,171 +3,540 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CondoTransparent SaaS - Accesso al Gestionale</title>
+    <title>CondoTransparent - Accesso al Portale</title>
     
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            theme: { extend: { colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 600: '#2563eb', 700: '#1d4ed8', 900: '#1e3a8a' } } } }
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a'
+                        }
+                    }
+                }
+            }
         }
     </script>
     
+    <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        /* Sottile animazione per le sfere di luce nello sfondo del banner */
+        @keyframes floatSlow {
+            0%, 100% { transform: translateY(0px) scale(1); }
+            50% { transform: translateY(-12px) scale(1.05); }
+        }
+        @keyframes floatReverse {
+            0%, 100% { transform: translateY(0px) scale(1); }
+            50% { transform: translateY(14px) scale(0.95); }
+        }
+        .anim-float-1 { animation: floatSlow 8s ease-in-out infinite; }
+        .anim-float-2 { animation: floatReverse 10s ease-in-out infinite; }
+    </style>
 </head>
-<body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
+<body class="font-sans bg-slate-100 text-slate-800 min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
 
-    <!-- Container Principale -->
-    <div class="w-full max-w-[900px] bg-white rounded-[2rem] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-slate-100">
-        <!-- Colonna di Sinistra (Immagine/Brand) -->
-        <div class="md:w-5/12 bg-blue-700 p-10 flex flex-col justify-between relative overflow-hidden hidden md:flex text-white">
-            <div class="absolute inset-0 bg-blue-900 opacity-20"></div>
-            <div class="absolute -top-24 -left-24 w-64 h-64 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
-            <div class="absolute top-1/2 -right-24 w-72 h-72 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
+    <!-- Elementi decorativi di sfondo ambient -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div class="absolute -top-32 -left-32 w-96 h-96 bg-blue-400/20 rounded-full blur-3xl"></div>
+        <div class="absolute top-1/2 -right-32 w-[28rem] h-[28rem] bg-indigo-400/20 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-32 left-1/3 w-80 h-80 bg-emerald-400/15 rounded-full blur-3xl"></div>
+    </div>
 
+    <!-- Contenitore Principale -->
+    <div class="w-full max-w-[980px] bg-white rounded-3xl shadow-2xl shadow-slate-900/10 flex flex-col md:flex-row overflow-hidden border border-slate-200/80 relative z-10 transition-all">
+        
+        <!-- ========================================== -->
+        <!-- Colonna di Sinistra (Brand, Atmosfera & Valore) -->
+        <!-- ========================================== -->
+        <div class="md:w-5/12 bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-900 p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden hidden md:flex text-white">
+            
+            <!-- Sfere decorative luminose -->
+            <div class="absolute -top-20 -left-20 w-64 h-64 bg-blue-500/30 rounded-full blur-3xl anim-float-1"></div>
+            <div class="absolute bottom-10 -right-20 w-72 h-72 bg-indigo-500/30 rounded-full blur-3xl anim-float-2"></div>
+            <div class="absolute top-1/3 right-4 w-40 h-40 bg-emerald-500/20 rounded-full blur-2xl"></div>
+
+            <!-- Header Brand -->
             <div class="relative z-10">
-                <div class="flex items-center space-x-3 mb-12">
-                    <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                        <i class="fa-solid fa-building text-blue-700 text-xl"></i>
+                <div class="flex items-center space-x-3 mb-8">
+                    <div class="w-11 h-11 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl flex items-center justify-center shadow-lg shadow-black/20 text-blue-300">
+                        <i class="fa-solid fa-building text-xl"></i>
                     </div>
-                    <span class="text-xl font-black tracking-tight">CondoTransparent</span>
+                    <div>
+                        <span class="text-xl font-extrabold tracking-tight block leading-none">CondoTransparent</span>
+                        <span class="text-[11px] font-semibold tracking-wider text-blue-200/80 uppercase">Piattaforma Condominiale</span>
+                    </div>
                 </div>
-                <h2 class="text-3xl font-extrabold leading-tight mb-4">Gestione smart,<br>zero stress.</h2>
-                <p class="text-blue-100 text-sm leading-relaxed">Accedi al pannello per amministrare immobili, bilanci, assemblee e comunicare in tempo reale con i tuoi condòmini.</p>
+
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs text-blue-200 font-medium mb-4">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Portale Condòmini & Amministratori</span>
+                </div>
+
+                <h2 class="text-3xl font-extrabold leading-snug tracking-tight mb-3">
+                    Gestione chiara,<br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 via-indigo-200 to-emerald-200">
+                        rapporti sereni.
+                    </span>
+                </h2>
+                <p class="text-blue-100/80 text-sm leading-relaxed mb-6 font-normal">
+                    La trasparenza che avvicina condòmini e amministratori: bilanci, millesimi, comunicazioni e verbali a portata di clic.
+                </p>
+
+                <!-- Punti di forza con pillole glassmorphism -->
+                <div class="space-y-3">
+                    <div class="flex items-center gap-3 p-3 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 transition-all hover:bg-white/10">
+                        <div class="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-300 text-sm shrink-0">
+                            <i class="fa-solid fa-file-invoice-dollar"></i>
+                        </div>
+                        <div class="text-xs">
+                            <span class="font-bold text-white block">Quote e Bilanci sempre chiari</span>
+                            <span class="text-blue-200/70">Millesimi consultabili in tempo reale</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 p-3 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 transition-all hover:bg-white/10">
+                        <div class="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-300 text-sm shrink-0">
+                            <i class="fa-solid fa-bullhorn"></i>
+                        </div>
+                        <div class="text-xs">
+                            <span class="font-bold text-white block">Bacheca e Avvisi diretti</span>
+                            <span class="text-blue-200/70">Comunicazioni assembleari e notifiche</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 p-3 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 transition-all hover:bg-white/10">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-sm shrink-0">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <div class="text-xs">
+                            <span class="font-bold text-white block">Accesso Sicuro e Riservato</span>
+                            <span class="text-blue-200/70">Protezione 2FA con crittografia end-to-end</span>
+                        </div>
+                    </div>
+                </div>
             </div>
             
-            <div class="relative z-10">
-                <div class="flex items-center space-x-2 text-blue-200 text-xs">
-                    <i class="fa-solid fa-shield-halved"></i>
-                    <span>Accesso Sicuro Criptato 256-bit</span>
-                </div>
+            <!-- Footer colonna sinistra -->
+            <div class="relative z-10 pt-6 border-t border-white/10 flex items-center justify-between text-xs text-blue-200/70">
+                <span class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-lock text-emerald-400"></i> Connessione SSL Protetta
+                </span>
+                <span class="font-mono text-[11px] text-white/50">v2.4.0</span>
             </div>
         </div>
 
-        <!-- Colonna di Destra (Form) -->
-        <div class="md:w-7/12 p-8 md:p-12">
-            <div class="max-w-[360px] mx-auto">
-                <div class="text-center mb-8">
-                    <h1 class="text-2xl font-black text-slate-900 tracking-tight">Bentornato 👋</h1>
-                    <p class="text-sm text-slate-500 mt-1">Inserisci le tue credenziali per accedere.</p>
+        <!-- ========================================== -->
+        <!-- Colonna di Destra (Form di Accesso) -->
+        <!-- ========================================== -->
+        <div class="md:w-7/12 p-8 sm:p-12 flex flex-col justify-center bg-white">
+            <div class="max-w-[380px] w-full mx-auto">
+                
+                <!-- Logo mobile (visibile solo su schermi piccoli) -->
+                <div class="md:hidden flex items-center justify-center gap-2 mb-6">
+                    <div class="w-10 h-10 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md">
+                        <i class="fa-solid fa-building text-lg"></i>
+                    </div>
+                    <span class="text-xl font-extrabold text-slate-900 tracking-tight">CondoTransparent</span>
                 </div>
 
-                <div id="error-alert" class="hidden mb-6 p-4 bg-rose-50 border border-rose-100 rounded-xl flex items-start space-x-3 text-rose-600">
-                    <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
-                    <p id="error-message" class="text-sm font-bold"></p>
-                </div>
-
+                <!-- Modulo di Login Standard -->
                 <div id="login-form-container">
+                    <!-- Intestazione Form -->
+                    <div class="text-left mb-6">
+                        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                            Bentornato <span class="text-2xl">👋</span>
+                        </h1>
+                        <p class="text-sm text-slate-500 mt-1.5 font-normal">
+                            Inserisci le tue credenziali per accedere alla tua area personale.
+                        </p>
+                    </div>
+
+                    <!-- Box Notifica Errore -->
+                    <div id="error-alert" class="hidden mb-5 p-3.5 bg-rose-50 border border-rose-200/70 rounded-2xl flex items-start gap-3 text-rose-700 text-sm animate-fade-in shadow-sm">
+                        <i class="fa-solid fa-circle-exclamation text-rose-500 text-base mt-0.5 shrink-0"></i>
+                        <p id="error-message" class="font-medium text-xs sm:text-sm"></p>
+                    </div>
+
                     <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+                        
+                        <!-- Campo Username / Email -->
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Username (indirizzo e-mail)</label>
-                            <input type="email" id="email" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all" placeholder="mario.rossi@email.it">
+                            <label for="email" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                Indirizzo E-mail
+                            </label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-regular fa-envelope text-sm"></i>
+                                </span>
+                                <input 
+                                    type="email" 
+                                    id="email" 
+                                    required 
+                                    autocomplete="email"
+                                    class="w-full pl-10 pr-4 py-3 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 transition-all outline-none" 
+                                    placeholder="nome@condominio.it">
+                            </div>
                         </div>
 
+                        <!-- Campo Password -->
                         <div>
-                            <div class="flex justify-between items-center mb-1">
-                                <label class="block text-xs font-bold text-slate-700">Password</label>
-                                <a href="#" onclick="showForgotPassword()" class="text-xs text-blue-600 font-bold hover:underline">Dimenticata?</a>
+                            <div class="flex justify-between items-center mb-1.5">
+                                <label for="password" class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                    Password
+                                </label>
+                                <button 
+                                    type="button" 
+                                    onclick="showForgotPassword()" 
+                                    class="text-xs text-blue-600 font-bold hover:text-blue-700 transition-colors hover:underline">
+                                    Password dimenticata?
+                                </button>
                             </div>
                             <div class="relative">
-                                <input type="password" id="password" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all pr-12" placeholder="••••••••">
-                                <button type="button" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-blue-600 transition-colors focus:outline-none">
-                                    <i id="eye-icon" class="fa-solid fa-eye"></i>
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-lock text-sm"></i>
+                                </span>
+                                <input 
+                                    type="password" 
+                                    id="password" 
+                                    required 
+                                    autocomplete="current-password"
+                                    class="w-full pl-10 pr-11 py-3 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 transition-all outline-none" 
+                                    placeholder="••••••••••••">
+                                <button 
+                                    type="button" 
+                                    onclick="togglePasswordVisibility()" 
+                                    aria-label="Mostra o nascondi password"
+                                    class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-blue-600 transition-colors focus:outline-none">
+                                    <i id="eye-icon" class="fa-regular fa-eye text-sm"></i>
                                 </button>
                             </div>
                         </div>
 
+                        <!-- Bottone Accedi -->
                         <div class="pt-2">
-                            <button type="submit" id="btn-submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-slate-900/20 transition-all flex justify-center items-center">
+                            <button 
+                                type="submit" 
+                                id="btn-submit" 
+                                class="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 active:scale-[0.99] transition-all flex justify-center items-center gap-2 text-sm group">
                                 <span>Accedi al Portale</span>
+                                <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>
                             </button>
                         </div>
                     </form>
-                    <div class="mt-6 flex justify-between items-center text-xs">
-                        <span>Non hai un account? <a href="#" class="text-blue-600 font-bold hover:underline">Registrati qui</a></span>
+
+                    <!-- Sezione Registrazione & Assistenza -->
+                    <div class="mt-8 pt-5 border-t border-slate-100 text-center">
+                        <p class="text-xs text-slate-500 mb-2">
+                            Non hai ancora un account?
+                        </p>
+                        <div class="flex items-center justify-center gap-3">
+                            <button type="button" onclick="showRegisterModal()" class="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl border border-indigo-200 shadow-sm transition-all">
+                                <i class="fa-solid fa-user-plus text-xs"></i> Crea Account
+                            </button>
+                            <span class="text-slate-300">|</span>
+                            <button type="button" onclick="showHelpInfo()" class="text-xs text-slate-600 hover:text-slate-900 font-medium hover:underline">
+                                Richiedi assistenza
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div id="otp-form-container" class="hidden mt-6">
-                    <div class="mb-4 text-center">
-                        <i class="fa-solid fa-envelope-circle-check text-4xl text-blue-600 mb-2"></i>
-                        <h3 class="text-lg font-bold text-slate-800">Verifica in due passaggi</h3>
-                        <p class="text-sm text-slate-500 mt-1">Abbiamo inviato un codice a 6 cifre a <b id="otp-email-display" class="text-slate-800"></b></p>
-                    </div>
-                    <form onsubmit="handleVerifyOTP(event)" class="space-y-5">
-                        <div>
-                            <input type="text" id="otp-code" maxlength="6" required class="w-full pl-4 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 text-center text-2xl font-mono tracking-widest outline-none transition-all" placeholder="000000">
+                <!-- ========================================== -->
+                <!-- Schermata di Verifica 2FA (OTP via Email)  -->
+                <!-- ========================================== -->
+                <div id="otp-form-container" class="hidden">
+                    <div class="mb-5 text-center">
+                        <div class="w-14 h-14 bg-blue-50 border border-blue-100 text-blue-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 shadow-inner">
+                            <i class="fa-solid fa-shield-halved"></i>
                         </div>
-                        <div id="otp-test-link"></div>
-                        <div id="otp-alert" class="hidden bg-rose-50 text-rose-600 text-xs font-bold p-3 rounded-lg border border-rose-100 flex items-center"></div>
-                        <button type="submit" id="btn-verify-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-600/30 transition-all flex justify-center items-center">
-                            Conferma Accesso
+                        <h3 class="text-xl font-extrabold text-slate-900 tracking-tight">Verifica di Sicurezza</h3>
+                        <p class="text-xs sm:text-sm text-slate-500 mt-1">
+                            Abbiamo inviato un codice monouso a:
+                        </p>
+                        <span id="otp-email-display" class="inline-block mt-1 px-3 py-1 bg-slate-100 text-slate-800 font-bold text-xs rounded-full border border-slate-200"></span>
+                    </div>
+
+                    <form onsubmit="handleVerifyOTP(event)" class="space-y-4">
+                        <div>
+                            <label for="otp-code" class="block text-xs font-bold text-slate-600 uppercase tracking-wider text-center mb-2">
+                                Inserisci il codice a 6 cifre
+                            </label>
+                            <input 
+                                type="text" 
+                                id="otp-code" 
+                                maxlength="6" 
+                                inputmode="numeric" 
+                                pattern="[0-9]*"
+                                required 
+                                autofocus
+                                class="w-full py-3.5 bg-slate-50 border-2 border-slate-200 focus:border-blue-600 focus:bg-white rounded-2xl text-center text-2xl font-mono font-bold tracking-[0.4em] outline-none transition-all shadow-inner placeholder-slate-300" 
+                                placeholder="000000">
+                        </div>
+
+                        <!-- Link di test / visualizzazione preview email -->
+                        <div id="otp-test-link" class="text-center"></div>
+
+                        <!-- Box Errore OTP -->
+                        <div id="otp-alert" class="hidden bg-rose-50 text-rose-700 text-xs font-semibold p-3 rounded-xl border border-rose-200 flex items-center justify-center gap-2"></div>
+
+                        <button 
+                            type="submit" 
+                            id="btn-verify-otp" 
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-600/25 active:scale-[0.99] transition-all flex justify-center items-center gap-2 text-sm">
+                            <i class="fa-solid fa-check"></i>
+                            <span>Conferma e Accedi</span>
+                        </button>
+
+                        <button 
+                            type="button" 
+                            onclick="backToLogin()" 
+                            class="w-full py-2.5 text-xs text-slate-500 hover:text-slate-800 font-semibold transition-colors flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-arrow-left text-[10px]"></i>
+                            <span>Torna alla schermata precedente</span>
                         </button>
                     </form>
                 </div>
+
             </div>
         </div>
     </div>
 
-    <!-- Modale Recupero Password -->
-    <div id="modal-forgot-pwd" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden relative">
-            <div class="p-6 pb-0 flex justify-between items-start">
-                <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl mb-4">
+    <!-- ========================================== -->
+    <!-- Modale Recupero Password                   -->
+    <!-- ========================================== -->
+    <div id="modal-forgot-pwd" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity">
+        <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative animate-scale-up">
+            <div class="p-6 pb-2 flex justify-between items-start">
+                <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center text-xl shadow-sm">
                     <i class="fa-solid fa-key"></i>
                 </div>
-                <button onclick="document.getElementById('modal-forgot-pwd').classList.add('hidden')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <button onclick="closeModal('modal-forgot-pwd')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
             <div class="px-6 pb-6">
-                <h3 class="text-xl font-bold text-slate-900 mb-1">Recupera Password</h3>
-                <p class="text-sm text-slate-500 mb-6">Inserisci l'indirizzo email associato al tuo account. Ti invieremo un link sicuro per reimpostare la password.</p>
+                <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Recupera la tua password</h3>
+                <p class="text-xs sm:text-sm text-slate-500 mb-5 leading-relaxed">
+                    Inserisci l'indirizzo email associato alla tua utenza. Ti invieremo un link sicuro per reimpostare la tua parola d'ordine.
+                </p>
                 
                 <form id="forgot-pwd-form" onsubmit="handleForgotPassword(event)" class="space-y-4">
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Email Registrata</label>
-                        <input type="email" id="forgot-email" required class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                        <label for="forgot-email" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Email Registrata</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                <i class="fa-regular fa-envelope text-sm"></i>
+                            </span>
+                            <input 
+                                type="email" 
+                                id="forgot-email" 
+                                required 
+                                class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all" 
+                                placeholder="nome@condominio.it">
+                        </div>
                     </div>
                     
-                    <div id="forgot-alert" class="hidden p-3 rounded-xl text-xs font-bold border flex items-center"></div>
+                    <div id="forgot-alert" class="hidden p-3 rounded-xl text-xs font-bold border flex items-center gap-2"></div>
                     <div id="forgot-test-link" class="text-center mt-2"></div>
                     
-                    <button type="submit" id="btn-forgot-submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md transition-all">
-                        Invia Link di Recupero
-                    </button>
+                    <div class="flex items-center gap-2 pt-2">
+                        <button 
+                            type="button" 
+                            onclick="closeModal('modal-forgot-pwd')" 
+                            class="w-1/3 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-sm font-semibold transition-all">
+                            Annulla
+                        </button>
+                        <button 
+                            type="submit" 
+                            id="btn-forgot-submit" 
+                            class="w-2/3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-regular fa-paper-plane text-xs"></i>
+                            <span>Invia Link</span>
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Modale Reimposta Password (attivata se c'è un token nell'URL) -->
-    <div id="modal-reset-pwd" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden relative">
+    <!-- ========================================== -->
+    <!-- Modale Reimposta Password (tramite Token)  -->
+    <!-- ========================================== -->
+    <div id="modal-reset-pwd" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative">
             <div class="p-6">
-                <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl mb-4">
+                <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-xl mb-4 shadow-sm">
                     <i class="fa-solid fa-lock"></i>
                 </div>
-                <h3 class="text-xl font-bold text-slate-900 mb-1">Crea Nuova Password</h3>
-                <p class="text-sm text-slate-500 mb-6">Inserisci la tua nuova password sicura. Deve contenere almeno 8 caratteri, una maiuscola, un numero e un carattere speciale.</p>
+                <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Crea Nuova Password</h3>
+                <p class="text-xs sm:text-sm text-slate-500 mb-4 leading-relaxed">
+                    Scegli una password forte e sicura per proteggere il tuo account.
+                </p>
+
+                <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3 mb-4 text-xs text-slate-600 space-y-1">
+                    <div class="font-bold text-slate-700 mb-1">Requisiti di sicurezza:</div>
+                    <div class="flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-500 text-[11px]"></i> Minimo 8 caratteri</div>
+                    <div class="flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-500 text-[11px]"></i> Almeno una lettera maiuscola</div>
+                    <div class="flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-500 text-[11px]"></i> Almeno un numero</div>
+                    <div class="flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-500 text-[11px]"></i> Almeno un simbolo (@$!%*?&)</div>
+                </div>
                 
                 <form id="reset-pwd-form" onsubmit="handleResetPassword(event)" class="space-y-4">
                     <input type="hidden" id="reset-token">
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-1">Nuova Password</label>
-                        <input type="password" id="reset-password-input" required minlength="8" class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none">
+                        <label for="reset-password-input" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Nuova Password</label>
+                        <input 
+                            type="password" 
+                            id="reset-password-input" 
+                            required 
+                            minlength="8" 
+                            class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
+                            placeholder="••••••••••••">
                     </div>
                     
-                    <div id="reset-alert" class="hidden p-3 rounded-xl text-xs font-bold border flex flex-col"></div>
+                    <div id="reset-alert" class="hidden p-3 rounded-xl text-xs font-bold border flex flex-col gap-1"></div>
                     
-                    <button type="submit" id="btn-reset-submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md transition-all">
-                        Salva Nuova Password
+                    <button 
+                        type="submit" 
+                        id="btn-reset-submit" 
+                        class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Salva Nuova Password</span>
                     </button>
                 </form>
             </div>
         </div>
     </div>
 
+    <!-- ========================================== -->
+    <!-- Modale Richiesta Assistenza / Info Accesso -->
+    <!-- ========================================== -->
+    <div id="modal-help" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative p-6">
+            <div class="flex justify-between items-start mb-4">
+                <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xl shadow-sm">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <button onclick="closeModal('modal-help')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-2">Assistenza e Primo Accesso</h3>
+            <p class="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed">
+                Gli account su <b>CondoTransparent</b> vengono creati direttamente dallo studio di amministrazione condominiale.
+            </p>
+            <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs text-slate-600 space-y-2 mb-5">
+                <div class="flex items-start gap-2">
+                    <i class="fa-solid fa-envelope text-blue-600 mt-0.5"></i>
+                    <span>Hai ricevuto un invito via email? Controlla anche la cartella <b>Spam/Posta indesiderata</b>.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <i class="fa-solid fa-id-badge text-indigo-600 mt-0.5"></i>
+                    <span>Sei un nuovo proprietario o inquilino? Comunica il tuo indirizzo email all'amministratore per essere inserito nell'anagrafe condominiale.</span>
+                </div>
+            </div>
+            <button onclick="closeModal('modal-help')" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition-all">
+                Ho capito, grazie
+            </button>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- Modale Registrazione Nuovo Utente          -->
+    <!-- ========================================== -->
+    <div id="modal-register" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden relative p-6 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-4">
+                <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xl shadow-sm">
+                    <i class="fa-solid fa-user-plus"></i>
+                </div>
+                <button onclick="closeModal('modal-register')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Registra Nuovo Account</h3>
+            <p class="text-xs text-slate-500 mb-5 leading-relaxed">
+                Crea il tuo profilo residente o proprietario nel database condominiale MySQL.
+            </p>
+
+            <div id="register-alert" class="hidden mb-4 p-3.5 rounded-xl text-xs flex items-center gap-2.5">
+                <i id="register-alert-icon" class="fa-solid fa-circle-exclamation text-sm shrink-0"></i>
+                <span id="register-alert-msg" class="font-medium"></span>
+            </div>
+
+            <form id="form-register" onsubmit="handleRegister(event)" class="space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="reg-nome" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nome e Cognome *</label>
+                        <input type="text" id="reg-nome" required placeholder="Mario Rossi" class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600">
+                    </div>
+                    <div>
+                        <label for="reg-email" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Email *</label>
+                        <input type="email" id="reg-email" required placeholder="mario@email.it" class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="reg-telefono" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Telefono</label>
+                        <input type="tel" id="reg-telefono" placeholder="+39 340 1234567" class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600">
+                    </div>
+                    <div>
+                        <label for="reg-condominio" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Condominio</label>
+                        <select id="reg-condominio" class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white">
+                            <option value="">Caricamento condomini...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="reg-unita" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Unità / Interno</label>
+                    <input type="text" id="reg-unita" placeholder="es. Scala A - Int. 4" class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600">
+                </div>
+
+                <div>
+                    <label for="reg-password" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Password *</label>
+                    <input type="password" id="reg-password" required placeholder="••••••••" class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600">
+                    <p class="text-[11px] text-slate-400 mt-1">Minimo 8 caratteri, almeno una maiuscola, un numero e un simbolo speciale.</p>
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" id="btn-reg-submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2">
+                        <span>Completa Registrazione</span>
+                        <i class="fa-solid fa-check text-xs"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- Logica JavaScript Client                   -->
+    <!-- ========================================== -->
     <script>
         // INIT ON LOAD
         document.addEventListener('DOMContentLoaded', () => {
+            sessionStorage.removeItem('active_Condominio_id');
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('new_session') === '1') {
                 sessionStorage.removeItem('condo_token');
@@ -181,6 +550,131 @@
                 history.replaceState(null, null, window.location.pathname);
             }
         });
+
+        // MODALS HELPERS
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function showHelpInfo() {
+            document.getElementById('modal-help').classList.remove('hidden');
+        }
+
+        async function showRegisterModal() {
+            const modal = document.getElementById('modal-register');
+            modal.classList.remove('hidden');
+            const alertBox = document.getElementById('register-alert');
+            alertBox.classList.add('hidden');
+            
+            // Popola la select dei condomini
+            const select = document.getElementById('reg-condominio');
+            select.innerHTML = '<option value="">Nessun condominio selezionato</option>';
+            try {
+                const res = await fetch('/api/auth/condominios');
+                const data = await res.json();
+                if (data.success && data.data) {
+                    data.data.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.id;
+                        opt.textContent = `${c.nome} (${c.indirizzo || ''})`;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error('Errore caricamento condomini:', err);
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-reg-submit');
+            const alertBox = document.getElementById('register-alert');
+            const alertMsg = document.getElementById('register-alert-msg');
+            const alertIcon = document.getElementById('register-alert-icon');
+
+            const nome = document.getElementById('reg-nome').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const telefono = document.getElementById('reg-telefono').value.trim();
+            const condominio_id = document.getElementById('reg-condominio').value;
+            const unita = document.getElementById('reg-unita').value.trim();
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Registrazione in corso...';
+            alertBox.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome, email, password, telefono, condominio_id, unita })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    alertBox.className = 'mb-4 p-3.5 rounded-xl text-xs flex items-center gap-2.5 bg-emerald-50 text-emerald-800 border border-emerald-200';
+                    alertIcon.className = 'fa-solid fa-circle-check text-emerald-600 text-sm shrink-0';
+                    alertMsg.textContent = data.message || 'Registrazione completata con successo!';
+                    alertBox.classList.remove('hidden');
+
+                    // Precompila il form di login e chiudi dopo 1.5s
+                    document.getElementById('email').value = email;
+                    document.getElementById('password').value = '';
+                    setTimeout(() => {
+                        closeModal('modal-register');
+                        document.getElementById('form-register').reset();
+                        btn.disabled = false;
+                        btn.innerHTML = '<span>Completa Registrazione</span> <i class="fa-solid fa-check text-xs"></i>';
+                        document.getElementById('password').focus();
+                    }, 1500);
+                } else {
+                    alertBox.className = 'mb-4 p-3.5 rounded-xl text-xs flex items-center gap-2.5 bg-rose-50 text-rose-800 border border-rose-200';
+                    alertIcon.className = 'fa-solid fa-circle-exclamation text-rose-600 text-sm shrink-0';
+                    alertMsg.textContent = data.message || 'Errore durante la registrazione.';
+                    alertBox.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Completa Registrazione</span> <i class="fa-solid fa-check text-xs"></i>';
+                }
+            } catch (err) {
+                console.error(err);
+                alertBox.className = 'mb-4 p-3.5 rounded-xl text-xs flex items-center gap-2.5 bg-rose-50 text-rose-800 border border-rose-200';
+                alertIcon.className = 'fa-solid fa-circle-exclamation text-rose-600 text-sm shrink-0';
+                alertMsg.textContent = 'Errore di connessione al server.';
+                alertBox.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Completa Registrazione</span> <i class="fa-solid fa-check text-xs"></i>';
+            }
+        }
+
+        function showForgotPassword() {
+            document.getElementById('modal-forgot-pwd').classList.remove('hidden');
+        }
+
+        // TOGGLE PASSWORD VISIBILITY
+        function togglePasswordVisibility() {
+            const pwdInput = document.getElementById('password');
+            const eyeIcon = document.getElementById('eye-icon');
+            if (pwdInput.type === 'password') {
+                pwdInput.type = 'text';
+                eyeIcon.classList.remove('fa-eye');
+                eyeIcon.classList.add('fa-eye-slash');
+            } else {
+                pwdInput.type = 'password';
+                eyeIcon.classList.remove('fa-eye-slash');
+                eyeIcon.classList.add('fa-eye');
+            }
+        }
+
+        // BACK TO LOGIN CREDENTIALS FROM OTP
+        function backToLogin() {
+            document.getElementById('otp-form-container').classList.add('hidden');
+            document.getElementById('login-form-container').classList.remove('hidden');
+            document.getElementById('error-alert').classList.add('hidden');
+            document.getElementById('otp-alert').classList.add('hidden');
+            const btn = document.getElementById('btn-submit');
+            btn.innerHTML = '<span>Accedi al Portale</span> <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>';
+            btn.disabled = false;
+        }
 
         // LOGIN WITH OTP FLOW
         let pendingUserId = null;
@@ -214,42 +708,39 @@
                         document.getElementById('otp-form-container').classList.remove('hidden');
                         document.getElementById('otp-email-display').textContent = data.email;
                         
-                        document.getElementById('otp-test-link').innerHTML = `<a href="${data.previewUrl}" target="_blank" class="text-xs text-blue-600 font-bold underline text-center block mt-3">👉 Apri Email di Test per leggere l'OTP</a>`;
+                        if (data.previewUrl) {
+                            document.getElementById('otp-test-link').innerHTML = `<a href="${data.previewUrl}" target="_blank" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-bold underline text-center mt-2 px-3 py-1 bg-blue-50 rounded-lg border border-blue-100"><i class="fa-solid fa-envelope-open-text"></i> Apri Email di Test per l'OTP</a>`;
+                        } else {
+                            document.getElementById('otp-test-link').innerHTML = '';
+                        }
+
+                        // Focus automatico sull'OTP
+                        setTimeout(() => {
+                            const otpInput = document.getElementById('otp-code');
+                            if (otpInput) otpInput.focus();
+                        }, 100);
                     } else {
+                        sessionStorage.removeItem('active_Condominio_id');
                         sessionStorage.setItem('condo_token', data.token);
                         sessionStorage.setItem('condo_user', JSON.stringify(data.user));
                         window.location.href = 'index.html';
                     }
                 } else {
-                    alertMsg.textContent = data.message || 'Errore di login.';
+                    alertMsg.textContent = data.message || 'Credenziali non valide o errore di login.';
                     alertBox.classList.remove('hidden');
-                    btn.innerHTML = '<span>Accedi al Portale</span>';
+                    btn.innerHTML = '<span>Accedi al Portale</span> <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>';
                     btn.disabled = false;
                 }
-            } catch (e) {
-                console.error(e);
-                alertMsg.textContent = 'Errore di connessione.';
+            } catch (err) {
+                console.error(err);
+                alertMsg.textContent = 'Errore di connessione al server.';
                 alertBox.classList.remove('hidden');
-                btn.innerHTML = '<span>Accedi al Portale</span>';
+                btn.innerHTML = '<span>Accedi al Portale</span> <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>';
                 btn.disabled = false;
             }
         }
-        
-        
-        function togglePasswordVisibility() {
-            const pwdInput = document.getElementById('password');
-            const eyeIcon = document.getElementById('eye-icon');
-            if (pwdInput.type === 'password') {
-                pwdInput.type = 'text';
-                eyeIcon.classList.remove('fa-eye');
-                eyeIcon.classList.add('fa-eye-slash');
-            } else {
-                pwdInput.type = 'password';
-                eyeIcon.classList.remove('fa-eye-slash');
-                eyeIcon.classList.add('fa-eye');
-            }
-        }
-        
+
+        // VERIFY OTP
         async function handleVerifyOTP(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-verify-otp');
@@ -269,29 +760,26 @@
                 const data = await res.json();
                 
                 if (res.ok && data.success) {
+                    sessionStorage.removeItem('active_Condominio_id');
                     sessionStorage.setItem('condo_token', data.token);
                     sessionStorage.setItem('condo_user', JSON.stringify(data.user));
                     window.location.href = 'index.html';
                 } else {
-                    alertBox.textContent = data.message || 'Codice errato.';
+                    alertBox.textContent = data.message || 'Codice errato o scaduto.';
                     alertBox.classList.remove('hidden');
-                    btn.innerHTML = 'Conferma Accesso';
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> <span>Conferma e Accedi</span>';
                     btn.disabled = false;
                 }
-            } catch(e) {
-                console.error(e);
+            } catch(err) {
+                console.error(err);
                 alertBox.textContent = 'Errore di connessione.';
                 alertBox.classList.remove('hidden');
-                btn.innerHTML = 'Conferma Accesso';
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> <span>Conferma e Accedi</span>';
                 btn.disabled = false;
             }
         }
 
         // FORGOT PASSWORD
-        function showForgotPassword() {
-            document.getElementById('modal-forgot-pwd').classList.remove('hidden');
-        }
-
         async function handleForgotPassword(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-forgot-submit');
@@ -300,7 +788,7 @@
             const testLink = document.getElementById('forgot-test-link');
 
             btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Invio in corso...';
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Invio...';
             alert.classList.add('hidden');
             testLink.innerHTML = '';
 
@@ -312,24 +800,24 @@
                 });
                 const data = await res.json();
 
-                alert.classList.remove('hidden', 'bg-rose-50', 'text-rose-600', 'border-rose-100');
+                alert.classList.remove('hidden', 'bg-rose-50', 'text-rose-700', 'border-rose-200');
                 if (data.success) {
                     alert.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
-                    alert.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Se l\'email esiste, riceverai a breve le istruzioni.';
+                    alert.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i> Se l\'email esiste nel sistema, riceverai a breve le istruzioni per il reset.';
                     if (data.previewUrl) {
-                        testLink.innerHTML = `<a href="${data.previewUrl}" target="_blank" class="text-xs text-blue-600 underline font-bold mt-2 inline-block">Apri Email di Test per continuare</a>`;
+                        testLink.innerHTML = `<a href="${data.previewUrl}" target="_blank" class="text-xs text-blue-600 hover:text-blue-700 underline font-bold mt-2 inline-block"><i class="fa-solid fa-envelope-open-text mr-1"></i> Apri Email di Test per completare il reset</a>`;
                     }
                 } else {
-                    alert.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100');
+                    alert.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
                     alert.textContent = data.message || 'Errore durante la richiesta.';
                 }
             } catch (err) {
                 alert.classList.remove('hidden');
-                alert.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100');
+                alert.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
                 alert.textContent = 'Errore di connessione.';
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = 'Invia Link di Recupero';
+                btn.innerHTML = '<i class="fa-regular fa-paper-plane text-xs"></i> <span>Invia Link</span>';
             }
         }
 
@@ -345,8 +833,8 @@
             const policyRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
             if (!policyRegex.test(newPassword)) {
                 alert.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
-                alert.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100');
-                alert.innerHTML = '<i class="fa-solid fa-circle-xmark mr-1 mb-1"></i> La password non rispetta i requisiti di sicurezza:<br>- Minimo 8 caratteri<br>- Almeno una lettera maiuscola<br>- Almeno un numero<br>- Almeno un carattere speciale';
+                alert.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
+                alert.innerHTML = '<div class="flex items-center gap-1.5 font-bold"><i class="fa-solid fa-circle-xmark"></i> La password non soddisfa i requisiti:</div><div class="text-[11px] font-normal text-rose-600 pl-5">Deve contenere almeno 8 caratteri, una maiuscola, un numero e un carattere speciale.</div>';
                 return;
             }
 
@@ -362,25 +850,25 @@
                 });
                 const data = await res.json();
 
-                alert.classList.remove('hidden', 'bg-rose-50', 'text-rose-600', 'border-rose-100');
+                alert.classList.remove('hidden', 'bg-rose-50', 'text-rose-700', 'border-rose-200');
                 if (data.success) {
                     alert.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
-                    alert.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Password aggiornata con successo! Ora puoi accedere.';
+                    alert.innerHTML = '<div class="flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-500"></i> Password aggiornata con successo! Reindirizzamento al login in corso...</div>';
                     setTimeout(() => {
                         window.location.href = 'login.html';
-                    }, 3000);
+                    }, 2500);
                 } else {
-                    alert.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100');
+                    alert.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
                     alert.textContent = data.message || 'Errore. Il link potrebbe essere scaduto.';
                     btn.disabled = false;
-                    btn.innerHTML = 'Salva Nuova Password';
+                    btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Salva Nuova Password</span>';
                 }
             } catch (err) {
                 alert.classList.remove('hidden');
-                alert.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100');
+                alert.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
                 alert.textContent = 'Errore di connessione.';
                 btn.disabled = false;
-                btn.innerHTML = 'Salva Nuova Password';
+                btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Salva Nuova Password</span>';
             }
         }
     </script>

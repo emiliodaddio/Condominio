@@ -14,7 +14,8 @@
 const state = {
     currentUser: null,
     token: sessionStorage.getItem('condo_token') || null,
-    currentTab: 'accounting',
+    activeCondominioId: null,
+    currentTab: 'dashboard',
     quotes: [],
     receivables: [],
     suppliers: [],
@@ -46,21 +47,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         const data = await res.json();
         state.currentUser = data.user;
 
-        
-        // Dati caricati tramite auth/me
+        // Se l'utente ha più condomini, azzera activeCondominioId all'avvio 
+        // così da mostrare SEMPRE la maschera iniziale "La tua Scrivania"
+        if (state.currentUser.condomini && state.currentUser.condomini.length > 1) {
+            state.activeCondominioId = null;
+            sessionStorage.removeItem('active_Condominio_id');
+        }
 
         // Configura l'interfaccia grafica in base al ruolo dell'utente
         setupUIForRole();
         checkPrivacyStatus();
 
-        // Carica i dati della prima scheda
-        loadAccountingData();
-        loadTicketsBadge();
-        loadAnagrafica();
-
-        // Se l'utente è amministratore, pre-carica la lista utenti per il pannello
-        if (state.currentUser.role === 'admin') {
-            loadUsersList();
+        // Se un condominio è attivo, carica i dati iniziali
+        if (state.activeCondominioId) {
+            loadTicketsBadge();
+            loadAnagrafica();
+            if (state.currentUser.role === 'admin') {
+                loadUsersList();
+            }
         }
 
     } catch (err) {
@@ -91,8 +95,17 @@ function getAuthHeaders() {
 function logout() {
     sessionStorage.removeItem('condo_token');
     sessionStorage.removeItem('condo_user');
+    sessionStorage.removeItem('active_Condominio_id');
     window.location.href = 'login.html?v=2';
 }
+
+window.handleHomeClick = function() {
+    if (state.currentUser && state.currentUser.condomini && state.currentUser.condomini.length > 1) {
+        returnToAgencyDashboard();
+    } else {
+        switchTab('dashboard');
+    }
+};
 
 // ============================================================================
 // 2. CONFIGURAZIONE DINAMICA DELLA UI PER IL RUOLO (RBAC)
@@ -145,15 +158,29 @@ function setupUIForRole() {
 
     // Dati profilo nell'header
     document.getElementById('user-display-name').textContent = user.nome;
-    document.getElementById('user-display-unit').textContent = isAdmin ? 'Amministrazione Condominiale' : (user.unita || 'condomino');
+    document.getElementById('user-display-unit').textContent = user.is_superadmin ? 'Proprietario della Piattaforma' : (isAdmin ? 'Amministrazione Condominiale' : (user.unita || 'condomino'));
 
     const roleBadge = document.getElementById('role-badge');
-    if (isAdmin) {
+    if (user.is_superadmin) {
+        roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-900 border border-purple-300 shadow-2xs';
+        roleBadge.innerHTML = '<i class="fa-solid fa-crown text-amber-500 mr-1"></i> SUPERUSER (PROPRIETARIO)';
+    } else if (isAdmin) {
         roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200';
         roleBadge.innerHTML = '<i class="fa-solid fa-shield-halved mr-1"></i> AMMINISTRATORE';
     } else {
         roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200';
         roleBadge.innerHTML = '<i class="fa-solid fa-user-check mr-1"></i> condomino';
+    }
+
+    const btnSuDesk = document.getElementById('btn-superuser-desk');
+    if (btnSuDesk) {
+        if (user.is_superadmin) btnSuDesk.classList.remove('hidden');
+        else btnSuDesk.classList.add('hidden');
+    }
+    const btnSuHeader = document.getElementById('btn-superuser-header');
+    if (btnSuHeader) {
+        if (user.is_superadmin) btnSuHeader.classList.remove('hidden');
+        else btnSuHeader.classList.add('hidden');
     }
 
     const tabBtnUsers = document.getElementById('tab-btn-users');
@@ -195,11 +222,11 @@ function setupUIForRole() {
     const bannerDesc = document.getElementById('role-banner-desc');
 
     if (isAdmin) {
-        banner.className = 'p-4 rounded-2xl border bg-blue-50/80 border-blue-200 text-blue-950 flex items-center justify-between shadow-2xs';
-        bannerIcon.className = 'w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg shrink-0';
-        bannerIcon.innerHTML = '<i class="fa-solid fa-user-tie"></i>';
-        bannerTitle.textContent = 'Pannello di Controllo Amministratore (Superuser)';
-        bannerDesc.textContent = 'Accesso completo a tutti i dati finanziari, debitori in chiaro e gestione quote/fatture.';
+        banner.className = 'p-4 rounded-2xl border bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border-blue-200/80 text-blue-950 flex items-center justify-between shadow-xs';
+        bannerIcon.className = 'w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs';
+        bannerIcon.innerHTML = '<i class="fa-solid fa-user-shield"></i>';
+        bannerTitle.textContent = 'Pannello Contabile Amministratore';
+        bannerDesc.textContent = 'Controllo completo delle finanze: debitori in chiaro, riconciliazione quote e fatture fornitori.';
 
         document.getElementById('quotes-table-title').innerHTML = '<i class="fa-solid fa-list-check text-blue-600"></i> Tutte le Quote del Condominio (Vista Amministratore)';
         document.getElementById('quotes-table-subtitle').textContent = 'Elenco completo delle quote emesse per ciascun condomino con stato e opzione di saldo';
@@ -209,11 +236,11 @@ function setupUIForRole() {
         document.getElementById('admin-ticket-status-box').classList.remove('hidden');
         document.getElementById('admin-ticket-status-box').classList.add('flex');
     } else {
-        banner.className = 'p-4 rounded-2xl border bg-emerald-50/80 border-emerald-200 text-emerald-950 flex items-center justify-between shadow-2xs';
-        bannerIcon.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0';
+        banner.className = 'p-4 rounded-2xl border bg-gradient-to-r from-emerald-50/90 to-teal-50/90 border-emerald-200/80 text-emerald-950 flex items-center justify-between shadow-xs';
+        bannerIcon.className = 'w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs';
         bannerIcon.innerHTML = '<i class="fa-solid fa-lock"></i>';
-        bannerTitle.textContent = 'Area Riservata condomino (Dati Personali & Trasparenza Protetta)';
-        bannerDesc.textContent = 'Visualizzazione limitata alle sole tue quote. I nominativi dei debitori nelle altre quote sono oscurati per la privacy.';
+        bannerTitle.textContent = 'Area Riservata Condòmino';
+        bannerDesc.textContent = 'Visualizzazione trasparente e protetta delle tue quote e delle scadenze condominiali.';
 
         document.getElementById('quotes-table-title').innerHTML = '<i class="fa-solid fa-wallet text-emerald-600"></i> Le Mie Quote Personali';
         document.getElementById('quotes-table-subtitle').textContent = `Quote ordinarie e straordinarie intestate a ${user.nome} (${user.unita})`;
@@ -236,6 +263,36 @@ function switchTab(tabId) {
     if (target) target.classList.remove('hidden');
     if (tabId === 'unita') loadUnita();
 
+    // Gestione visibilità tasto "Torna alla Dashboard" e Breadcrumb di navigazione
+    const tabNames = {
+        'dashboard': 'Dashboard',
+        'accounting': 'Contabilità & Finanze',
+        'assemblies': 'Assemblee & Verbali',
+        'communications': 'Comunicazioni & Circolari',
+        'tickets': 'Segnalazioni Guasti & Manutenzioni',
+        'admin-profile': 'Studio Amministratore',
+        'unita': 'Unità & Tabelle Millesimali',
+        'anagrafica': 'Rubrica & Anagrafica Residenti',
+        'banca': 'Banca & Cassa',
+        'giornale': 'Libro Giornale',
+        'audit': 'Registro Log & Attività',
+        'users': 'Gestione Utenti & Credenziali'
+    };
+
+    const backBtn = document.getElementById('btn-header-back-dash');
+    const breadcrumbBar = document.getElementById('subpage-breadcrumb-bar');
+    const breadcrumbTitle = document.getElementById('breadcrumb-current-page');
+
+    if (tabId === 'dashboard') {
+        if (backBtn) backBtn.classList.add('hidden');
+        if (breadcrumbBar) breadcrumbBar.classList.add('hidden');
+    } else {
+        if (backBtn) backBtn.classList.remove('hidden');
+        if (breadcrumbBar) breadcrumbBar.classList.remove('hidden');
+        if (breadcrumbTitle) breadcrumbTitle.textContent = tabNames[tabId] || tabId;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
     document.querySelectorAll('.tab-btn').forEach(b => {
         b.classList.remove('border-blue-600', 'text-blue-600', 'font-semibold');
         b.classList.add('border-transparent', 'text-slate-500', 'font-medium');
@@ -248,7 +305,7 @@ function switchTab(tabId) {
     }
 
     if (tabId === 'accounting') loadAccountingData();
-    if (tabId === 'dashboard') loadAnagrafica();
+    if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); }
     else if (tabId === 'assemblies') loadAssembliesData();
     else if (tabId === 'communications') loadConvocationsLog();
     else if (tabId === 'tickets') loadTicketsData();
@@ -259,6 +316,7 @@ function switchTab(tabId) {
     else if (tabId === 'audit' && state.currentUser.role === 'admin') loadAudit();
     else if (tabId === 'admin-profile') loadAdminProfile();
     
+    if (typeof updateLicenseReadOnlyUI === 'function') updateLicenseReadOnlyUI();
 }
 
 // ============================================================================
@@ -481,6 +539,10 @@ function renderSuppliersTable() {
 }
 
 async function markQuoteAsPaid(quoteId) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: registrazione pagamenti bloccata.", "warning");
+        return;
+    }
     if (!confirm('Confermi la registrazione dell\'avvenuto saldo per questa quota?')) return;
 
     try {
@@ -616,9 +678,46 @@ async function populateQuoteUsersSelect() {
 }
 
 function updateTicketsBadge() {
-    const openCount = state.tickets.filter(t => t.status !== 'Risolto' && t.status !== 'Chiuso').length;
+    const openTickets = (state.tickets || []).filter(t => t.status !== 'Risolto' && t.status !== 'Chiuso' && t.status !== 'Risolta');
+    const openCount = openTickets.length;
+    
+    // Badge conteggio storico (se presente)
     const badge = document.getElementById('open-tickets-badge');
     if (badge) badge.textContent = openCount;
+
+    // Lampeggio Card "Segnalazioni Guasti" nella Dashboard
+    const ticketCard = document.getElementById('dash-card-tickets');
+    const ticketIcon = document.getElementById('dash-card-tickets-icon');
+    const ticketAlertBadge = document.getElementById('dash-ticket-alert-badge');
+    const ticketCountText = document.getElementById('dash-ticket-count-text');
+    const ticketActionText = document.getElementById('dash-ticket-action-text');
+
+    if (ticketCard) {
+        if (openCount > 0) {
+            ticketCard.classList.add('ticket-blinking-alert');
+            if (ticketIcon) ticketIcon.classList.add('ticket-icon-blink');
+            if (ticketAlertBadge) {
+                ticketAlertBadge.classList.remove('hidden');
+                ticketAlertBadge.classList.add('inline-flex');
+            }
+            if (ticketCountText) {
+                ticketCountText.textContent = openCount === 1 ? '1 GUASTO ATTIVO' : `${openCount} GUASTI ATTIVI`;
+            }
+            if (ticketActionText) {
+                ticketActionText.innerHTML = '<span class="text-rose-600 flex items-center gap-1.5"><i class="fa-solid fa-triangle-exclamation text-xs animate-bounce"></i> Intervento Richiesto</span>';
+            }
+        } else {
+            ticketCard.classList.remove('ticket-blinking-alert');
+            if (ticketIcon) ticketIcon.classList.remove('ticket-icon-blink');
+            if (ticketAlertBadge) {
+                ticketAlertBadge.classList.add('hidden');
+                ticketAlertBadge.classList.remove('inline-flex');
+            }
+            if (ticketActionText) {
+                ticketActionText.innerHTML = '<span>Apri segnalazione</span>';
+            }
+        }
+    }
 }
 
 async function loadTicketsBadge() {
@@ -632,7 +731,13 @@ async function loadTicketsBadge() {
     } catch (_) {}
 }
 
-function openNewTicketModal() { document.getElementById('modal-new-ticket').classList.remove('hidden'); }
+function openNewTicketModal() { 
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: apertura segnalazioni bloccata.", "warning");
+        return;
+    }
+    document.getElementById('modal-new-ticket').classList.remove('hidden'); 
+}
 function closeNewTicketModal() { document.getElementById('modal-new-ticket').classList.add('hidden'); }
 
 
@@ -719,6 +824,10 @@ function renderTicketsTable() {
 }
 async function handleCreateTicket(event) {
     event.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     const payload = {
         category: document.getElementById('ticket-category').value,
         priority: document.getElementById('ticket-priority').value,
@@ -747,32 +856,73 @@ async function handleCreateTicket(event) {
 
 async function openTicketDetailsModal(ticketId) {
     state.currentTicketId = ticketId;
-    document.getElementById('modal-ticket-details').classList.remove('hidden');
+    const modal = document.getElementById('modal-ticket-details');
+    if (modal) modal.classList.remove('hidden');
 
     try {
         const res = await fetch(`/api/tickets/${ticketId}`, { headers: getAuthHeaders() });
         const data = await res.json();
-        if (!data.success) return;
+        if (!data.success) {
+            showToast(data.message || 'Errore recupero dettagli ticket.', 'error');
+            return;
+        }
 
         const ticket = data.data;
-        document.getElementById('detail-ticket-id').textContent = `#${ticket.id}`;
-        document.getElementById('detail-ticket-title').textContent = ticket.title;
-        document.getElementById('detail-ticket-meta').innerHTML = `Segnalato da <strong>${ticket.creator_name}</strong> (${ticket.creator_unita}) il ${formatDate(ticket.created_at)}`;
-        document.getElementById('detail-ticket-description').textContent = ticket.description;
-        document.getElementById('update-ticket-status-select').value = ticket.status;
+        const idElem = document.getElementById('detail-ticket-id');
+        if (idElem) idElem.textContent = `#${ticket.id}`;
+        
+        const titleElem = document.getElementById('detail-ticket-title');
+        if (titleElem) titleElem.textContent = ticket.title || '';
+        
+        const metaElem = document.getElementById('detail-ticket-meta');
+        if (metaElem) {
+            const creator = ticket.creator_name || 'Utente';
+            const unit = ticket.creator_unita ? ` (${ticket.creator_unita})` : '';
+            metaElem.innerHTML = `Segnalato da <strong>${creator}</strong>${unit} il ${formatDate(ticket.created_at)}`;
+        }
+        
+        const descElem = document.getElementById('detail-ticket-description');
+        if (descElem) descElem.textContent = ticket.description || '';
+
+        // Mostra il box cambio stato se l'utente è amministratore
+        const adminStatusBox = document.getElementById('admin-ticket-status-box');
+        if (adminStatusBox) {
+            const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+            if (isAdmin) {
+                adminStatusBox.classList.remove('hidden');
+                adminStatusBox.classList.add('flex');
+            } else {
+                adminStatusBox.classList.add('hidden');
+                adminStatusBox.classList.remove('flex');
+            }
+        }
+
+        const statusSelect = document.getElementById('update-ticket-status-select');
+        if (statusSelect && ticket.status) {
+            statusSelect.value = ticket.status;
+        }
 
         const container = document.getElementById('detail-ticket-updates');
-        container.innerHTML = ticket.updates.map(up => `
-            <div class="relative timeline-item pb-3">
-                <div class="flex justify-between text-xs mb-1">
-                    <span class="font-bold px-2 py-0.5 rounded bg-slate-100">${up.author_name}</span>
-                    <span class="text-slate-400">${formatDate(up.created_at)}</span>
-                </div>
-                <p class="text-xs text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">${up.message}</p>
-            </div>
-        `).join('');
+        if (container) {
+            const updates = ticket.updates || [];
+            if (updates.length === 0) {
+                container.innerHTML = `<div class="text-xs text-slate-400 italic py-2">Nessuna risposta o comunicazione registrata finora.</div>`;
+            } else {
+                container.innerHTML = updates.map(up => `
+                    <div class="relative timeline-item pb-3">
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">${up.author_name || 'Utente'}</span>
+                            <span class="text-slate-400">${formatDate(up.created_at)}</span>
+                        </div>
+                        <p class="text-xs text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">${up.message}</p>
+                    </div>
+                `).join('');
+                container.scrollTop = container.scrollHeight;
+            }
+        }
 
-    } catch (_) {
+    } catch (err) {
+        console.error('Errore dettagli ticket:', err);
         showToast('Errore recupero dettagli ticket.', 'error');
     }
 }
@@ -784,9 +934,14 @@ function closeTicketDetailsModal() {
 
 async function handleAddTicketUpdate(event) {
     event.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: invio risposte bloccato.", "error");
+        return;
+    }
     if (!state.currentTicketId) return;
 
-    const message = document.getElementById('update-message').value.trim();
+    const inputElem = document.getElementById('update-message');
+    const message = inputElem ? inputElem.value.trim() : '';
     if (!message) return;
 
     try {
@@ -795,18 +950,26 @@ async function handleAddTicketUpdate(event) {
             headers: getAuthHeaders(),
             body: JSON.stringify({ message })
         });
-        if (res.ok) {
+        const data = await res.json();
+        if (res.ok && data.success) {
             showToast('Risposta registrata!', 'success');
-            document.getElementById('update-message').value = '';
-            openTicketDetailsModal(state.currentTicketId);
+            if (inputElem) inputElem.value = '';
+            await openTicketDetailsModal(state.currentTicketId);
             loadTicketsData();
+        } else {
+            showToast((data && data.message) || 'Errore salvataggio risposta.', 'error');
         }
-    } catch (_) {}
+    } catch (err) {
+        console.error('Errore risposta ticket:', err);
+        showToast('Errore durante l\'invio della risposta.', 'error');
+    }
 }
 
 async function submitStatusUpdate() {
     if (!state.currentTicketId) return;
-    const status = document.getElementById('update-ticket-status-select').value;
+    const statusSelect = document.getElementById('update-ticket-status-select');
+    const status = statusSelect ? statusSelect.value : null;
+    if (!status) return;
 
     try {
         const res = await fetch(`/api/tickets/${state.currentTicketId}/status`, {
@@ -814,12 +977,18 @@ async function submitStatusUpdate() {
             headers: getAuthHeaders(),
             body: JSON.stringify({ status })
         });
-        if (res.ok) {
+        const data = await res.json();
+        if (res.ok && data.success) {
             showToast(`Stato aggiornato a "${status}"`, 'success');
-            openTicketDetailsModal(state.currentTicketId);
+            await openTicketDetailsModal(state.currentTicketId);
             loadTicketsData();
+        } else {
+            showToast((data && data.message) || 'Errore aggiornamento stato.', 'error');
         }
-    } catch (_) {}
+    } catch (err) {
+        console.error('Errore aggiornamento stato ticket:', err);
+        showToast('Errore durante l\'aggiornamento dello stato.', 'error');
+    }
 }
 
 // ============================================================================
@@ -865,6 +1034,10 @@ function renderAssembliesCards() {
 // ============================================================================
 
 async function openNewQuoteModal() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: creazione quote bloccata.", "warning");
+        return;
+    }
     populateQuoteUsersSelect();
     document.getElementById('modal-new-quote').classList.remove('hidden');
 }
@@ -875,6 +1048,10 @@ function closeNewQuoteModal() {
 
 async function handleCreateQuote(event) {
     event.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     const payload = {
         persona_id: document.getElementById('quote-persona-id').value,
         unita_id: document.getElementById('quote-unita-id') ? document.getElementById('quote-unita-id').value : null,
@@ -944,6 +1121,10 @@ function showToast(message, type = 'info') {
 // ============================================================================
 
 function openNewSupplierModal() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: registrazione pagamenti fornitori bloccata.", "warning");
+        return;
+    }
     document.getElementById('modal-new-supplier').classList.remove('hidden');
     
     // Popola il menu a tendina
@@ -963,6 +1144,10 @@ function closeNewSupplierModal() {
 
 async function handleCreateSupplier(event) {
     event.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     const payload = {
         supplier_name: document.getElementById('supplier-name').value.trim(),
         category: document.getElementById('supplier-category').value,
@@ -1164,6 +1349,126 @@ function renderPastAssemblies(items) {
 // V2.0 LOGICA AGGIUNTIVA
 // ============================================================================
 
+function isLicenseReadOnly() {
+    return !!(state.currentCondoLicense && state.currentCondoLicense.is_read_only);
+}
+
+function updateLicenseReadOnlyUI() {
+    const isReadOnly = isLicenseReadOnly();
+
+    // 1. Badge dinamico nell'intestazione
+    const headerTitle = document.getElementById('dash-condo-nome');
+    let badge = document.getElementById('header-readonly-badge');
+    if (isReadOnly) {
+        if (!badge && headerTitle && headerTitle.parentNode) {
+            badge = document.createElement('span');
+            badge.id = 'header-readonly-badge';
+            badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs ml-3';
+            badge.innerHTML = '<i class="fa-solid fa-lock text-rose-600"></i> Modalità Sola Lettura';
+            headerTitle.parentNode.appendChild(badge);
+        } else if (badge) {
+            badge.classList.remove('hidden');
+        }
+    } else if (badge) {
+        badge.classList.add('hidden');
+    }
+
+    // 2. Disabilita visivamente e interattivamente i pulsanti di scrittura
+    const writeBtnSelectors = [
+        'button[onclick*="openNewQuoteModal"]',
+        'button[onclick*="openSupplierRegistryModal"]',
+        'button[onclick*="openNewSupplierModal"]',
+        'button[onclick*="openConvocazioneModal"]',
+        'button[onclick*="openNewTicketModal"]',
+        'button[onclick*="openPersonaModal"]',
+        'button[onclick*="openUnitaModal"]',
+        'button[onclick*="openNewJournal"]',
+        'button[onclick*="openNewBankAccount"]',
+        'button[onclick*="openNewBankTransaction"]',
+        '#form-condominio button[type="submit"]',
+        '#admin-add-supplier-registry-btn',
+        '#admin-add-supplier-btn',
+        '#admin-edit-form button[type="submit"]',
+        'button[onclick*="markQuoteAsPaid"]',
+        'button[onclick*="editQuote"]',
+        'button[onclick*="sendReceipt"]',
+        'button[onclick*="sendReminder"]',
+        'button[onclick*="editPersona"]',
+        'button[onclick*="editUnita"]',
+        'button[onclick*="editSupplierRegistry"]',
+        'button[onclick*="editUser"]',
+        'button[onclick*="deleteUser"]',
+        'button[onclick*="deleteQuote"]',
+        '#btn-export-excel-accounting',
+        '#btn-export-excel-users',
+        'button[onclick*="exportExcel"]',
+        'button[onclick*="exportUsersExcel"]'
+    ];
+
+    writeBtnSelectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(btn => {
+            if (isReadOnly) {
+                btn.disabled = true;
+                btn.classList.add('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+                btn.setAttribute('title', 'Bloccato: Condominio in sola lettura (licenza scaduta o sospesa)');
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+                btn.removeAttribute('title');
+            }
+        });
+    });
+
+    // 3. Campi form Dati Condominio
+    const condoForm = document.getElementById('form-condominio');
+    if (condoForm) {
+        condoForm.querySelectorAll('input, select, textarea').forEach(inp => {
+            if (isReadOnly) {
+                inp.setAttribute('readonly', 'true');
+                inp.classList.add('bg-slate-100', 'cursor-not-allowed');
+            } else {
+                inp.removeAttribute('readonly');
+                inp.classList.remove('bg-slate-100', 'cursor-not-allowed');
+            }
+        });
+    }
+
+    // 4. Inserimento banner informativo nei tab operativi
+    const tabs = ['tab-contabilita', 'tab-unita', 'tab-anagrafica', 'tab-tickets', 'tab-condominio'];
+    tabs.forEach(tabId => {
+        const pane = document.getElementById(tabId);
+        if (!pane) return;
+        let tabBanner = pane.querySelector('.tab-license-readonly-banner');
+        if (isReadOnly) {
+            if (!tabBanner) {
+                tabBanner = document.createElement('div');
+                tabBanner.className = 'tab-license-readonly-banner mb-5 p-4 rounded-2xl bg-gradient-to-r from-rose-50 to-red-100 border border-rose-300 text-rose-950 text-xs flex items-center justify-between gap-3 shadow-xs';
+                tabBanner.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <i class="fa-solid fa-lock"></i>
+                        </div>
+                        <div>
+                            <span class="font-black uppercase tracking-wide text-rose-900 block text-xs">Modalità Sola Lettura Attiva</span>
+                            <span class="text-rose-800 text-[11px]">La licenza per questo fabbricato è scaduta o sospesa. L'inserimento di nuovi dati e le modifiche sono disabilitate.</span>
+                        </div>
+                    </div>
+                    ${state.currentUser && state.currentUser.is_superadmin ? `
+                        <button onclick="openSuLicenseFromCondo()" class="shrink-0 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors flex items-center gap-1.5 shadow-xs">
+                            <i class="fa-solid fa-crown text-amber-300"></i> Rinnova (SuperUser)
+                        </button>
+                    ` : ''}
+                `;
+                pane.insertBefore(tabBanner, pane.firstChild);
+            } else {
+                tabBanner.classList.remove('hidden');
+            }
+        } else if (tabBanner) {
+            tabBanner.classList.add('hidden');
+        }
+    });
+}
+
 async function loadAnagrafica() {
     try {
         const res = await fetch('/api/condominio', { headers: getAuthHeaders() });
@@ -1196,12 +1501,63 @@ async function loadAnagrafica() {
                     }
                 }
             }
+
+            // Gestione Banner Licenza (Scaduta, Sospesa, In Scadenza)
+            if (data.data.license) {
+                state.currentCondoLicense = data.data.license;
+                const lic = data.data.license;
+                const bannerExpired = document.getElementById('banner-license-expired');
+                const bannerExpiring = document.getElementById('banner-license-expiring');
+                const btnRenewExpiredSu = document.getElementById('banner-btn-renew-su');
+                const btnRenewExpiringSu = document.getElementById('banner-btn-renew-expiring-su');
+                const isSuper = state.currentUser && state.currentUser.is_superadmin;
+
+                if (lic.is_read_only) {
+                    if (bannerExpired) {
+                        bannerExpired.classList.remove('hidden');
+                        const desc = document.getElementById('banner-license-expired-desc');
+                        if (desc) {
+                            if (lic.is_suspended) {
+                                desc.textContent = `La licenza per questo condominio è stata temporaneamente SOSPESA dall'amministrazione. Il sistema è in modalità di consultazione (sola lettura).`;
+                            } else {
+                                desc.textContent = `La licenza per questo fabbricato è scaduta il ${lic.end_date}. È possibile consultare i bilanci e lo storico, ma l'inserimento di nuovi dati, fatture e ticket è bloccato fino al rinnovo.`;
+                            }
+                        }
+                        if (btnRenewExpiredSu) {
+                            if (isSuper) btnRenewExpiredSu.classList.remove('hidden');
+                            else btnRenewExpiredSu.classList.add('hidden');
+                        }
+                    }
+                    if (bannerExpiring) bannerExpiring.classList.add('hidden');
+                } else if (lic.is_expiring) {
+                    if (bannerExpiring) {
+                        bannerExpiring.classList.remove('hidden');
+                        const desc = document.getElementById('banner-license-expiring-desc');
+                        if (desc) {
+                            desc.textContent = `Attenzione: la licenza per questo fabbricato scadrà il ${lic.end_date} (mancano ${lic.days_remaining} giorni). Effettua il rinnovo per garantire la continuità dei servizi.`;
+                        }
+                        if (btnRenewExpiringSu) {
+                            if (isSuper) btnRenewExpiringSu.classList.remove('hidden');
+                            else btnRenewExpiringSu.classList.add('hidden');
+                        }
+                    }
+                    if (bannerExpired) bannerExpired.classList.add('hidden');
+                } else {
+                    if (bannerExpired) bannerExpired.classList.add('hidden');
+                    if (bannerExpiring) bannerExpiring.classList.add('hidden');
+                }
+                updateLicenseReadOnlyUI();
+            }
         }
     } catch(e) { console.error(e); }
 }
 
 async function handleSaveCondominio(e) {
     e.preventDefault();
+    if (isLicenseReadOnly()) {
+        showToast("Operazione bloccata: la licenza per questo condominio è scaduta o sospesa (Sola Lettura).", "error");
+        return;
+    }
     const payload = {
         nome: document.getElementById('condominio-nome').value,
         indirizzo: document.getElementById('condominio-indirizzo').value,
@@ -1543,6 +1899,10 @@ function closeJournalModal() {
 
 async function handleNewJournalSubmit(e) {
     e.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     
     const conto = document.getElementById('journal-user-id').value;
     const descrizione = document.getElementById('journal-desc').value;
@@ -1760,6 +2120,10 @@ async function handleEditSubmit(e) {
 }
 
 async function editQuote(id) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: modifica rate bloccata.", "warning");
+        return;
+    }
     const q = state.quotes.find(x => x.id === id) || { amount: 0, due_date: '', status: 'In sospeso', title: 'Quota' };
     const fields = `
         <div>
@@ -1879,9 +2243,17 @@ async function deleteUser(id) {
 // ============================================================================
 async function exportExcel(e) {
     if (e) e.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: l'esportazione Excel è disabilitata per i condomini con licenza scaduta o sospesa (Sola Lettura).", "warning");
+        return;
+    }
     try {
         const res = await fetch('/api/export/accounting-excel', { headers: getAuthHeaders() });
-        if (!res.ok) throw new Error("Export fallito");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            showToast(errData.message || "Esportazione bloccata o non consentita", "error");
+            return;
+        }
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1942,6 +2314,10 @@ async function loadUnita() {
 }
 
 async function openUnitaModal(uId = null) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: censimento o modifica unità bloccata.", "warning");
+        return;
+    }
     let u = null;
     if (uId && state.unitaList) {
         u = state.unitaList.find(x => x.id === uId);
@@ -1984,6 +2360,10 @@ function closeUnitaModal() {
 
 async function saveUnita(e) {
     e.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     const id = document.getElementById('unita-id').value;
     const body = {
         identificativo: document.getElementById('unita-identificativo').value,
@@ -2021,6 +2401,10 @@ async function saveUnita(e) {
 
 async function exportUsersExcel(e) {
     if (e) e.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: l'esportazione dell'elenco utenti è disabilitata per i condomini con licenza scaduta o sospesa (Sola Lettura).", "warning");
+        return;
+    }
     if (!state.users || state.users.length === 0) return;
     
     let csv = 'Nome,Email,Telefono,Unità,Dati Catastali,Ruolo,Data Creazione\n';
@@ -2079,6 +2463,10 @@ async function loadSupplierRegistry() {
 }
 
 function openSupplierRegistryModal() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: censimento fornitori bloccato.", "warning");
+        return;
+    }
     editingSupplierId = null;
     document.getElementById('form-supplier-registry').reset();
     document.querySelector('#modal-supplier-registry h3').innerHTML = '<i class="fa-solid fa-address-book text-indigo-600 mr-2"></i>Nuovo Fornitore';
@@ -2086,6 +2474,10 @@ function openSupplierRegistryModal() {
 }
 
 function editSupplierRegistry(id) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: modifica fornitori bloccata.", "warning");
+        return;
+    }
     editingSupplierId = id;
     const supp = window.suppliersRegistryData.find(s => s.id === id);
     if (!supp) return;
@@ -2110,6 +2502,10 @@ function closeSupplierRegistryModal() {
 
 async function handleSupplierRegistrySubmit(event) {
     event.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     const payload = {
         ragione_sociale: document.getElementById('supp-name').value.trim(),
         partita_iva: document.getElementById('supp-piva').value.trim(),
@@ -2269,6 +2665,10 @@ resetInactivityTimer();
 // MODULO CONVOCAZIONE ASSEMBLEA
 // ============================================================================
 async function openConvocazioneModal() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: invio convocazioni bloccato.", "warning");
+        return;
+    }
     const modal = document.getElementById('convocazione-modal');
     if (!modal) return;
     
@@ -2609,6 +3009,10 @@ async function loadConvocationsLog() {
 
 
 async function sendReceipt(quoteId) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: invio ricevute bloccato.", "warning");
+        return;
+    }
     if (!confirm('Vuoi generare e inviare via email la ricevuta di pagamento in formato PDF al condomino?')) return;
     try {
         showToast('Generazione ricevuta in corso...', 'info');
@@ -2630,6 +3034,10 @@ async function sendReceipt(quoteId) {
 }
 
 async function sendReminder(quoteId) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: invio solleciti bloccato.", "warning");
+        return;
+    }
     if (!confirm('Vuoi generare e inviare via email un formale sollecito di pagamento in formato PDF al condomino?')) return;
     try {
         showToast('Generazione sollecito in corso...', 'info');
@@ -2759,29 +3167,51 @@ async function acceptPrivacy() {
 
 
 window.showAgencyDashboard = function() {
+    const suView = document.getElementById('superuser-dashboard-view');
+    if (suView) suView.classList.add('hidden');
+
     document.getElementById('agency-dashboard-view').classList.remove('hidden');
     document.getElementById('agency-dashboard-view').classList.add('flex');
     document.getElementById('app-core-view').classList.add('hidden');
+
+    const btnSuDesk = document.getElementById('btn-superuser-desk');
+    if (btnSuDesk) {
+        if (state.currentUser && state.currentUser.is_superadmin) {
+            btnSuDesk.classList.remove('hidden');
+        } else {
+            btnSuDesk.classList.add('hidden');
+        }
+    }
     
     const grid = document.getElementById('agency-condos-grid');
     grid.innerHTML = '';
     
     state.currentUser.condomini.forEach(c => {
+        const isAdmin = c.role === 'admin';
+        const roleBadgeHtml = isAdmin 
+            ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-200"><i class="fa-solid fa-shield-halved mr-1"></i> Amministratore</span>`
+            : `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-user-check mr-1"></i> Condòmino</span>`;
+
         grid.innerHTML += `
-            <div onclick="enterCondo(${c.id})" class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col justify-between group">
+            <div onclick="enterCondo(${c.id})" class="card-friendly p-6 cursor-pointer flex flex-col justify-between group hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/5 transition-all">
                 <div>
-                    <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                        <i class="fa-solid fa-building"></i>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 text-blue-600 border border-blue-100 flex items-center justify-center text-xl group-hover:bg-gradient-to-tr group-hover:from-blue-600 group-hover:to-indigo-600 group-hover:text-white group-hover:shadow-md transition-all">
+                            <i class="fa-solid fa-building"></i>
+                        </div>
+                        ${roleBadgeHtml}
                     </div>
-                    <h3 class="font-extrabold text-xl text-slate-900 mb-2">${c.nome}</h3>
-                    <div class="space-y-1 mb-4">
-                        ${c.indirizzo ? `<p class="text-xs text-slate-500 flex items-center"><i class="fa-solid fa-map-pin w-4 mr-1"></i> ${c.indirizzo}</p>` : ''}
-                        ${c.cf ? `<p class="text-xs text-slate-500 flex items-center"><i class="fa-solid fa-fingerprint w-4 mr-1"></i> C.F. ${c.cf}</p>` : ''}
-                        <p class="text-xs text-slate-500 mt-2">Ruolo: <span class="uppercase font-bold text-blue-600">${c.role}</span></p>
+                    <h3 class="font-extrabold text-xl text-slate-900 group-hover:text-blue-600 transition-colors mb-2">${c.nome}</h3>
+                    <div class="space-y-1.5 mb-5 text-xs text-slate-500">
+                        ${c.indirizzo ? `<p class="flex items-center gap-1.5"><i class="fa-solid fa-map-pin text-slate-400 w-4"></i> <span>${c.indirizzo}</span></p>` : ''}
+                        ${c.cf ? `<p class="flex items-center gap-1.5"><i class="fa-solid fa-fingerprint text-slate-400 w-4"></i> <span>C.F. ${c.cf}</span></p>` : ''}
                     </div>
                 </div>
-                <div class="flex items-center text-blue-600 font-bold text-sm">
-                    Accedi <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-blue-600 font-bold text-xs group-hover:text-blue-700">
+                    <span>Gestisci Condominio</span>
+                    <span class="w-7 h-7 rounded-lg bg-blue-50 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-all">
+                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-0.5 transition-transform"></i>
+                    </span>
                 </div>
             </div>
         `;
@@ -2790,17 +3220,27 @@ window.showAgencyDashboard = function() {
 
 window.enterCondo = function(id) {
     state.activeCondominioId = id;
+    state.currentCondoLicense = null;
     sessionStorage.setItem('active_Condominio_id', id);
+    const suView = document.getElementById('superuser-dashboard-view');
+    if (suView) suView.classList.add('hidden');
     document.getElementById('agency-dashboard-view').classList.add('hidden');
     document.getElementById('agency-dashboard-view').classList.remove('flex');
     document.getElementById('app-core-view').classList.remove('hidden');
     setupUIForRole();
-    switchTab('accounting');
+    switchTab('dashboard');
+    loadTicketsBadge();
+    loadAnagrafica();
 };
 
 window.returnToAgencyDashboard = function() {
     state.activeCondominioId = null;
+    state.currentCondoLicense = null;
+    const badge = document.getElementById('header-readonly-badge');
+    if (badge) badge.classList.add('hidden');
     sessionStorage.removeItem('active_Condominio_id');
+    const suView = document.getElementById('superuser-dashboard-view');
+    if (suView) suView.classList.add('hidden');
     showAgencyDashboard();
 };
 
@@ -2970,6 +3410,10 @@ function renderRubricaTable() {
 }
 
 function openPersonaModal(id = null) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: inserimento o modifica anagrafica bloccata.", "warning");
+        return;
+    }
     let p = null;
     if (id && state.anagraficaPersone) p = state.anagraficaPersone.find(x => x.id === id);
     
@@ -2992,6 +3436,10 @@ function closePersonaModal() {
 
 async function savePersona(e) {
     e.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
     const id = document.getElementById('persona-id').value;
     const body = {
         nome: document.getElementById('persona-nome').value,
@@ -3016,3 +3464,615 @@ async function savePersona(e) {
         } else { alert("Errore"); }
     } catch(err) { console.error(err); }
 }
+
+// ============================================================================
+// SUPERUSER / PROPRIETARIO CONTROLLER (Cabina di Regia)
+// ============================================================================
+
+state.suData = null;
+state.currentSuSubTab = 'modules';
+
+window.openSuperUserDashboard = function() {
+    document.getElementById('agency-dashboard-view').classList.add('hidden');
+    document.getElementById('agency-dashboard-view').classList.remove('flex');
+    document.getElementById('app-core-view').classList.add('hidden');
+    
+    const suView = document.getElementById('superuser-dashboard-view');
+    if (suView) {
+        suView.classList.remove('hidden');
+        loadSuperUserOverview();
+    }
+};
+
+window.switchSuperUserSubTab = function(subTab) {
+    state.currentSuSubTab = subTab;
+    const tabs = ['modules', 'licenses', 'operators', 'maintenance', 'audit'];
+    
+    tabs.forEach(t => {
+        const btn = document.getElementById(`su-tab-btn-${t}`);
+        const pane = document.getElementById(`su-subpane-${t}`);
+        if (t === subTab) {
+            if (btn) {
+                btn.className = 'px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 bg-white text-purple-900 shadow-xs';
+                const icon = btn.querySelector('i');
+                if (icon) icon.className = `fa-solid ${getSuTabIcon(t)} text-purple-600`;
+            }
+            if (pane) pane.classList.remove('hidden');
+        } else {
+            if (btn) {
+                btn.className = 'px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 text-slate-600 hover:text-slate-900';
+                const icon = btn.querySelector('i');
+                if (icon) icon.className = `fa-solid ${getSuTabIcon(t)} text-slate-400`;
+            }
+            if (pane) pane.classList.add('hidden');
+        }
+    });
+
+    if (subTab === 'audit') {
+        loadSuperUserAudit();
+    }
+};
+
+function getSuTabIcon(t) {
+    if (t === 'modules') return 'fa-sliders';
+    if (t === 'licenses') return 'fa-certificate';
+    if (t === 'operators') return 'fa-user-gear';
+    if (t === 'maintenance') return 'fa-triangle-exclamation';
+    if (t === 'audit') return 'fa-list-check';
+    return 'fa-circle';
+}
+
+async function loadSuperUserOverview() {
+    try {
+        const res = await fetch('/api/superuser/overview', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.message || 'Errore caricamento dati SuperUser', 'error');
+            return;
+        }
+
+        state.suData = data.data;
+
+        // 1. Stats KPI
+        const stats = data.data.stats || {};
+        document.getElementById('su-stat-condomini').textContent = stats.total_condomini || 0;
+        document.getElementById('su-stat-admins').textContent = stats.total_admins || 0;
+        document.getElementById('su-stat-users').textContent = stats.total_users || 0;
+
+        // 2. Render Condomini & Moduli
+        renderSuCondoModules(data.data.condomini || []);
+
+        // 2.1. Render Licenze & Abbonamenti
+        renderSuLicenses(data.data.condomini || []);
+
+        // 3. Render Operatori
+        renderSuUsers(data.data.users || []);
+
+        // 4. Popola tendine manutenzione
+        populateSuMaintenanceSelects(data.data.condomini || []);
+
+    } catch (err) {
+        console.error('Errore superuser overview:', err);
+        showToast('Errore durante il caricamento del pannello SuperUser', 'error');
+    }
+}
+
+function renderSuCondoModules(condomini) {
+    const tbody = document.getElementById('su-condo-modules-tbody');
+    if (!tbody) return;
+
+    if (condomini.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-slate-400 italic">Nessun condominio registrato.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = condomini.map(c => `
+        <tr class="hover:bg-purple-50/20 transition-colors">
+            <td class="py-3.5 px-4 font-semibold text-slate-900">
+                <span class="font-extrabold text-sm block text-slate-900">${c.nome}</span>
+                <span class="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                    <i class="fa-solid fa-user-shield text-purple-500"></i> Amm: <b class="text-slate-600">${c.admin_nome || 'Non assegnato'}</b> &bull; ${c.total_units || 0} unità
+                </span>
+            </td>
+            <td class="py-3.5 px-4 text-center">
+                <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_contabilita', this.checked)" ${c.module_contabilita ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Contabilità">
+            </td>
+            <td class="py-3.5 px-4 text-center">
+                <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_segnalazioni', this.checked)" ${c.module_segnalazioni ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Segnalazioni Guasti">
+            </td>
+            <td class="py-3.5 px-4 text-center">
+                <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_assemblee', this.checked)" ${c.module_assemblee ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Assemblee">
+            </td>
+            <td class="py-3.5 px-4 text-center">
+                <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_comunicazioni', this.checked)" ${c.module_comunicazioni ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Circolari">
+            </td>
+            <td class="py-3.5 px-4 text-center">
+                <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_banca', this.checked)" ${c.module_banca ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Banca">
+            </td>
+            <td class="py-3.5 px-4 text-center">
+                <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_anagrafica', this.checked)" ${c.module_anagrafica ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Anagrafica">
+            </td>
+            <td class="py-3.5 px-4 text-right">
+                <button onclick="enterCondoFromSuperUser(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs">
+                    <i class="fa-solid fa-arrow-right-to-bracket text-[11px]"></i>
+                    <span>Entra</span>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+window.handleModuleToggle = async function(condoId, moduleName, isChecked) {
+    if (!state.suData) return;
+    const condo = state.suData.condomini.find(c => c.id === condoId);
+    if (!condo) return;
+
+    condo[moduleName] = isChecked ? 1 : 0;
+
+    try {
+        const res = await fetch('/api/superuser/condo-features', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                condominioId: condoId,
+                module_contabilita: condo.module_contabilita,
+                module_segnalazioni: condo.module_segnalazioni,
+                module_assemblee: condo.module_assemblee,
+                module_comunicazioni: condo.module_comunicazioni,
+                module_banca: condo.module_banca,
+                module_anagrafica: condo.module_anagrafica
+            })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Permessi moduli aggiornati con successo!', 'success');
+        } else {
+            showToast(data.message || 'Errore salvataggio permessi', 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Errore di connessione', 'error');
+    }
+};
+
+window.enterCondoFromSuperUser = function(condoId) {
+    const suView = document.getElementById('superuser-dashboard-view');
+    if (suView) suView.classList.add('hidden');
+    enterCondo(condoId);
+};
+
+function renderSuUsers(users) {
+    const tbody = document.getElementById('su-users-tbody');
+    if (!tbody) return;
+
+    if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-slate-400 italic">Nessun utente trovato.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = users.map(u => {
+        let roleBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">Condòmino</span>';
+        if (u.is_superadmin) {
+            roleBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-900 border border-purple-300"><i class="fa-solid fa-crown text-amber-500 mr-1"></i> SUPERUSER</span>';
+        } else if (u.is_admin_role) {
+            roleBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200"><i class="fa-solid fa-shield-halved mr-1"></i> Amministratore</span>';
+        }
+
+        const tfaBadge = u.two_factor_enabled 
+            ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-lock text-emerald-600 mr-1"></i> Attivo (2FA)</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Non attivo</span>';
+
+        return `
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="py-3 px-4 font-bold text-slate-900">
+                    ${u.nome}
+                    <span class="block text-[10px] text-slate-400 font-normal">ID #${u.id}</span>
+                </td>
+                <td class="py-3 px-4 font-mono text-slate-600">${u.email}</td>
+                <td class="py-3 px-4">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        ${roleBadge}
+                        ${u.condo_names ? `<span class="text-[11px] text-slate-500 font-medium">(${u.condo_names})</span>` : ''}
+                    </div>
+                </td>
+                <td class="py-3 px-4 text-center">${tfaBadge}</td>
+                <td class="py-3 px-4 text-right">
+                    <div class="inline-flex items-center gap-1.5">
+                        <button onclick="openSuPasswordModal(${u.id}, '${escapeQuote(u.nome)}', '${escapeQuote(u.email)}')" class="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-[11px] border border-amber-200 transition-colors" title="Reimposta Password">
+                            <i class="fa-solid fa-key mr-1"></i> Reset Pwd
+                        </button>
+                        ${u.two_factor_enabled ? `
+                            <button onclick="resetUser2FA(${u.id}, '${escapeQuote(u.nome)}')" class="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200 transition-colors" title="Azzera 2FA per sblocco">
+                                <i class="fa-solid fa-unlock mr-1"></i> Sblocca 2FA
+                            </button>
+                        ` : ''}
+                        ${!u.is_superadmin ? `
+                            <button onclick="toggleUserAdminRole(${u.id}, '${escapeQuote(u.nome)}', ${u.is_admin_role ? 1 : 0})" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] border border-slate-300 transition-colors" title="Cambia Ruolo">
+                                <i class="fa-solid fa-user-pen mr-1"></i> ${u.is_admin_role ? 'Rendi Condomino' : 'Rendi Admin'}
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function escapeQuote(str) {
+    if (!str) return '';
+    return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function populateSuMaintenanceSelects(condomini) {
+    const s1 = document.getElementById('su-reset-condo-select-contab');
+    const s2 = document.getElementById('su-reset-condo-select-tickets');
+    if (!s1 || !s2) return;
+
+    const optionsHtml = condomini.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    s1.innerHTML = optionsHtml;
+    s2.innerHTML = optionsHtml;
+}
+
+window.openSuPasswordModal = function(userId, userName, userEmail) {
+    document.getElementById('su-pwd-user-id').value = userId;
+    document.getElementById('su-pwd-user-meta').textContent = `${userName} (${userEmail})`;
+    document.getElementById('su-pwd-new-input').value = `TempPass${Math.floor(1000 + Math.random() * 9000)}!`;
+    document.getElementById('modal-su-password').classList.remove('hidden');
+};
+
+window.closeSuPasswordModal = function() {
+    document.getElementById('modal-su-password').classList.add('hidden');
+};
+
+window.submitSuResetPassword = async function(e) {
+    e.preventDefault();
+    const userId = document.getElementById('su-pwd-user-id').value;
+    const newPassword = document.getElementById('su-pwd-new-input').value.trim();
+    if (!userId || !newPassword) return;
+
+    try {
+        const res = await fetch('/api/superuser/reset-user-password', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ userId, newPassword })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            closeSuPasswordModal();
+            showToast(`Password aggiornata a: "${newPassword}"`, 'success');
+        } else {
+            showToast(data.message || 'Errore reset password', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione', 'error');
+    }
+};
+
+window.resetUser2FA = async function(userId, userName) {
+    if (!confirm(`Sei sicuro di voler azzerare la protezione 2FA per "${userName}"? L'utente potrà accedere solo con email e password.`)) return;
+
+    try {
+        const res = await fetch('/api/superuser/reset-user-2fa', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ userId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message, 'success');
+            loadSuperUserOverview();
+        } else {
+            showToast(data.message || 'Errore azzeramento 2FA', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione', 'error');
+    }
+};
+
+window.toggleUserAdminRole = async function(userId, userName, currentAdminState) {
+    const makeAdmin = !currentAdminState;
+    const actionLabel = makeAdmin ? 'Amministratore' : 'Condòmino standard';
+    if (!confirm(`Confermi di voler assegnare all'utente "${userName}" il ruolo di ${actionLabel}?`)) return;
+
+    try {
+        const res = await fetch('/api/superuser/toggle-user-role', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ userId, makeAdmin })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message, 'success');
+            loadSuperUserOverview();
+        } else {
+            showToast(data.message || 'Errore cambio ruolo', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione', 'error');
+    }
+};
+
+window.executeCondoReset = async function(resetType) {
+    const selectElem = resetType === 'contabilita' 
+        ? document.getElementById('su-reset-condo-select-contab')
+        : document.getElementById('su-reset-condo-select-tickets');
+    
+    if (!selectElem) return;
+    const condoId = selectElem.value;
+    const condoName = selectElem.options[selectElem.selectedIndex]?.text || 'Condominio';
+
+    const warnMsg = resetType === 'contabilita'
+        ? `ATTENZIONE: Stai per cancellare tutti i movimenti contabili (prima nota, rate pagate e fatture) per "${condoName}". Le anagrafiche e gli utenti rimarranno intatti.\n\nVuoi procedere?`
+        : `ATTENZIONE: Stai per eliminare tutte le segnalazioni guasti e la cronologia dei ticket per "${condoName}".\n\nVuoi procedere?`;
+
+    if (!confirm(warnMsg)) return;
+
+    try {
+        const res = await fetch('/api/superuser/reset-condo-data', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ condominioId: condoId, resetType })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message, 'success');
+            loadSuperUserOverview();
+        } else {
+            showToast(data.message || 'Errore durante il reset dei dati', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione durante il reset', 'error');
+    }
+};
+
+async function loadSuperUserAudit() {
+    const tbody = document.getElementById('su-audit-tbody');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/superuser/audit-logs', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!data.success) return;
+
+        const rows = data.data || [];
+        if (rows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-400 italic">Nessun evento registrato finora.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = rows.map(r => `
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="py-3 px-4 font-mono text-[11px] text-slate-500">${formatDate(r.timestamp)}</td>
+                <td class="py-3 px-4 font-bold text-slate-800">${r.user_name || 'Sistema'} <span class="text-[10px] text-slate-400 block">${r.user_email || ''}</span></td>
+                <td class="py-3 px-4 font-medium text-slate-700">${r.condo_name || 'Tutti / Globale'}</td>
+                <td class="py-3 px-4 font-semibold text-purple-700">${r.azione}</td>
+                <td class="py-3 px-4 font-mono text-[11px] text-slate-500">${r.tabella || '-'} #${r.record_id || '-'}</td>
+                <td class="py-3 px-4 font-mono text-[11px] text-slate-400">${r.ip || '-'}</td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.error('Errore superuser audit:', err);
+    }
+}
+
+// ============================================================================
+// SUPERUSER: GESTIONE LICENZE CONDOMINIALI & SAAS
+// ============================================================================
+
+function renderSuLicenses(condomini) {
+    const tbody = document.getElementById('su-licenses-tbody');
+    if (!tbody) return;
+
+    if (!condomini || condomini.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-400 italic">Nessun condominio registrato.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = condomini.map(c => {
+        const lic = c.license || {};
+        const plan = lic.plan_type || 'completo';
+        
+        let planBadge = '<span class="px-2.5 py-1 rounded-lg text-[11px] font-black bg-purple-100 text-purple-800 uppercase tracking-wider">Completo</span>';
+        if (plan === 'standard') {
+            planBadge = '<span class="px-2.5 py-1 rounded-lg text-[11px] font-black bg-indigo-100 text-indigo-800 uppercase tracking-wider">Standard</span>';
+        } else if (plan === 'base') {
+            planBadge = '<span class="px-2.5 py-1 rounded-lg text-[11px] font-black bg-slate-100 text-slate-800 uppercase tracking-wider">Base</span>';
+        }
+
+        // Status badge
+        let statusBadge = '';
+        if (lic.is_suspended) {
+            statusBadge = '<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-slate-100 text-slate-700 border border-slate-300">⏸️ Sospesa</span>';
+        } else if (lic.is_expired) {
+            statusBadge = '<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">🔴 Scaduta (Read-Only)</span>';
+        } else if (lic.is_expiring) {
+            statusBadge = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">🟡 Scade tra ${lic.days_remaining} gg</span>`;
+        } else {
+            statusBadge = '<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 Attiva</span>';
+        }
+
+        // Days remaining text
+        let validityNote = '';
+        if (lic.is_suspended) {
+            validityNote = '<span class="text-rose-600 font-bold block mt-0.5">Accesso operativo bloccato</span>';
+        } else if (lic.is_expired) {
+            validityNote = `<span class="text-rose-600 font-bold block mt-0.5">Scaduta da ${Math.abs(lic.days_remaining)} giorni</span>`;
+        } else if (lic.is_expiring) {
+            validityNote = `<span class="text-amber-600 font-bold block mt-0.5">Rinnovo urgente (${lic.days_remaining} gg rimanenti)</span>`;
+        } else {
+            validityNote = `<span class="text-slate-400 block mt-0.5">${lic.days_remaining} giorni rimanenti</span>`;
+        }
+
+        // Payment status
+        let payStatusLabel = '';
+        if (lic.payment_status === 'paid') {
+            payStatusLabel = '<span class="text-emerald-700 font-bold flex items-center gap-1"><i class="fa-solid fa-check"></i> Saldato</span>';
+        } else if (lic.payment_status === 'free_trial') {
+            payStatusLabel = '<span class="text-purple-700 font-bold flex items-center gap-1"><i class="fa-solid fa-gift"></i> Omaggio / Prova</span>';
+        } else {
+            payStatusLabel = '<span class="text-amber-600 font-bold flex items-center gap-1"><i class="fa-solid fa-hourglass-half"></i> In attesa</span>';
+        }
+
+        const amountFormatted = parseFloat(lic.payment_amount || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+
+        return `
+            <tr class="hover:bg-purple-50/20 transition-colors">
+                <td class="py-3 px-4">
+                    <div class="font-extrabold text-slate-900">${c.nome}</div>
+                    <div class="text-[11px] text-slate-500">${c.indirizzo || 'Indirizzo non specificato'}</div>
+                    <div class="text-[10px] text-slate-400 mt-0.5">Amm: <b class="text-slate-600">${c.admin_nome || 'Non assegnato'}</b></div>
+                </td>
+                <td class="py-3 px-4">
+                    <div class="flex items-center gap-2 mb-1">
+                        ${planBadge}
+                    </div>
+                    <div class="text-[11px] text-slate-600 font-medium">
+                        <i class="fa-solid fa-door-open text-purple-400 mr-1"></i>
+                        <b>${c.current_units_count || 0}</b> / ${lic.max_units || 50} unità
+                    </div>
+                </td>
+                <td class="py-3 px-4">
+                    <div class="font-mono text-[11px] text-slate-800 font-bold">
+                        ${lic.start_date || '-'} &rarr; ${lic.end_date || '-'}
+                    </div>
+                    <div class="text-[11px]">${validityNote}</div>
+                </td>
+                <td class="py-3 px-4 text-center">
+                    ${statusBadge}
+                </td>
+                <td class="py-3 px-4">
+                    <div class="font-extrabold text-slate-900 text-xs">${amountFormatted}</div>
+                    <div class="text-[11px]">${payStatusLabel}</div>
+                    ${lic.payment_reference ? `<div class="text-[10px] text-slate-400 truncate max-w-[140px]" title="${lic.payment_reference}">${lic.payment_reference}</div>` : ''}
+                </td>
+                <td class="py-3 px-4 text-right">
+                    <button onclick="openSuLicenseModal(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors inline-flex items-center gap-1.5 shadow-xs">
+                        <i class="fa-solid fa-certificate"></i>
+                        <span>Gestisci</span>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.openSuLicenseModal = function(condoId) {
+    if (!state.suData || !state.suData.condomini) return;
+    const condo = state.suData.condomini.find(c => c.id == condoId);
+    if (!condo) return;
+
+    const modal = document.getElementById('modal-su-license');
+    if (!modal) return;
+
+    const lic = condo.license || {};
+    
+    document.getElementById('su-lic-condo-id').value = condo.id;
+    const titleElem = document.getElementById('su-license-condo-title');
+    if (titleElem) titleElem.textContent = `${condo.nome} (${condo.indirizzo || 'N/D'})`;
+
+    document.getElementById('su-lic-plan-type').value = lic.plan_type || 'completo';
+    document.getElementById('su-lic-status').value = lic.license_status || 'active';
+    document.getElementById('su-lic-start-date').value = lic.start_date || new Date().toISOString().slice(0, 10);
+    document.getElementById('su-lic-end-date').value = lic.end_date || new Date(Date.now() + 365*24*3600*1000).toISOString().slice(0, 10);
+    document.getElementById('su-lic-payment-status').value = lic.payment_status || 'paid';
+    document.getElementById('su-lic-payment-amount').value = lic.payment_amount !== undefined ? lic.payment_amount : 240.00;
+    document.getElementById('su-lic-payment-ref').value = lic.payment_reference || '';
+    document.getElementById('su-lic-payment-date').value = lic.payment_date || '';
+    document.getElementById('su-lic-max-units').value = lic.max_units || 50;
+    document.getElementById('su-lic-notes').value = lic.notes || '';
+    document.getElementById('su-lic-sync-modules').checked = true;
+
+    modal.classList.remove('hidden');
+};
+
+window.closeSuLicenseModal = function() {
+    const modal = document.getElementById('modal-su-license');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.quickSetLicenseDuration = function(months) {
+    const startInput = document.getElementById('su-lic-start-date');
+    const endInput = document.getElementById('su-lic-end-date');
+    if (!startInput || !endInput) return;
+
+    const baseDate = startInput.value ? new Date(startInput.value) : new Date();
+    const newEnd = new Date(baseDate);
+    newEnd.setMonth(newEnd.getMonth() + parseInt(months, 10));
+    endInput.value = newEnd.toISOString().slice(0, 10);
+};
+
+window.handlePlanChange = function(planType) {
+    const amountInput = document.getElementById('su-lic-payment-amount');
+    const unitsInput = document.getElementById('su-lic-max-units');
+    if (!amountInput || !unitsInput) return;
+
+    if (planType === 'base') {
+        amountInput.value = '120.00';
+        unitsInput.value = '20';
+    } else if (planType === 'standard') {
+        amountInput.value = '180.00';
+        unitsInput.value = '40';
+    } else {
+        amountInput.value = '240.00';
+        unitsInput.value = '50';
+    }
+};
+
+window.submitSuLicense = async function(e) {
+    if (e) e.preventDefault();
+
+    const condoId = document.getElementById('su-lic-condo-id').value;
+    if (!condoId) return;
+
+    const payload = {
+        condominioId: parseInt(condoId, 10),
+        plan_type: document.getElementById('su-lic-plan-type').value,
+        license_status: document.getElementById('su-lic-status').value,
+        start_date: document.getElementById('su-lic-start-date').value,
+        end_date: document.getElementById('su-lic-end-date').value,
+        payment_status: document.getElementById('su-lic-payment-status').value,
+        payment_amount: parseFloat(document.getElementById('su-lic-payment-amount').value) || 0,
+        payment_reference: document.getElementById('su-lic-payment-ref').value,
+        payment_date: document.getElementById('su-lic-payment-date').value || null,
+        max_units: parseInt(document.getElementById('su-lic-max-units').value, 10) || 50,
+        notes: document.getElementById('su-lic-notes').value,
+        sync_modules: document.getElementById('su-lic-sync-modules').checked
+    };
+
+    try {
+        const res = await fetch('/api/superuser/condo-license', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message, 'success');
+            closeSuLicenseModal();
+            loadSuperUserOverview();
+            // Se stiamo attualmente gestendo quel condominio, ricarica anagrafica per aggiornare banner
+            if (state.currentCondominioId == condoId) {
+                loadAnagrafica();
+            }
+        } else {
+            showToast(data.message || 'Errore salvataggio licenza', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione', 'error');
+    }
+};
+
+window.openSuLicenseFromCondo = async function() {
+    if (!state.currentCondominioId) return;
+    if (!state.suData || !state.suData.condomini) {
+        try {
+            const res = await fetch('/api/superuser/overview', { headers: getAuthHeaders() });
+            const data = await res.json();
+            if (data.success) {
+                state.suData = data.data;
+            }
+        } catch (_) {}
+    }
+    openSuLicenseModal(state.currentCondominioId);
+};
+
