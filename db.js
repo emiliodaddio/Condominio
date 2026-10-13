@@ -56,7 +56,10 @@ if (DB_TYPE === 'sqlite') {
             connectionLimit: 20,
             queueLimit: 0,
             dateStrings: true,
-            ssl: process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined
+            ssl: (process.env.MYSQL_SSL === 'true' || process.env.MYSQL_SSL === '1') ? {
+                minVersion: 'TLSv1.2',
+                rejectUnauthorized: process.env.MYSQL_SSL_REJECT_UNAUTHORIZED === 'true'
+            } : undefined
         });
     }
 
