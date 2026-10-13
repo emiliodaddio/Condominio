@@ -193,7 +193,7 @@
         <div class="flex flex-wrap items-center gap-2 p-1.5 bg-slate-200/60 rounded-2xl border border-slate-200 max-w-fit">
             <button id="su-tab-btn-modules" onclick="switchSuperUserSubTab('modules')" class="px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 bg-white text-purple-900 shadow-xs">
                 <i class="fa-solid fa-sliders text-purple-600"></i>
-                <span>Matrice Moduli per Condominio</span>
+                <span>Matrice Moduli & Stato Abbonamento</span>
             </button>
             <button id="su-tab-btn-licenses" onclick="switchSuperUserSubTab('licenses')" class="px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 text-slate-600 hover:text-slate-900">
                 <i class="fa-solid fa-certificate text-slate-400"></i>
@@ -222,10 +222,10 @@
                     <div>
                         <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
                             <i class="fa-solid fa-toggle-on text-purple-600"></i>
-                            Attivazione e Disattivazione Funzionalità
+                            Attivazione e Disattivazione Funzionalità & Stato Abbonamento
                         </h2>
                         <p class="text-xs text-slate-500 mt-0.5">
-                            Attiva o disattiva istantaneamente le singole funzionalità per ogni condominio. I cambiamenti si riflettono subito sulle schermate degli utenti.
+                            Modifica lo stato dell'abbonamento (attivo/sospeso/rinnovo) e attiva o disattiva istantaneamente le singole funzionalità per ogni condominio.
                         </p>
                     </div>
                     <span class="text-xs px-3 py-1 rounded-full bg-purple-50 text-purple-700 font-extrabold border border-purple-200">
@@ -244,7 +244,7 @@
                                 <th class="py-3 px-4 text-center">📢 Circolari</th>
                                 <th class="py-3 px-4 text-center">🏦 Banca</th>
                                 <th class="py-3 px-4 text-center">📑 Anagrafica</th>
-                                <th class="py-3 px-4 text-right">Azione Rapida</th>
+                                <th class="py-3 px-4 text-right">Stato Abbonamento & Azioni</th>
                             </tr>
                         </thead>
                         <tbody id="su-condo-modules-tbody" class="divide-y divide-slate-100">
@@ -2462,7 +2462,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261013_v2"></script>
+    <script src="app_v4.js?v=20261013_v3"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

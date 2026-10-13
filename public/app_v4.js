@@ -3569,13 +3569,42 @@ function renderSuCondoModules(condomini) {
         return;
     }
 
-    tbody.innerHTML = condomini.map(c => `
+    tbody.innerHTML = condomini.map(c => {
+        const lic = c.license || {};
+        let statusBadge = '';
+        if (lic.is_suspended) {
+            statusBadge = '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-300">⏸️ Sospesa</span>';
+        } else if (lic.is_expired) {
+            statusBadge = '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">🔴 Scaduta</span>';
+        } else if (lic.is_expiring) {
+            statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">🟡 Scade (${lic.days_remaining} gg)</span>`;
+        } else {
+            statusBadge = '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 Attiva</span>';
+        }
+
+        const plan = lic.plan_type || 'completo';
+        let planBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800 uppercase tracking-wider">Completo</span>';
+        if (plan === 'standard') {
+            planBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-indigo-100 text-indigo-800 uppercase tracking-wider">Standard</span>';
+        } else if (plan === 'base') {
+            planBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-slate-100 text-slate-800 uppercase tracking-wider">Base</span>';
+        }
+
+        return `
         <tr class="hover:bg-purple-50/20 transition-colors">
             <td class="py-3.5 px-4 font-semibold text-slate-900">
-                <span class="font-extrabold text-sm block text-slate-900">${c.nome}</span>
-                <span class="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                    <i class="fa-solid fa-user-shield text-purple-500"></i> Amm: <b class="text-slate-600">${c.admin_nome || 'Non assegnato'}</b> &bull; ${c.total_units || 0} unità
-                </span>
+                <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                    <span class="font-extrabold text-sm text-slate-900">${c.nome}</span>
+                    ${statusBadge}
+                    ${planBadge}
+                </div>
+                <div class="text-[11px] text-slate-400 flex flex-wrap items-center gap-2">
+                    <span><i class="fa-solid fa-user-shield text-purple-500"></i> Amm: <b class="text-slate-600">${c.admin_nome || 'Non assegnato'}</b></span>
+                    <span>&bull;</span>
+                    <span>${c.total_units || 0} unità</span>
+                    <span>&bull;</span>
+                    <span class="font-mono text-[10px] text-slate-500">Scade: <b>${lic.end_date || 'N/D'}</b></span>
+                </div>
             </td>
             <td class="py-3.5 px-4 text-center">
                 <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_contabilita', this.checked)" ${c.module_contabilita ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Contabilità">
@@ -3595,14 +3624,21 @@ function renderSuCondoModules(condomini) {
             <td class="py-3.5 px-4 text-center">
                 <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_anagrafica', this.checked)" ${c.module_anagrafica ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Anagrafica">
             </td>
-            <td class="py-3.5 px-4 text-right">
-                <button onclick="enterCondoFromSuperUser(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs">
-                    <i class="fa-solid fa-arrow-right-to-bracket text-[11px]"></i>
-                    <span>Entra</span>
-                </button>
+            <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                <div class="flex items-center justify-end gap-1.5">
+                    <button onclick="openSuLicenseModal(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors inline-flex items-center gap-1.5 shadow-xs" title="Modifica Piano, Stato Abbonamento o Rinnova">
+                        <i class="fa-solid fa-certificate"></i>
+                        <span>Stato Abbonamento</span>
+                    </button>
+                    <button onclick="enterCondoFromSuperUser(${c.id})" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition-colors inline-flex items-center gap-1" title="Entra nel Condominio come Amministratore">
+                        <i class="fa-solid fa-arrow-right-to-bracket text-[11px]"></i>
+                        <span>Entra</span>
+                    </button>
+                </div>
             </td>
         </tr>
-    `).join('');
+        `;
+    }).join('');
 }
 
 window.handleModuleToggle = async function(condoId, moduleName, isChecked) {
@@ -3949,9 +3985,9 @@ function renderSuLicenses(condomini) {
                     ${lic.payment_reference ? `<div class="text-[10px] text-slate-400 truncate max-w-[140px]" title="${lic.payment_reference}">${lic.payment_reference}</div>` : ''}
                 </td>
                 <td class="py-3 px-4 text-right">
-                    <button onclick="openSuLicenseModal(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors inline-flex items-center gap-1.5 shadow-xs">
+                    <button onclick="openSuLicenseModal(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors inline-flex items-center gap-1.5 shadow-xs" title="Modifica Stato Abbonamento o Piano">
                         <i class="fa-solid fa-certificate"></i>
-                        <span>Gestisci</span>
+                        <span>Modifica Abbonamento</span>
                     </button>
                 </td>
             </tr>
@@ -3959,7 +3995,16 @@ function renderSuLicenses(condomini) {
     }).join('');
 }
 
-window.openSuLicenseModal = function(condoId) {
+window.openSuLicenseModal = async function(condoId) {
+    if (!state.suData || !state.suData.condomini) {
+        try {
+            const res = await fetch('/api/superuser/overview', { headers: getAuthHeaders() });
+            const data = await res.json();
+            if (data.success) {
+                state.suData = data.data;
+            }
+        } catch (_) {}
+    }
     if (!state.suData || !state.suData.condomini) return;
     const condo = state.suData.condomini.find(c => c.id == condoId);
     if (!condo) return;
@@ -4054,7 +4099,7 @@ window.submitSuLicense = async function(e) {
             closeSuLicenseModal();
             loadSuperUserOverview();
             // Se stiamo attualmente gestendo quel condominio, ricarica anagrafica per aggiornare banner
-            if (state.currentCondominioId == condoId) {
+            if (state.activeCondominioId == condoId) {
                 loadAnagrafica();
             }
         } else {
@@ -4066,7 +4111,7 @@ window.submitSuLicense = async function(e) {
 };
 
 window.openSuLicenseFromCondo = async function() {
-    if (!state.currentCondominioId) return;
+    if (!state.activeCondominioId) return;
     if (!state.suData || !state.suData.condomini) {
         try {
             const res = await fetch('/api/superuser/overview', { headers: getAuthHeaders() });
@@ -4076,7 +4121,7 @@ window.openSuLicenseFromCondo = async function() {
             }
         } catch (_) {}
     }
-    openSuLicenseModal(state.currentCondominioId);
+    openSuLicenseModal(state.activeCondominioId);
 };
 
 // ============================================================================
