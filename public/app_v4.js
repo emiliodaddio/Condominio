@@ -4076,3 +4076,213 @@ window.openSuLicenseFromCondo = async function() {
     openSuLicenseModal(state.currentCondominioId);
 };
 
+// ============================================================================
+// SUPERUSER: CREA NUOVO CONDOMINIO & ABILITA AMMINISTRATORE
+// ============================================================================
+
+let currentAdminCreateMode = 'new';
+let lastCreatedAdminData = null;
+
+window.openModalCreateCondoAdmin = function() {
+    currentAdminCreateMode = 'new';
+    toggleSuAdminType('new');
+    generateRandomAdminPassword();
+    
+    // Pulisci campi
+    const nomeEl = document.getElementById('su-create-condo-nome');
+    if (nomeEl) nomeEl.value = '';
+    const indEl = document.getElementById('su-create-condo-indirizzo');
+    if (indEl) indEl.value = '';
+    const cfEl = document.getElementById('su-create-condo-cf');
+    if (cfEl) cfEl.value = '';
+    const scalaEl = document.getElementById('su-create-condo-scala');
+    if (scalaEl) scalaEl.value = '';
+    const adminNomeEl = document.getElementById('su-create-admin-nome');
+    if (adminNomeEl) adminNomeEl.value = '';
+    const adminEmailEl = document.getElementById('su-create-admin-email');
+    if (adminEmailEl) adminEmailEl.value = '';
+    const adminTelEl = document.getElementById('su-create-admin-tel');
+    if (adminTelEl) adminTelEl.value = '';
+    const licPlanEl = document.getElementById('su-create-lic-plan');
+    if (licPlanEl) licPlanEl.value = 'completo';
+    const licDurEl = document.getElementById('su-create-lic-duration');
+    if (licDurEl) licDurEl.value = '12';
+    const licUnitsEl = document.getElementById('su-create-lic-units');
+    if (licUnitsEl) licUnitsEl.value = '50';
+    const licAmountEl = document.getElementById('su-create-lic-amount');
+    if (licAmountEl) licAmountEl.value = '240.00';
+    const licPayEl = document.getElementById('su-create-lic-payment');
+    if (licPayEl) licPayEl.value = 'paid';
+    const sendMailEl = document.getElementById('su-create-send-email');
+    if (sendMailEl) sendMailEl.checked = true;
+
+    // Popola tendina utenti registrati per modalità 'existing'
+    const selectExisting = document.getElementById('su-create-admin-existing-select');
+    if (selectExisting) {
+        selectExisting.innerHTML = '<option value="">-- Seleziona un utente registrato --</option>';
+        if (state.suData && state.suData.users && state.suData.users.length > 0) {
+            state.suData.users.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = `${u.nome} (${u.email})${u.is_superadmin ? ' [SuperUser]' : ''}`;
+                selectExisting.appendChild(opt);
+            });
+        }
+    }
+
+    const modal = document.getElementById('modal-su-create-condo-admin');
+    if (modal) modal.classList.remove('hidden');
+};
+
+window.closeModalCreateCondoAdmin = function() {
+    const modal = document.getElementById('modal-su-create-condo-admin');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.toggleSuAdminType = function(type) {
+    currentAdminCreateMode = type;
+    const btnNew = document.getElementById('btn-toggle-admin-new');
+    const btnExisting = document.getElementById('btn-toggle-admin-existing');
+    const blockNew = document.getElementById('su-create-admin-new-block');
+    const blockExisting = document.getElementById('su-create-admin-existing-block');
+    const adminNomeInput = document.getElementById('su-create-admin-nome');
+    const adminEmailInput = document.getElementById('su-create-admin-email');
+
+    if (type === 'new') {
+        if (btnNew) {
+            btnNew.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-purple-600 text-white shadow-xs transition-all';
+        }
+        if (btnExisting) {
+            btnExisting.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-purple-700 transition-all';
+        }
+        if (blockNew) blockNew.classList.remove('hidden');
+        if (blockExisting) blockExisting.classList.add('hidden');
+        if (adminNomeInput) adminNomeInput.setAttribute('required', 'required');
+        if (adminEmailInput) adminEmailInput.setAttribute('required', 'required');
+    } else {
+        if (btnNew) {
+            btnNew.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-purple-700 transition-all';
+        }
+        if (btnExisting) {
+            btnExisting.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-purple-600 text-white shadow-xs transition-all';
+        }
+        if (blockNew) blockNew.classList.add('hidden');
+        if (blockExisting) blockExisting.classList.remove('hidden');
+        if (adminNomeInput) adminNomeInput.removeAttribute('required');
+        if (adminEmailInput) adminEmailInput.removeAttribute('required');
+    }
+};
+
+window.generateRandomAdminPassword = function() {
+    const adjectives = ['Studio', 'Admin', 'Gestione', 'Condo', 'Smart'];
+    const prefix = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const num = Math.floor(1000 + Math.random() * 9000);
+    const pwd = `${prefix}${num}!`;
+    const input = document.getElementById('su-create-admin-pwd');
+    if (input) input.value = pwd;
+    return pwd;
+};
+
+window.submitCreateCondoAdmin = async function(event) {
+    if (event) event.preventDefault();
+
+    const submitBtn = document.getElementById('su-create-btn-submit');
+    const originalBtnText = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creazione in corso...';
+    }
+
+    const payload = {
+        nomeCondominio: document.getElementById('su-create-condo-nome').value.trim(),
+        indirizzo: document.getElementById('su-create-condo-indirizzo').value.trim(),
+        cf: document.getElementById('su-create-condo-cf').value.trim(),
+        scala: document.getElementById('su-create-condo-scala').value.trim(),
+        isNewAdmin: currentAdminCreateMode === 'new',
+        existingUserId: document.getElementById('su-create-admin-existing-select').value,
+        adminNome: document.getElementById('su-create-admin-nome').value.trim(),
+        adminEmail: document.getElementById('su-create-admin-email').value.trim(),
+        adminPassword: document.getElementById('su-create-admin-pwd').value.trim(),
+        adminTelefono: document.getElementById('su-create-admin-tel').value.trim(),
+        plan_type: document.getElementById('su-create-lic-plan').value,
+        duration_months: document.getElementById('su-create-lic-duration').value,
+        max_units: document.getElementById('su-create-lic-units').value,
+        payment_amount: document.getElementById('su-create-lic-amount').value,
+        payment_status: document.getElementById('su-create-lic-payment').value,
+        sendWelcomeEmail: document.getElementById('su-create-send-email').checked
+    };
+
+    try {
+        const res = await fetch('/api/superuser/create-condo-admin', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        if (res.ok && result.success) {
+            closeModalCreateCondoAdmin();
+            lastCreatedAdminData = result.data;
+
+            // Popola scheda esito
+            document.getElementById('su-success-condo-name').textContent = result.data.nome;
+            document.getElementById('su-success-admin-name').textContent = result.data.adminNome;
+            document.getElementById('su-success-admin-email').textContent = result.data.adminEmail;
+
+            const pwdRow = document.getElementById('su-success-pwd-row');
+            if (result.data.temporaryPassword) {
+                document.getElementById('su-success-admin-pwd').textContent = result.data.temporaryPassword;
+                if (pwdRow) pwdRow.classList.remove('hidden');
+            } else {
+                if (pwdRow) pwdRow.classList.add('hidden');
+            }
+
+            const successModal = document.getElementById('modal-su-create-success');
+            if (successModal) successModal.classList.remove('hidden');
+
+            showToast(result.message, 'success');
+            loadSuperUserOverview();
+        } else {
+            showToast(result.message || 'Errore durante la creazione del condominio', 'error');
+        }
+    } catch (err) {
+        console.error('Errore submitCreateCondoAdmin:', err);
+        showToast('Errore di connessione durante la creazione', 'error');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        }
+    }
+};
+
+window.closeModalCreateSuccess = function() {
+    const successModal = document.getElementById('modal-su-create-success');
+    if (successModal) successModal.classList.add('hidden');
+};
+
+window.copyAdminCredentialsToClipboard = function() {
+    if (!lastCreatedAdminData) return;
+    const pwdText = lastCreatedAdminData.temporaryPassword ? `Password Provvisoria: ${lastCreatedAdminData.temporaryPassword}\n` : '';
+    const textToCopy = `Gentile ${lastCreatedAdminData.adminNome},
+
+È stato attivato il tuo nuovo spazio di gestione per il "${lastCreatedAdminData.nome}" sulla piattaforma Condominio Trasparente!
+
+🌐 Portale di Accesso: https://www.condominiotrasparente.com/login.html
+📧 Email: ${lastCreatedAdminData.adminEmail}
+🔑 ${pwdText}
+Puoi accedere subito da PC, tablet o smartphone per iniziare la gestione.`;
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        const copyLabel = document.getElementById('su-btn-copy-label');
+        if (copyLabel) copyLabel.textContent = 'Copiato negli appunti! ✅';
+        showToast('Credenziali copiate negli appunti!', 'success');
+        setTimeout(() => {
+            if (copyLabel) copyLabel.textContent = 'Copia Riepilogo per WhatsApp/Email';
+        }, 3000);
+    }).catch(() => {
+        showToast('Impossibile copiare negli appunti', 'error');
+    });
+};
+
+

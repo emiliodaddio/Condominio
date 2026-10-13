@@ -120,6 +120,10 @@
                 </div>
 
                 <div class="flex flex-wrap items-center gap-3 shrink-0">
+                    <button onclick="openModalCreateCondoAdmin()" class="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/25 border border-emerald-400/30">
+                        <i class="fa-solid fa-plus-circle text-emerald-200 text-sm"></i>
+                        <span>Nuovo Condominio & Amministratore</span>
+                    </button>
                     <button onclick="returnToAgencyDashboard()" class="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xs transition-all flex items-center gap-2 backdrop-blur-md">
                         <i class="fa-solid fa-layer-group text-purple-300"></i>
                         <span>Vai a "La tua Scrivania"</span>
@@ -586,6 +590,231 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Crea Nuovo Condominio & Assegna Amministratore (SuperUser) -->
+<div id="modal-su-create-condo-admin" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="min-h-screen px-4 flex items-center justify-center p-4">
+        <div class="fixed inset-0 modal-backdrop" onclick="closeModalCreateCondoAdmin()"></div>
+        <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100 my-8">
+            <div class="flex justify-between items-start pb-4 border-b border-slate-100">
+                <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shadow-xs border border-emerald-100">
+                        <i class="fa-solid fa-city"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-black text-slate-900">Crea Nuovo Condominio & Abilita Amministratore</h3>
+                        <p class="text-xs text-slate-500">Configura un nuovo stabile e assegna subito le credenziali all'amministratore</p>
+                    </div>
+                </div>
+                <button onclick="closeModalCreateCondoAdmin()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <form id="form-su-create-condo-admin" onsubmit="submitCreateCondoAdmin(event)" class="mt-5 space-y-5">
+                
+                <!-- SEZIONE 1: Dati del Condominio -->
+                <div class="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                    <span class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-building text-emerald-600"></i>
+                        1. Dati del Nuovo Condominio
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Nome Condominio *</label>
+                            <input type="text" id="su-create-condo-nome" required placeholder="es. Condominio Stella Alpina" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Indirizzo Completo *</label>
+                            <input type="text" id="su-create-condo-indirizzo" required placeholder="es. Via Garibaldi 10, 81020 San Nicola la Strada (CE)" class="w-full text-xs font-semibold p-2.5 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Codice Fiscale Condominio</label>
+                            <input type="text" id="su-create-condo-cf" placeholder="es. 90012345678" class="w-full text-xs font-mono p-2.5 rounded-xl border border-slate-200 bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Scala / Dettagli Fabbricato</label>
+                            <input type="text" id="su-create-condo-scala" placeholder="es. Scale A-B" class="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-white">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEZIONE 2: Amministratore Responsabile -->
+                <div class="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/70 space-y-3">
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <span class="text-xs font-black text-purple-900 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-user-shield text-purple-600"></i>
+                            2. Amministratore Assegnato
+                        </span>
+                        
+                        <!-- Toggle Pill Nuovo vs Esistente -->
+                        <div class="flex items-center gap-1 bg-white p-1 rounded-xl border border-purple-200 max-w-fit shadow-2xs">
+                            <button type="button" id="btn-toggle-admin-new" onclick="toggleSuAdminType('new')" class="px-3 py-1 rounded-lg text-xs font-bold bg-purple-600 text-white shadow-xs transition-all">
+                                Nuovo Amministratore
+                            </button>
+                            <button type="button" id="btn-toggle-admin-existing" onclick="toggleSuAdminType('existing')" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-purple-700 transition-all">
+                                Utente Già Registrato
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Blocco Nuovo Amministratore -->
+                    <div id="su-create-admin-new-block" class="space-y-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nome e Cognome / Studio *</label>
+                                <input type="text" id="su-create-admin-nome" placeholder="es. Dott. Mario Rossi" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Email di Accesso *</label>
+                                <input type="email" id="su-create-admin-email" placeholder="es. studio.rossi@email.it" class="w-full text-xs font-semibold p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Telefono / Recapito</label>
+                                <input type="text" id="su-create-admin-tel" placeholder="es. 333 1234567" class="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label class="block text-xs font-bold text-slate-700">Password Iniziale *</label>
+                                    <button type="button" onclick="generateRandomAdminPassword()" class="text-[11px] text-purple-600 hover:text-purple-800 font-bold flex items-center gap-1">
+                                        <i class="fa-solid fa-arrows-rotate"></i> Genera
+                                    </button>
+                                </div>
+                                <div class="relative">
+                                    <input type="text" id="su-create-admin-pwd" placeholder="Password iniziale" class="w-full text-xs font-mono font-bold p-2.5 pr-8 rounded-xl border border-slate-200 bg-white">
+                                    <button type="button" onclick="togglePasswordVisibility('su-create-admin-pwd')" class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600">
+                                        <i class="fa-solid fa-eye text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Blocco Amministratore Esistente -->
+                    <div id="su-create-admin-existing-block" class="hidden space-y-2">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Seleziona Utente Registrato:</label>
+                        <select id="su-create-admin-existing-select" class="w-full text-xs font-bold p-2.5 rounded-xl border border-purple-200 bg-white focus:ring-2 focus:ring-purple-500">
+                            <option value="">Caricamento utenti...</option>
+                        </select>
+                        <p class="text-[11px] text-slate-500">Questo utente diventerà Amministratore del nuovo stabile mantenendo la sua password e i suoi accessi attuali.</p>
+                    </div>
+                </div>
+
+                <!-- SEZIONE 3: Licenza & Impostazioni SaaS -->
+                <div class="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-200/70 space-y-3">
+                    <span class="text-xs font-black text-indigo-900 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-certificate text-indigo-600"></i>
+                        3. Licenza SaaS di Benvenuto
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Piano Iniziale:</label>
+                            <select id="su-create-lic-plan" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                                <option value="completo">Completo (Tutti i Moduli)</option>
+                                <option value="standard">Standard (Senza Assemblee)</option>
+                                <option value="base">Base (Contabilità & Anagrafica)</option>
+                                <option value="trial">Prova Gratuita</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Durata Iniziale:</label>
+                            <select id="su-create-lic-duration" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                                <option value="12">12 Mesi (1 Anno)</option>
+                                <option value="6">6 Mesi</option>
+                                <option value="1">1 Mese (Prova / Trial)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Max Unità:</label>
+                            <input type="number" id="su-create-lic-units" value="50" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Importo Canone (€):</label>
+                            <input type="number" step="0.01" id="su-create-lic-amount" value="240.00" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Stato Pagamento:</label>
+                            <select id="su-create-lic-payment" class="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                                <option value="paid">✅ Saldato</option>
+                                <option value="pending">⏳ In attesa di pagamento</option>
+                                <option value="free_trial">🎁 Periodo di Prova Omaggio</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="su-create-send-email" checked class="w-4 h-4 text-emerald-600 rounded accent-emerald-600">
+                    <label for="su-create-send-email" class="text-xs font-semibold text-slate-700 cursor-pointer">
+                        Invia email di benvenuto con le credenziali di accesso (se servizio SMTP attivo)
+                    </label>
+                </div>
+
+                <div class="pt-4 flex justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onclick="closeModalCreateCondoAdmin()" class="px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                        Annulla
+                    </button>
+                    <button type="submit" id="su-create-btn-submit" class="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-rocket"></i>
+                        <span>Crea Condominio & Abilita Amministratore</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Esito / Scheda Credenziali Generate (SuperUser) -->
+<div id="modal-su-create-success" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="min-h-screen px-4 flex items-center justify-center p-4">
+        <div class="fixed inset-0 modal-backdrop" onclick="closeModalCreateSuccess()"></div>
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100 text-center my-8">
+            
+            <div class="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mx-auto shadow-md shadow-emerald-500/20 mb-4 animate-bounce">
+                <i class="fa-solid fa-circle-check"></i>
+            </div>
+            
+            <h3 class="text-xl font-black text-slate-900">Nuovo Stabile Attivato!</h3>
+            <p class="text-xs text-slate-500 mt-1">Il condominio è pronto e l'amministratore è stato abilitato sulla piattaforma.</p>
+
+            <div class="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-left space-y-2.5">
+                <div class="flex justify-between items-center text-xs border-b border-slate-200/60 pb-2">
+                    <span class="text-slate-500 font-medium">Condominio:</span>
+                    <span id="su-success-condo-name" class="font-extrabold text-slate-900"></span>
+                </div>
+                <div class="flex justify-between items-center text-xs border-b border-slate-200/60 pb-2">
+                    <span class="text-slate-500 font-medium">Amministratore:</span>
+                    <span id="su-success-admin-name" class="font-bold text-slate-900"></span>
+                </div>
+                <div class="flex justify-between items-center text-xs border-b border-slate-200/60 pb-2">
+                    <span class="text-slate-500 font-medium">Email di Accesso:</span>
+                    <span id="su-success-admin-email" class="font-mono font-bold text-purple-700"></span>
+                </div>
+                <div id="su-success-pwd-row" class="flex justify-between items-center text-xs border-b border-slate-200/60 pb-2">
+                    <span class="text-slate-500 font-medium">Password Iniziale:</span>
+                    <span id="su-success-admin-pwd" class="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"></span>
+                </div>
+                <div class="flex justify-between items-center text-xs pt-0.5">
+                    <span class="text-slate-500 font-medium">Indirizzo Portale:</span>
+                    <a href="https://www.condominiotrasparente.com/login.html" target="_blank" class="font-bold text-blue-600 hover:underline">www.condominiotrasparente.com</a>
+                </div>
+            </div>
+
+            <div class="mt-6 flex flex-col sm:flex-row gap-2">
+                <button onclick="copyAdminCredentialsToClipboard()" class="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors">
+                    <i class="fa-solid fa-copy"></i>
+                    <span id="su-btn-copy-label">Copia Riepilogo per WhatsApp/Email</span>
+                </button>
+                <button onclick="closeModalCreateSuccess()" class="w-full sm:w-auto py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors">
+                    Fatto
+                </button>
+            </div>
         </div>
     </div>
 </div>

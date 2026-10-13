@@ -2235,6 +2235,221 @@ app.post('/api/superuser/reset-condo-data', authenticateToken, requireSuperAdmin
     });
 });
 
+app.post('/api/superuser/create-condo-admin', authenticateToken, requireSuperAdmin, (req, res) => {
+    try {
+        const {
+            nomeCondominio,
+            indirizzo,
+            cf,
+            scala,
+            isNewAdmin,
+            existingUserId,
+            adminNome,
+            adminEmail,
+            adminPassword,
+            adminTelefono,
+            plan_type,
+            max_units,
+            duration_months,
+            payment_status,
+            payment_amount,
+            sendWelcomeEmail
+        } = req.body;
+
+        if (!nomeCondominio || !nomeCondominio.trim()) {
+            return res.status(400).json({ success: false, message: 'Il nome del condominio è obbligatorio' });
+        }
+        if (!indirizzo || !indirizzo.trim()) {
+            return res.status(400).json({ success: false, message: 'L\'indirizzo del condominio è obbligatorio' });
+        }
+
+        const assignAdminToCondo = (userId, adminFullName, adminContactEmail, isNewCreatedUser, plainPassword) => {
+            db.run(`
+                INSERT INTO condominios (nome, indirizzo, cf, scala, admin_nome, admin_email, admin_telefono, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `, [
+                nomeCondominio.trim(),
+                indirizzo.trim(),
+                cf ? cf.trim() : null,
+                scala ? scala.trim() : null,
+                adminFullName || null,
+                adminContactEmail || null,
+                adminTelefono ? adminTelefono.trim() : null
+            ], function(errCondo) {
+                if (errCondo) {
+                    console.error('Errore inserimento condominio:', errCondo);
+                    return res.status(500).json({ success: false, message: 'Errore creazione condominio: ' + errCondo.message });
+                }
+
+                const newCondoId = this.lastID;
+
+                // Associa Amministratore in user_condominios con role = 'admin'
+                db.run(`
+                    INSERT INTO user_condominios (user_id, condominio_id, role, unita)
+                    VALUES (?, ?, 'admin', 'Studio Amministrazione')
+                    ON CONFLICT(user_id, condominio_id) DO UPDATE SET role = 'admin'
+                `, [userId, newCondoId], function(errUc) {
+                    if (errUc) console.error('Errore associazione user_condominios:', errUc);
+
+                    // Calcolo date licenza
+                    const now = new Date();
+                    const startDate = now.toISOString().split('T')[0];
+                    const months = parseInt(duration_months, 10) || 12;
+                    const end = new Date(now.getTime());
+                    end.setMonth(end.getMonth() + months);
+                    const endDate = end.toISOString().split('T')[0];
+
+                    db.run(`
+                        INSERT INTO condo_licenses (
+                            condominio_id, plan_type, license_status, start_date, end_date,
+                            payment_status, payment_amount, max_units, created_at, updated_at
+                        ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT(condominio_id) DO UPDATE SET
+                            plan_type = excluded.plan_type,
+                            license_status = excluded.license_status,
+                            start_date = excluded.start_date,
+                            end_date = excluded.end_date,
+                            payment_status = excluded.payment_status,
+                            payment_amount = excluded.payment_amount,
+                            max_units = excluded.max_units,
+                            updated_at = CURRENT_TIMESTAMP
+                    `, [
+                        newCondoId,
+                        plan_type || 'completo',
+                        startDate,
+                        endDate,
+                        payment_status || 'paid',
+                        parseFloat(payment_amount) || 240.00,
+                        parseInt(max_units, 10) || 50
+                    ], function(errLic) {
+                        if (errLic) console.error('Errore inserimento licenza:', errLic);
+
+                        // Abilita tutti i moduli per il nuovo condominio
+                        db.run(`
+                            INSERT INTO condo_features (condominio_id, module_contabilita, module_segnalazioni, module_assemblee, module_comunicazioni, module_banca, module_anagrafica)
+                            VALUES (?, 1, 1, 1, 1, 1, 1)
+                            ON CONFLICT(condominio_id) DO UPDATE SET
+                                module_contabilita = 1, module_segnalazioni = 1, module_assemblee = 1,
+                                module_comunicazioni = 1, module_banca = 1, module_anagrafica = 1
+                        `, [newCondoId], function(errFeat) {
+                            if (errFeat) console.error('Errore inserimento features:', errFeat);
+
+                            // Audit Log
+                            logAudit(
+                                req.user.id,
+                                newCondoId,
+                                `SuperUser Crea Condominio & Assegna Amministratore: "${nomeCondominio}" ad ${adminFullName} (${adminContactEmail})`,
+                                'condominios',
+                                newCondoId,
+                                req.body,
+                                req.ip
+                            );
+
+                            // Notifica email facoltativa
+                            if (sendWelcomeEmail && adminContactEmail && typeof transporter !== 'undefined' && transporter) {
+                                try {
+                                    const mailOptions = {
+                                        from: process.env.SMTP_FROM || '"Condominio Trasparente" <noreply@condominiotrasparente.com>',
+                                        to: adminContactEmail,
+                                        subject: `Attivazione Spazio Condominiale: ${nomeCondominio} - Condominio Trasparente`,
+                                        html: `
+                                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff;">
+                                                <h2 style="color: #4f46e5; margin-top: 0;">Benvenuto su Condominio Trasparente</h2>
+                                                <p style="font-size: 14px; color: #334155;">Gentile <b>${adminFullName}</b>,</p>
+                                                <p style="font-size: 14px; color: #334155;">È stato attivato il tuo nuovo spazio di gestione per lo stabile <b>${nomeCondominio}</b>.</p>
+                                                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 18px; border-radius: 12px; margin: 20px 0;">
+                                                    <p style="margin: 0 0 10px 0; font-size: 14px;"><strong>Pannello di Accesso:</strong> <a href="https://www.condominiotrasparente.com/login.html" style="color: #4f46e5; font-weight: bold;">www.condominiotrasparente.com</a></p>
+                                                    <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email:</strong> ${adminContactEmail}</p>
+                                                    ${isNewCreatedUser ? `<p style="margin: 0; font-size: 14px;"><strong>Password Temporanea:</strong> <code style="background: #e2e8f0; padding: 3px 8px; border-radius: 6px; font-weight: bold; color: #1e293b;">${plainPassword}</code></p>` : `<p style="margin: 0; font-size: 14px; color: #64748b;">(Accedi con la password abituale del tuo account)</p>`}
+                                                </div>
+                                                <p style="font-size: 13px; color: #64748b;">Al primo accesso potrai impostare i dati bancari del condominio, inserire le unità immobiliari e consultare la guida rapida.</p>
+                                                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+                                                <p style="font-size: 11px; color: #94a3b8; margin: 0;">Condominio Trasparente - Piattaforma SaaS di Gestione Condominiale</p>
+                                            </div>
+                                        `
+                                    };
+                                    transporter.sendMail(mailOptions, (mailErr) => {
+                                        if (mailErr) console.warn('Avviso invio email benvenuto:', mailErr.message);
+                                        else console.log('✅ Email di benvenuto inviata con successo a:', adminContactEmail);
+                                    });
+                                } catch (mErr) {
+                                    console.warn('Errore sendMail:', mErr.message);
+                                }
+                            }
+
+                            return res.json({
+                                success: true,
+                                message: `Condominio "${nomeCondominio}" creato con successo e assegnato ad ${adminFullName}!`,
+                                data: {
+                                    condominioId: newCondoId,
+                                    nome: nomeCondominio,
+                                    adminUserId: userId,
+                                    adminNome: adminFullName,
+                                    adminEmail: adminContactEmail,
+                                    isNewUser: isNewCreatedUser,
+                                    temporaryPassword: isNewCreatedUser ? plainPassword : null
+                                }
+                            });
+                        });
+                    });
+                });
+            });
+        };
+
+        // Modalità: Assegna ad amministratore esistente
+        if (isNewAdmin === false || isNewAdmin === 'false') {
+            if (!existingUserId) {
+                return res.status(400).json({ success: false, message: 'Seleziona un utente amministratore esistente' });
+            }
+            db.get('SELECT id, nome, email FROM users WHERE id = ?', [existingUserId], (errUser, existingUser) => {
+                if (errUser || !existingUser) {
+                    return res.status(404).json({ success: false, message: 'Utente selezionato non trovato' });
+                }
+                assignAdminToCondo(existingUser.id, existingUser.nome, existingUser.email, false, null);
+            });
+        } else {
+            // Modalità: Crea nuovo amministratore
+            if (!adminNome || !adminNome.trim()) {
+                return res.status(400).json({ success: false, message: 'Il nome dell\'amministratore è obbligatorio' });
+            }
+            if (!adminEmail || !adminEmail.trim()) {
+                return res.status(400).json({ success: false, message: 'L\'email dell\'amministratore è obbligatoria' });
+            }
+
+            const cleanEmail = adminEmail.trim().toLowerCase();
+            const passwordToUse = (adminPassword && adminPassword.trim()) ? adminPassword.trim() : ('Admin' + Math.floor(1000 + Math.random() * 9000) + '!');
+            const hash = bcrypt.hashSync(passwordToUse, 10);
+
+            // Verifica se email è già registrata
+            db.get('SELECT id, nome, email FROM users WHERE LOWER(email) = ?', [cleanEmail], (errCheck, existingUserWithEmail) => {
+                if (errCheck) {
+                    return res.status(500).json({ success: false, message: 'Errore verifica email nel database' });
+                }
+                if (existingUserWithEmail) {
+                    // L'utente esiste già: lo colleghiamo come admin al nuovo condominio
+                    assignAdminToCondo(existingUserWithEmail.id, existingUserWithEmail.nome, existingUserWithEmail.email, false, null);
+                } else {
+                    // Creiamo il nuovo utente
+                    db.run(`
+                        INSERT INTO users (nome, email, password_hash, telefono, created_at)
+                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    `, [adminNome.trim(), cleanEmail, hash, adminTelefono ? adminTelefono.trim() : null], function(errNewUser) {
+                        if (errNewUser) {
+                            console.error('Errore creazione nuovo utente amministratore:', errNewUser);
+                            return res.status(500).json({ success: false, message: 'Errore creazione utente: ' + errNewUser.message });
+                        }
+                        const newUserId = this.lastID;
+                        assignAdminToCondo(newUserId, adminNome.trim(), cleanEmail, true, passwordToUse);
+                    });
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Errore imprevisto create-condo-admin:', e);
+        res.status(500).json({ success: false, message: 'Errore interno del server: ' + e.message });
+    }
+});
+
 app.get('/api/superuser/audit-logs', authenticateToken, requireSuperAdmin, (req, res) => {
     db.all(`
         SELECT a.*, u.nome as user_name, u.email as user_email, c.nome as condo_name
