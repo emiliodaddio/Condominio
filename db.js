@@ -40,23 +40,32 @@ if (DB_TYPE === 'sqlite') {
     }
 } else {
     const mysql = require('mysql2');
-    const pool = mysql.createPool({
-        host: process.env.MYSQL_HOST || '127.0.0.1',
-        port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-        user: process.env.MYSQL_USER || 'root',
-        password: process.env.MYSQL_PASSWORD || '',
-        database: process.env.MYSQL_DATABASE || 'condominio_db',
-        waitForConnections: true,
-        connectionLimit: 20,
-        queueLimit: 0,
-        dateStrings: true
-    });
+    
+    let pool;
+    const connUri = process.env.MYSQL_URL || process.env.DATABASE_URL;
+    if (connUri) {
+        pool = mysql.createPool(connUri);
+    } else {
+        pool = mysql.createPool({
+            host: process.env.MYSQL_HOST || '127.0.0.1',
+            port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+            user: process.env.MYSQL_USER || 'root',
+            password: process.env.MYSQL_PASSWORD || '',
+            database: process.env.MYSQL_DATABASE || 'condominio_db',
+            waitForConnections: true,
+            connectionLimit: 20,
+            queueLimit: 0,
+            dateStrings: true,
+            ssl: process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined
+        });
+    }
 
     pool.getConnection((err, conn) => {
         if (err) {
-            console.error('❌ Errore connessione MySQL:', err.message);
+            console.error('❌ ERRORE CRITICO CONNESSIONE MYSQL:', err.code || err.errno, err.message);
+            console.error('👉 Parametri attuali: host =', process.env.MYSQL_HOST || (connUri ? 'URI fornito' : '127.0.0.1'), '| database =', process.env.MYSQL_DATABASE || 'condominio_db');
         } else {
-            console.log('✅ Connesso al database MySQL Server (condominio_db)');
+            console.log('✅ Connesso con successo al database MySQL:', process.env.MYSQL_DATABASE || 'condominio_db');
             conn.release();
         }
     });

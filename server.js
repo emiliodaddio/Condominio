@@ -605,14 +605,21 @@ function logAudit(userId, condominioId, azione, tabella, recordId, valoriPrecede
 app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
     console.log('LOGIN ATTEMPT:', email);
-    db.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [email.trim()], (err, user) => {
-        if (err || !user) {
-            logAudit(null, null, 'Login Fallito', 'users', null, null, req.ip);
+    db.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [email ? email.trim() : ''], (err, user) => {
+        if (err) {
+            console.error('❌ ERRORE DATABASE LOGIN:', err);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Errore di connessione al database: ' + (err.message || 'Verifica parametri MySQL') 
+            });
+        }
+        if (!user) {
+            logAudit(null, null, 'Login Fallito (Utente non trovato)', 'users', null, null, req.ip);
             return res.status(401).json({ success: false, message: 'Credenziali non valide.' });
         }
         
         if (!bcrypt.compareSync(password, user.password_hash)) {
-            logAudit(user.id, null, 'Login Fallito (Password)', 'users', user.id, null, req.ip);
+            logAudit(user.id, null, 'Login Fallito (Password errata)', 'users', user.id, null, req.ip);
             return res.status(401).json({ success: false, message: 'Credenziali non valide.' });
         }
 
