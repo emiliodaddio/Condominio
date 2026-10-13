@@ -3596,7 +3596,7 @@ function renderSuCondoModules(condomini) {
                 <input type="checkbox" onchange="handleModuleToggle(${c.id}, 'module_anagrafica', this.checked)" ${c.module_anagrafica ? 'checked' : ''} class="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600" title="Attiva/Disattiva Anagrafica">
             </td>
             <td class="py-3.5 px-4 text-right">
-                <button onclick="enterCondoFromSuperUser(${c.id}, 'admin-profile')" class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs" title="Accedi allo Studio/Profilo Amministratore di questo fabbricato">
+                <button onclick="enterCondoFromSuperUser(${c.id})" class="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs">
                     <i class="fa-solid fa-arrow-right-to-bracket text-[11px]"></i>
                     <span>Entra</span>
                 </button>
@@ -3638,7 +3638,7 @@ window.handleModuleToggle = async function(condoId, moduleName, isChecked) {
     }
 };
 
-window.enterCondoFromSuperUser = function(condoId, targetTab = 'admin-profile') {
+window.enterCondoFromSuperUser = function(condoId, targetTab = 'dashboard') {
     const suView = document.getElementById('superuser-dashboard-view');
     if (suView) suView.classList.add('hidden');
     enterCondo(condoId, targetTab);
