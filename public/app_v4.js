@@ -2467,27 +2467,27 @@ async function downloadJournalPdf() {
     showToast("Generazione PDF del Libro Giornale in corso...", "info");
     try {
         const res = await fetch('/api/export/journal-pdf', { headers: getAuthHeaders() });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            showToast(err.message || "Errore nella generazione del PDF", "error");
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const condoName = (state.activeCondominio && state.activeCondominio.nome) 
+                ? state.activeCondominio.nome.replace(/[^a-zA-Z0-9_\-]/g, '_') 
+                : 'Condominio';
+            a.download = `Libro_Giornale_${condoName}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            showToast("PDF del Libro Giornale scaricato con successo!", "success");
             return;
         }
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const condoName = (state.activeCondominio && state.activeCondominio.nome) 
-            ? state.activeCondominio.nome.replace(/[^a-zA-Z0-9_\-]/g, '_') 
-            : 'Condominio';
-        a.download = `Libro_Giornale_${condoName}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        showToast("PDF del Libro Giornale scaricato con successo!", "success");
     } catch(e) {
-        console.error("Errore download PDF:", e);
-        showToast("Errore durante il download del PDF.", "error");
+        console.warn("Server PDF non disponibile, fallback su stampa:", e);
     }
+    // Fallback immediato a stampa nativa ad alta fedeltà
+    showToast("Apertura finestra di stampa e salvataggio PDF...", "info");
+    printJournal();
 }
 
 async function exportJournalExcel() {
