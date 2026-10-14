@@ -321,3 +321,63 @@ body {
 .ticket-icon-blink {
     animation: ticketIconBlink 1.4s ease-in-out infinite !important;
 }
+
+/* ==========================================================================
+   STILI DI STAMPA (@media print) & REPORT LIBRO GIORNALE / BILANCIO
+   ========================================================================== */
+@media print {
+    /* Nascondi elementi di interfaccia, menu e modali */
+    .no-print, header, nav, aside, #toast-container, .modal-backdrop, [id^="modal-"], button {
+        display: none !important;
+    }
+
+    body {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 10pt !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* Mostra il container del Libro Giornale e l'intestazione di stampa */
+    #print-journal-header, #print-journal-signature {
+        display: block !important;
+    }
+
+    /* Rimuovi ombre e applica bordi nitidi */
+    .shadow-xs, .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+        box-shadow: none !important;
+    }
+
+    .border, .border-b, .border-t {
+        border-color: #cbd5e1 !important;
+    }
+
+    /* Tabelle stampabili ad alta leggibilità */
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+    }
+
+    thead {
+        display: table-header-group !important;
+    }
+
+    tr {
+        page-break-inside: avoid !important;
+    }
+
+    th, td {
+        padding: 6px 8px !important;
+    }
+}
+

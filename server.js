@@ -29,6 +29,7 @@ const ExcelJS = require('exceljs');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
+const puppeteer = require('puppeteer');
 
 let transporter = null;
 nodemailer.createTestAccount().then(testAccount => {
@@ -150,6 +151,372 @@ app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, ch
     } catch (err) {
         console.error(err);
         res.status(500).send('Errore Generazione Excel');
+    }
+});
+
+// ============================================================================
+// EXPORT LIBRO GIORNALE & SITUAZIONE CONTABILE (EXCEL & PDF)
+// ============================================================================
+app.get('/api/export/journal-excel', authenticateToken, requireCondominio, async (req, res) => {
+    try {
+        const condo = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM condominios WHERE id = ?', [req.condominio_id], (err, row) => {
+                if (err) reject(err); else resolve(row || {});
+            });
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'CondoTransparent';
+        workbook.created = new Date();
+
+        const sheet = workbook.addWorksheet('Libro Giornale & Bilancio', {
+            views: [{ showGridLines: true }]
+        });
+
+        // Intestazione Condominio
+        sheet.mergeCells('A1:H1');
+        sheet.getCell('A1').value = (condo.nome || 'CONDOMINIO').toUpperCase() + ' - LIBRO GIORNALE & SITUAZIONE CONTABILE';
+        sheet.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+        sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+        sheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+        sheet.getRow(1).height = 30;
+
+        sheet.mergeCells('A2:H2');
+        const adminStr = condo.admin_nome ? ` | Amm.re: ${condo.admin_titolo || ''} ${condo.admin_cognome || ''} ${condo.admin_nome || ''} (${condo.admin_cellulare || condo.admin_telefono || ''})` : '';
+        sheet.getCell('A2').value = `Indirizzo: ${condo.indirizzo || 'N/D'} | C.F.: ${condo.cf || 'N/D'}${adminStr} | Estratto il: ${new Date().toLocaleDateString('it-IT')}`;
+        sheet.getCell('A2').font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
+        sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
+        sheet.getRow(2).height = 20;
+
+        // Recupera scritture contabili
+        const entries = await new Promise((resolve, reject) => {
+            db.all('SELECT * FROM journal_entries WHERE condominio_id = ? ORDER BY data ASC, id ASC', [req.condominio_id], (err, rows) => {
+                if (err) reject(err); else resolve(rows || []);
+            });
+        });
+
+        let totDare = 0;
+        let totAvere = 0;
+        entries.forEach(e => {
+            totDare += parseFloat(e.dare || 0);
+            totAvere += parseFloat(e.avere || 0);
+        });
+        const saldoCassa = totDare - totAvere;
+
+        // Quadro di Sintesi Finanziaria (Righe 4 e 5)
+        sheet.getCell('B4').value = 'ENTRATE TOTALI (DARE)';
+        sheet.getCell('B4').font = { size: 9, bold: true, color: { argb: 'FF047857' } };
+        sheet.getCell('B5').value = totDare;
+        sheet.getCell('B5').font = { size: 12, bold: true, color: { argb: 'FF047857' } };
+        sheet.getCell('B5').numFmt = '"€" #,##0.00';
+
+        sheet.getCell('D4').value = 'USCITE TOTALI (AVERE)';
+        sheet.getCell('D4').font = { size: 9, bold: true, color: { argb: 'FFE11D48' } };
+        sheet.getCell('D5').value = totAvere;
+        sheet.getCell('D5').font = { size: 12, bold: true, color: { argb: 'FFE11D48' } };
+        sheet.getCell('D5').numFmt = '"€" #,##0.00';
+
+        sheet.getCell('F4').value = 'SALDO DI CASSA (AVANZO/DISAVANZO)';
+        sheet.getCell('F4').font = { size: 9, bold: true, color: { argb: saldoCassa >= 0 ? 'FF047857' : 'FFE11D48' } };
+        sheet.getCell('F5').value = saldoCassa;
+        sheet.getCell('F5').font = { size: 12, bold: true, color: { argb: saldoCassa >= 0 ? 'FF047857' : 'FFE11D48' } };
+        sheet.getCell('F5').numFmt = '"€" #,##0.00';
+
+        sheet.getCell('H4').value = 'MOVIMENTI';
+        sheet.getCell('H4').font = { size: 9, bold: true, color: { argb: 'FF475569' } };
+        sheet.getCell('H5').value = entries.length;
+        sheet.getCell('H5').font = { size: 12, bold: true, color: { argb: 'FF0F172A' } };
+
+        // Intestazione Tabella (Riga 7)
+        sheet.getRow(7).values = [
+            'N° Reg.',
+            'Data',
+            'Tipo Scrittura',
+            'Conto / Soggetto',
+            'Descrizione Operazione',
+            'Entrate (Dare)',
+            'Uscite (Avere)',
+            'Saldo Progressivo'
+        ];
+        sheet.getRow(7).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        sheet.getRow(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+        sheet.getRow(7).alignment = { vertical: 'middle', horizontal: 'center' };
+        sheet.getRow(7).height = 24;
+
+        sheet.columns = [
+            { key: 'num', width: 12 },
+            { key: 'data', width: 14 },
+            { key: 'tipo', width: 22 },
+            { key: 'conto', width: 28 },
+            { key: 'descrizione', width: 45 },
+            { key: 'dare', width: 18 },
+            { key: 'avere', width: 18 },
+            { key: 'saldo', width: 20 }
+        ];
+
+        let runningBalance = 0;
+        let rowIndex = 8;
+        entries.forEach((e, idx) => {
+            const d = parseFloat(e.dare || 0);
+            const a = parseFloat(e.avere || 0);
+            runningBalance += (d - a);
+
+            const row = sheet.getRow(rowIndex);
+            row.values = [
+                e.numero && e.numero !== 'AUTO' ? e.numero : (idx + 1),
+                e.data ? e.data.slice(0, 10) : '-',
+                e.tipo || 'Scrittura Ordinaria',
+                e.conto || '-',
+                e.descrizione || '-',
+                d,
+                a,
+                runningBalance
+            ];
+
+            row.getCell(6).numFmt = '"€" #,##0.00';
+            row.getCell(7).numFmt = '"€" #,##0.00';
+            row.getCell(8).numFmt = '"€" #,##0.00';
+
+            row.getCell(1).alignment = { horizontal: 'center' };
+            row.getCell(2).alignment = { horizontal: 'center' };
+            row.getCell(6).font = { color: { argb: d > 0 ? 'FF047857' : 'FF94A3B8' } };
+            row.getCell(7).font = { color: { argb: a > 0 ? 'FFE11D48' : 'FF94A3B8' } };
+            row.getCell(8).font = { bold: true, color: { argb: runningBalance >= 0 ? 'FF047857' : 'FFE11D48' } };
+
+            if (idx % 2 === 1) {
+                row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+            }
+            rowIndex++;
+        });
+
+        // Riga di Totale Complessivo
+        const totalRow = sheet.getRow(rowIndex);
+        totalRow.values = [
+            'TOTALE',
+            '',
+            '',
+            '',
+            'SOMME COMPLESSIVE DELL\'ESERCIZIO',
+            totDare,
+            totAvere,
+            saldoCassa
+        ];
+        totalRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        totalRow.height = 25;
+        totalRow.getCell(6).numFmt = '"€" #,##0.00';
+        totalRow.getCell(7).numFmt = '"€" #,##0.00';
+        totalRow.getCell(8).numFmt = '"€" #,##0.00';
+
+        const safeCondoName = (condo.nome || 'Condominio').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="Libro_Giornale_${safeCondoName}.xlsx"`);
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch(err) {
+        console.error('Errore export journal-excel:', err);
+        res.status(500).json({ success: false, message: 'Errore durante esportazione Excel del Libro Giornale.' });
+    }
+});
+
+app.get('/api/export/journal-pdf', authenticateToken, requireCondominio, async (req, res) => {
+    let browser;
+    try {
+        const condo = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM condominios WHERE id = ?', [req.condominio_id], (err, row) => {
+                if (err) reject(err); else resolve(row || {});
+            });
+        });
+
+        const entries = await new Promise((resolve, reject) => {
+            db.all('SELECT * FROM journal_entries WHERE condominio_id = ? ORDER BY data ASC, id ASC', [req.condominio_id], (err, rows) => {
+                if (err) reject(err); else resolve(rows || []);
+            });
+        });
+
+        let totDare = 0;
+        let totAvere = 0;
+        entries.forEach(e => {
+            totDare += parseFloat(e.dare || 0);
+            totAvere += parseFloat(e.avere || 0);
+        });
+        const saldoCassa = totDare - totAvere;
+
+        const formatEuro = (num) => '€ ' + (parseFloat(num) || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formatDateIt = (str) => {
+            if (!str) return '-';
+            const parts = str.slice(0, 10).split('-');
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : str;
+        };
+
+        let runningBalance = 0;
+        const rowsHtml = entries.map((e, idx) => {
+            const d = parseFloat(e.dare || 0);
+            const a = parseFloat(e.avere || 0);
+            runningBalance += (d - a);
+            const isEven = idx % 2 === 1 ? 'background-color: #f8fafc;' : 'background-color: #ffffff;';
+            const num = e.numero && e.numero !== 'AUTO' ? e.numero : (idx + 1);
+            return `
+                <tr style="${isEven} border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+                    <td style="padding: 7px 8px; text-align: center; color: #64748b; font-weight: 600;">${num}</td>
+                    <td style="padding: 7px 8px; white-space: nowrap; color: #334155;">${formatDateIt(e.data)}</td>
+                    <td style="padding: 7px 8px; color: #475569; font-weight: 600;">${e.tipo || 'Ordinaria'}</td>
+                    <td style="padding: 7px 8px; color: #1e293b; font-weight: bold;">${e.conto || '-'}</td>
+                    <td style="padding: 7px 8px; color: #334155;">${e.descrizione || '-'}</td>
+                    <td style="padding: 7px 8px; text-align: right; color: ${d > 0 ? '#059669' : '#94a3b8'}; font-weight: ${d > 0 ? '700' : '400'};">${d > 0 ? formatEuro(d) : '-'}</td>
+                    <td style="padding: 7px 8px; text-align: right; color: ${a > 0 ? '#e11d48' : '#94a3b8'}; font-weight: ${a > 0 ? '700' : '400'};">${a > 0 ? formatEuro(a) : '-'}</td>
+                    <td style="padding: 7px 8px; text-align: right; font-weight: 700; color: ${runningBalance >= 0 ? '#059669' : '#e11d48'};">${formatEuro(runningBalance)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const currentDateStr = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
+        const adminStr = condo.admin_nome 
+            ? `${condo.admin_titolo ? condo.admin_titolo + ' ' : ''}${condo.admin_cognome || ''} ${condo.admin_nome}`.trim()
+            : 'Studio di Amministrazione';
+
+        const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+            <meta charset="UTF-8">
+            <title>Libro Giornale & Bilancio - ${condo.nome || 'Condominio'}</title>
+            <style>
+                @page {
+                    size: A4 landscape;
+                    margin: 12mm 10mm 15mm 10mm;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    color: #0f172a;
+                    margin: 0;
+                    padding: 0;
+                    font-size: 12px;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .header-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 2px solid #0f172a; }
+                table.journal-table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+                table.journal-table th { background-color: #1e293b; color: #ffffff; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px; text-align: left; }
+                table.journal-table tr { page-break-inside: avoid; }
+            </style>
+        </head>
+        <body>
+            <table class="header-table">
+                <tr>
+                    <td style="vertical-align: top; width: 60%;">
+                        <div style="font-size: 18px; font-weight: 800; color: #0f172a; text-transform: uppercase; margin-bottom: 3px;">
+                            ${condo.nome || 'CONDOMINIO'}
+                        </div>
+                        <div style="font-size: 11px; color: #475569; line-height: 1.4;">
+                            ${condo.indirizzo || ''} &bull; C.F.: <b>${condo.cf || 'N/D'}</b><br>
+                            Amministrazione: <b>${adminStr}</b> ${condo.admin_cellulare ? '&bull; Tel: ' + condo.admin_cellulare : ''} ${condo.admin_email ? '&bull; ' + condo.admin_email : ''}
+                        </div>
+                    </td>
+                    <td style="vertical-align: top; text-align: right; width: 40%;">
+                        <div style="display: inline-block; background-color: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 800; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #bfdbfe;">
+                            Rendiconto di Cassa &bull; Esercizio 2026
+                        </div>
+                        <div style="font-size: 16px; font-weight: 800; color: #0f172a;">LIBRO GIORNALE</div>
+                        <div style="font-size: 10px; color: #64748b;">Emesso in data: <b>${currentDateStr}</b></div>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Quadro di Sintesi Finanziaria ("Sorta di Bilancio") -->
+            <div style="display: table; width: 100%; border-spacing: 10px 0; margin-bottom: 14px;">
+                <div style="display: table-cell; width: 25%; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; color: #166534;">Entrate Totali (Dare)</div>
+                    <div style="font-size: 16px; font-weight: 800; color: #15803d;">${formatEuro(totDare)}</div>
+                    <div style="font-size: 9px; color: #166534; margin-top: 2px;">Incassi quote & versamenti</div>
+                </div>
+                <div style="display: table-cell; width: 25%; background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; color: #9f1239;">Uscite Totali (Avere)</div>
+                    <div style="font-size: 16px; font-weight: 800; color: #be123c;">${formatEuro(totAvere)}</div>
+                    <div style="font-size: 9px; color: #9f1239; margin-top: 2px;">Pagamenti fornitori & spese</div>
+                </div>
+                <div style="display: table-cell; width: 25%; background-color: ${saldoCassa >= 0 ? '#f0fdf4' : '#fff1f2'}; border: 1px solid ${saldoCassa >= 0 ? '#bbf7d0' : '#fecdd3'}; border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; color: ${saldoCassa >= 0 ? '#166534' : '#9f1239'};">Saldo Cassa (Avanzo/Disavanzo)</div>
+                    <div style="font-size: 16px; font-weight: 800; color: ${saldoCassa >= 0 ? '#15803d' : '#be123c'};">${formatEuro(saldoCassa)}</div>
+                    <div style="font-size: 9px; color: ${saldoCassa >= 0 ? '#166534' : '#9f1239'}; margin-top: 2px;">${saldoCassa >= 0 ? 'Avanzo di gestione attivo' : 'Disavanzo di cassa temporaneo'}</div>
+                </div>
+                <div style="display: table-cell; width: 25%; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; color: #475569;">Scritture Registrate</div>
+                    <div style="font-size: 16px; font-weight: 800; color: #0f172a;">${entries.length} Movimenti</div>
+                    <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Prima Nota Cassa & Banca</div>
+                </div>
+            </div>
+
+            <!-- Tabella Dettaglio Movimenti -->
+            <table class="journal-table">
+                <thead>
+                    <tr>
+                        <th style="width: 5%; text-align: center;">N°</th>
+                        <th style="width: 10%;">Data</th>
+                        <th style="width: 15%;">Tipo Scrittura</th>
+                        <th style="width: 18%;">Conto / Soggetto</th>
+                        <th style="width: 26%;">Descrizione Movimento</th>
+                        <th style="width: 9%; text-align: right;">Entrate (Dare)</th>
+                        <th style="width: 9%; text-align: right;">Uscite (Avere)</th>
+                        <th style="width: 8%; text-align: right;">Saldo Progr.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="8" style="padding: 20px; text-align: center; color: #64748b;">Nessuna registrazione contabile presente nel periodo.</td></tr>'}
+                </tbody>
+                <tfoot>
+                    <tr style="background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 11px;">
+                        <td colspan="5" style="padding: 9px 10px; text-transform: uppercase; letter-spacing: 0.5px;">TOTALE GENERALE RENDICONTO CASSA</td>
+                        <td style="padding: 9px 8px; text-align: right; color: #34d399;">${formatEuro(totDare)}</td>
+                        <td style="padding: 9px 8px; text-align: right; color: #f87171;">${formatEuro(totAvere)}</td>
+                        <td style="padding: 9px 8px; text-align: right; color: ${saldoCassa >= 0 ? '#34d399' : '#f87171'};">${formatEuro(saldoCassa)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <!-- Note legali e Firma -->
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px; color: #64748b; page-break-inside: avoid;">
+                <tr>
+                    <td style="width: 60%; vertical-align: top; line-height: 1.5;">
+                        <p style="margin: 0;"><b>Nota di Trasparenza Contabile:</b> Il presente estratto del Libro Giornale è conforme alle registrazioni cronologiche di cassa/banca effettuate ai sensi dell'art. 1130-bis del Codice Civile.<br>
+                        Documento prodotto telematicamente tramite la piattaforma cloud <b>CondoTransparent</b>.</p>
+                    </td>
+                    <td style="width: 40%; text-align: center; vertical-align: top;">
+                        <div style="font-size: 11px; font-weight: bold; color: #1e293b; margin-bottom: 45px;">Timbro e Firma dell'Amministratore</div>
+                        <div style="border-bottom: 1px dashed #94a3b8; width: 80%; margin: 0 auto;"></div>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        `;
+
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            landscape: true,
+            printBackground: true,
+            margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' }
+        });
+        await browser.close();
+        browser = null;
+
+        const safeCondoName = (condo.nome || 'Condominio').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Libro_Giornale_${safeCondoName}.pdf"`);
+        res.send(pdfBuffer);
+    } catch(err) {
+        if (browser) {
+            try { await browser.close(); } catch(_) {}
+        }
+        console.error('Errore generazione PDF Libro Giornale:', err);
+        res.status(500).json({ success: false, message: 'Errore durante la generazione del PDF del Libro Giornale.' });
     }
 });
 

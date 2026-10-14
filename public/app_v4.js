@@ -2240,40 +2240,283 @@ async function deleteBankTransaction(id) {
 }
 
 
+let journalFilteredData = null;
+
 async function loadGiornale() {
     const container = document.getElementById('giornale-container');
-    container.innerHTML = '<div class="text-center py-4 text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Caricamento...</div>';
+    if (!container) return;
+    container.innerHTML = '<div class="text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Caricamento scritture contabili in corso...</div>';
+    
+    // Aggiorna intestazione di stampa se presente
+    updateJournalPrintHeader();
+
     try {
         const res = await fetch('/api/journal', { headers: getAuthHeaders() });
         const data = await res.json();
         if (data.success) {
-            state.journal = data.data; // Store in state for editing
-            
-            let html = '<table class="w-full text-left text-sm"><thead class="bg-slate-50 border-b"><tr><th class="p-3">Data</th><th class="p-3">Cond&ograve;mino / Conto</th><th class="p-3">Descrizione</th><th class="p-3 text-right">Entrate (Dare)</th><th class="p-3 text-right">Uscite (Avere)</th><th class="p-3 text-center">Azioni</th></tr></thead><tbody class="divide-y divide-slate-100">';
-            
-            if (data.data.length === 0) {
-                html += '<tr><td colspan="6" class="p-4 text-center text-slate-500">Nessuna registrazione presente.</td></tr>';
-            } else {
-                html += data.data.map(j => `
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="p-3 whitespace-nowrap">${formatDate(j.data)}</td>
-                        <td class="p-3 font-semibold text-slate-700">${j.conto || '<span class="text-slate-400 italic">Nessuno</span>'}</td>
-                        <td class="p-3 text-slate-800">${j.descrizione}</td>
-                        <td class="p-3 text-right font-medium ${j.dare > 0 ? 'text-emerald-600' : 'text-slate-400'}">${formatCurrency(j.dare)}</td>
-                        <td class="p-3 text-right font-medium ${j.avere > 0 ? 'text-rose-600' : 'text-slate-400'}">${formatCurrency(j.avere)}</td>
-                        <td class="p-3 text-center whitespace-nowrap">
-                            <button onclick="editJournalEntry(${j.id})" class="p-1.5 text-amber-500 hover:bg-amber-50 rounded transition-colors" title="Modifica"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="deleteJournalEntry(${j.id})" class="p-1.5 text-rose-500 hover:bg-rose-50 rounded transition-colors ml-1" title="Elimina"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-            
-            html += '</tbody></table>';
-            container.innerHTML = html;
+            state.journal = data.data || [];
+            journalFilteredData = [...state.journal];
+            renderJournalTable(journalFilteredData);
+            updateJournalKPIs(state.journal);
+        } else {
+            container.innerHTML = '<div class="text-center py-6 text-rose-500 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Impossibile caricare il Libro Giornale.</div>';
         }
     } catch(e) { 
-        container.innerHTML = '<div class="text-rose-500 p-4">Errore caricamento giornale</div>'; 
+        console.error('Errore caricamento giornale:', e);
+        container.innerHTML = '<div class="text-rose-500 p-6 text-center">Errore di connessione durante il caricamento del giornale.</div>'; 
+    }
+}
+
+function updateJournalPrintHeader() {
+    const condo = state.activeCondominio || {};
+    const nameEl = document.getElementById('print-journal-condo-name');
+    const detailsEl = document.getElementById('print-journal-condo-details');
+    const dateEl = document.getElementById('print-journal-date');
+    
+    if (nameEl) nameEl.textContent = (condo.nome || 'CONDOMINIO').toUpperCase();
+    if (detailsEl) {
+        const admin = condo.admin_nome ? `Amministrazione: ${condo.admin_titolo || ''} ${condo.admin_cognome || ''} ${condo.admin_nome || ''} &bull; ` : '';
+        detailsEl.innerHTML = `${condo.indirizzo || ''} &bull; C.F.: <b>${condo.cf || 'N/D'}</b><br>${admin}Stampa ufficiale ad uso contabile`;
+    }
+    if (dateEl) {
+        dateEl.innerHTML = `Data Emissione: <b>${new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}</b>`;
+    }
+}
+
+function updateJournalKPIs(entries) {
+    let totDare = 0;
+    let totAvere = 0;
+    (entries || []).forEach(e => {
+        totDare += parseFloat(e.dare || 0);
+        totAvere += parseFloat(e.avere || 0);
+    });
+    const saldo = totDare - totAvere;
+
+    const elDare = document.getElementById('journal-kpi-dare');
+    const elAvere = document.getElementById('journal-kpi-avere');
+    const elSaldo = document.getElementById('journal-kpi-saldo');
+    const elBadge = document.getElementById('journal-kpi-saldo-badge');
+    const elIcon = document.getElementById('journal-kpi-saldo-icon');
+    const elCount = document.getElementById('journal-kpi-count');
+
+    if (elDare) elDare.textContent = formatCurrency(totDare);
+    if (elAvere) elAvere.textContent = formatCurrency(totAvere);
+    if (elCount) elCount.textContent = (entries || []).length;
+    
+    if (elSaldo) {
+        elSaldo.textContent = formatCurrency(saldo);
+        if (saldo >= 0) {
+            elSaldo.className = 'text-lg font-extrabold text-emerald-600 tracking-tight my-0.5';
+            if (elBadge) {
+                elBadge.className = 'text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold inline-block';
+                elBadge.textContent = 'Avanzo di gestione attivo';
+            }
+            if (elIcon) elIcon.className = 'w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-lg shrink-0';
+        } else {
+            elSaldo.className = 'text-lg font-extrabold text-rose-600 tracking-tight my-0.5';
+            if (elBadge) {
+                elBadge.className = 'text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full font-semibold inline-block';
+                elBadge.textContent = 'Disavanzo di cassa temporaneo';
+            }
+            if (elIcon) elIcon.className = 'w-11 h-11 rounded-xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center text-lg shrink-0';
+        }
+    }
+}
+
+function renderJournalTable(entries) {
+    const container = document.getElementById('giornale-container');
+    if (!container) return;
+
+    if (!entries || entries.length === 0) {
+        container.innerHTML = `
+            <div class="py-12 text-center text-slate-400">
+                <i class="fa-solid fa-book-open text-4xl mb-3 text-slate-300"></i>
+                <p class="font-bold text-slate-600 text-sm">Nessuna registrazione contabile trovata</p>
+                <p class="text-xs text-slate-400 mt-1">Non ci sono movimenti registrati o corrispondenti ai filtri impostati.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Ordina in ordine cronologico crescente per calcolare il saldo progressivo corretto
+    const sorted = [...entries].sort((a, b) => new Date(a.data) - new Date(b.data) || a.id - b.id);
+
+    let totDare = 0;
+    let totAvere = 0;
+    let runningBalance = 0;
+
+    const rowsHtml = sorted.map((j, idx) => {
+        const d = parseFloat(j.dare || 0);
+        const a = parseFloat(j.avere || 0);
+        totDare += d;
+        totAvere += a;
+        runningBalance += (d - a);
+
+        let typeBadge = '';
+        if (j.tipo === 'Incasso Quota' || d > 0) {
+            typeBadge = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 text-emerald-800"><i class="fa-solid fa-arrow-down mr-1"></i>Incasso</span>';
+        } else if (j.tipo === 'Pagamento Fornitore' || a > 0) {
+            typeBadge = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-100 text-rose-800"><i class="fa-solid fa-arrow-up mr-1"></i>Pagamento</span>';
+        } else {
+            typeBadge = '<span class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 text-slate-700">Generica</span>';
+        }
+
+        const num = j.numero && j.numero !== 'AUTO' ? j.numero : (idx + 1);
+
+        return `
+            <tr class="hover:bg-slate-50/80 transition-colors border-b border-slate-100 text-xs">
+                <td class="p-3 text-center font-bold text-slate-400">${num}</td>
+                <td class="p-3 whitespace-nowrap font-medium text-slate-700">${formatDate(j.data)}</td>
+                <td class="p-3 whitespace-nowrap">${typeBadge}</td>
+                <td class="p-3 font-bold text-slate-900">${j.conto || '<span class="text-slate-400 font-normal italic">Cassa</span>'}</td>
+                <td class="p-3 text-slate-700 max-w-[280px] break-words">${j.descrizione || '-'}</td>
+                <td class="p-3 text-right font-bold whitespace-nowrap ${d > 0 ? 'text-emerald-600' : 'text-slate-300'}">${d > 0 ? formatCurrency(d) : '-'}</td>
+                <td class="p-3 text-right font-bold whitespace-nowrap ${a > 0 ? 'text-rose-600' : 'text-slate-300'}">${a > 0 ? formatCurrency(a) : '-'}</td>
+                <td class="p-3 text-right font-extrabold whitespace-nowrap ${runningBalance >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${formatCurrency(runningBalance)}</td>
+                <td class="p-3 text-center whitespace-nowrap no-print">
+                    <button onclick="editJournalEntry(${j.id})" class="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg transition-colors" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="deleteJournalEntry(${j.id})" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors ml-1" title="Elimina"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    const saldoFinale = totDare - totAvere;
+
+    const tableHtml = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm border-collapse">
+                <thead class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    <tr>
+                        <th class="p-3 text-center w-12">N°</th>
+                        <th class="p-3">Data</th>
+                        <th class="p-3">Tipo</th>
+                        <th class="p-3">Conto / Soggetto</th>
+                        <th class="p-3">Descrizione Operazione</th>
+                        <th class="p-3 text-right">Entrate (Dare)</th>
+                        <th class="p-3 text-right">Uscite (Avere)</th>
+                        <th class="p-3 text-right">Saldo Progr.</th>
+                        <th class="p-3 text-center no-print">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    ${rowsHtml}
+                </tbody>
+                <tfoot class="bg-slate-900 text-white font-bold text-xs">
+                    <tr>
+                        <td colspan="5" class="p-3.5 uppercase tracking-wide">TOTALE GENERALE DEL PERIODO</td>
+                        <td class="p-3.5 text-right font-extrabold text-emerald-400 whitespace-nowrap">${formatCurrency(totDare)}</td>
+                        <td class="p-3.5 text-right font-extrabold text-rose-400 whitespace-nowrap">${formatCurrency(totAvere)}</td>
+                        <td class="p-3.5 text-right font-black ${saldoFinale >= 0 ? 'text-emerald-400' : 'text-rose-400'} whitespace-nowrap">${formatCurrency(saldoFinale)}</td>
+                        <td class="p-3.5 no-print"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = tableHtml;
+}
+
+function filterJournalEntries() {
+    if (!state.journal) return;
+    const q = (document.getElementById('journal-search-input')?.value || '').toLowerCase().trim();
+    const from = document.getElementById('journal-filter-from')?.value;
+    const to = document.getElementById('journal-filter-to')?.value;
+
+    const filtered = state.journal.filter(j => {
+        if (q) {
+            const desc = (j.descrizione || '').toLowerCase();
+            const conto = (j.conto || '').toLowerCase();
+            const tipo = (j.tipo || '').toLowerCase();
+            if (!desc.includes(q) && !conto.includes(q) && !tipo.includes(q)) return false;
+        }
+        if (from && j.data && j.data.slice(0, 10) < from) return false;
+        if (to && j.data && j.data.slice(0, 10) > to) return false;
+        return true;
+    });
+
+    journalFilteredData = filtered;
+    renderJournalTable(filtered);
+    updateJournalKPIs(filtered);
+}
+
+function resetJournalFilters() {
+    const s = document.getElementById('journal-search-input');
+    const f = document.getElementById('journal-filter-from');
+    const t = document.getElementById('journal-filter-to');
+    if (s) s.value = '';
+    if (f) f.value = '';
+    if (t) t.value = '';
+    if (state.journal) {
+        journalFilteredData = [...state.journal];
+        renderJournalTable(state.journal);
+        updateJournalKPIs(state.journal);
+    }
+}
+
+function printJournal() {
+    updateJournalPrintHeader();
+    window.print();
+}
+
+async function downloadJournalPdf() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione limitata: il condominio è in modalità Sola Lettura.", "warning");
+    }
+    showToast("Generazione PDF del Libro Giornale in corso...", "info");
+    try {
+        const res = await fetch('/api/export/journal-pdf', { headers: getAuthHeaders() });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast(err.message || "Errore nella generazione del PDF", "error");
+            return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const condoName = (state.activeCondominio && state.activeCondominio.nome) 
+            ? state.activeCondominio.nome.replace(/[^a-zA-Z0-9_\-]/g, '_') 
+            : 'Condominio';
+        a.download = `Libro_Giornale_${condoName}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast("PDF del Libro Giornale scaricato con successo!", "success");
+    } catch(e) {
+        console.error("Errore download PDF:", e);
+        showToast("Errore durante il download del PDF.", "error");
+    }
+}
+
+async function exportJournalExcel() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione limitata: il condominio è in modalità Sola Lettura.", "warning");
+    }
+    showToast("Generazione Excel del Libro Giornale in corso...", "info");
+    try {
+        const res = await fetch('/api/export/journal-excel', { headers: getAuthHeaders() });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast(err.message || "Errore nell'esportazione Excel", "error");
+            return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const condoName = (state.activeCondominio && state.activeCondominio.nome) 
+            ? state.activeCondominio.nome.replace(/[^a-zA-Z0-9_\-]/g, '_') 
+            : 'Condominio';
+        a.download = `Libro_Giornale_${condoName}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast("Excel del Libro Giornale scaricato con successo!", "success");
+    } catch(e) {
+        console.error("Errore export Excel:", e);
+        showToast("Errore durante l'esportazione Excel.", "error");
     }
 }
 
