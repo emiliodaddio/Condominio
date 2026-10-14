@@ -200,6 +200,7 @@ const upload = multer({
 const db = require('./db');
 
 function initDatabase() {
+    ensurePartialPaymentColumns();
     if (db.type === 'mysql') {
         console.log('✅ Inizializzazione schema MySQL verificata.');
         return;
@@ -496,29 +497,48 @@ db.run(`CREATE TABLE IF NOT EXISTS assemblies (
 }
 
 function ensurePartialPaymentColumns() {
+    console.log('🔄 Controllo schema colonne pagamenti parziali...');
     if (db.type === 'mysql') {
         db.all("SHOW COLUMNS FROM quotes LIKE 'paid_amount'", [], (err, rows) => {
+            if (err) console.error('⚠️ Verifica quotes.paid_amount:', err.message);
             if (!err && (!rows || rows.length === 0)) {
-                db.run("ALTER TABLE quotes ADD COLUMN paid_amount DOUBLE DEFAULT 0", [], () => {
-                    db.run("UPDATE quotes SET paid_amount = amount WHERE status = 'Pagato'");
+                db.run("ALTER TABLE quotes ADD COLUMN paid_amount DOUBLE DEFAULT 0", [], (aErr) => {
+                    if (aErr) console.error('⚠️ ALTER TABLE quotes.paid_amount:', aErr.message);
+                    else {
+                        console.log('✅ Colonna quotes.paid_amount aggiunta con successo.');
+                        db.run("UPDATE quotes SET paid_amount = amount WHERE status = 'Pagato'");
+                    }
                 });
             }
         });
         db.all("SHOW COLUMNS FROM quotes LIKE 'payment_history'", [], (err, rows) => {
+            if (err) console.error('⚠️ Verifica quotes.payment_history:', err.message);
             if (!err && (!rows || rows.length === 0)) {
-                db.run("ALTER TABLE quotes ADD COLUMN payment_history TEXT");
+                db.run("ALTER TABLE quotes ADD COLUMN payment_history TEXT", [], (aErr) => {
+                    if (aErr) console.error('⚠️ ALTER TABLE quotes.payment_history:', aErr.message);
+                    else console.log('✅ Colonna quotes.payment_history aggiunta con successo.');
+                });
             }
         });
         db.all("SHOW COLUMNS FROM supplier_payments LIKE 'paid_amount'", [], (err, rows) => {
+            if (err) console.error('⚠️ Verifica supplier_payments.paid_amount:', err.message);
             if (!err && (!rows || rows.length === 0)) {
-                db.run("ALTER TABLE supplier_payments ADD COLUMN paid_amount DOUBLE DEFAULT 0", [], () => {
-                    db.run("UPDATE supplier_payments SET paid_amount = amount WHERE status = 'Pagato'");
+                db.run("ALTER TABLE supplier_payments ADD COLUMN paid_amount DOUBLE DEFAULT 0", [], (aErr) => {
+                    if (aErr) console.error('⚠️ ALTER TABLE supplier_payments.paid_amount:', aErr.message);
+                    else {
+                        console.log('✅ Colonna supplier_payments.paid_amount aggiunta con successo.');
+                        db.run("UPDATE supplier_payments SET paid_amount = amount WHERE status = 'Pagato'");
+                    }
                 });
             }
         });
         db.all("SHOW COLUMNS FROM supplier_payments LIKE 'payment_history'", [], (err, rows) => {
+            if (err) console.error('⚠️ Verifica supplier_payments.payment_history:', err.message);
             if (!err && (!rows || rows.length === 0)) {
-                db.run("ALTER TABLE supplier_payments ADD COLUMN payment_history TEXT");
+                db.run("ALTER TABLE supplier_payments ADD COLUMN payment_history TEXT", [], (aErr) => {
+                    if (aErr) console.error('⚠️ ALTER TABLE supplier_payments.payment_history:', aErr.message);
+                    else console.log('✅ Colonna supplier_payments.payment_history aggiunta con successo.');
+                });
             }
         });
     } else {
