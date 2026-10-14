@@ -516,7 +516,7 @@ app.get('/api/export/journal-pdf', authenticateToken, requireCondominio, async (
             try { await browser.close(); } catch(_) {}
         }
         console.error('Errore generazione PDF Libro Giornale:', err);
-        res.status(500).json({ success: false, message: 'Errore durante la generazione del PDF del Libro Giornale.' });
+        res.status(500).json({ success: false, message: 'Errore durante la generazione del PDF: ' + err.message, stack: err.stack });
     }
 });
 
