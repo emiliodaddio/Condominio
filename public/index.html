@@ -1311,6 +1311,7 @@
                             <tr id="quotes-table-header"></tr>
                         </thead>
                         <tbody id="quotes-table-body" class="divide-y divide-slate-100"></tbody>
+                        <tfoot id="quotes-table-footer"></tfoot>
                     </table>
                 </div>
             </div>
@@ -1338,9 +1339,11 @@
                                 <th class="py-3.5 px-4">Scadenza</th>
                                 <th class="py-3.5 px-4 text-right">Importo Insoluto</th>
                                 <th class="py-3.5 px-4 text-center">Stato</th>
+                                <th class="py-3.5 px-4 text-center">Azioni</th>
                             </tr>
                         </thead>
                         <tbody id="receivables-table-body" class="divide-y divide-slate-100"></tbody>
+                        <tfoot id="receivables-table-footer"></tfoot>
                     </table>
                 </div>
             </div>
@@ -1400,12 +1403,15 @@
                                 <th class="py-3.5 px-4">Categoria</th>
                                 <th class="py-3.5 px-4">N° Fattura</th>
                                 <th class="py-3.5 px-4">Data Pagamento</th>
-                                <th class="py-3.5 px-4 text-right">Importo</th>
+                                <th class="py-3.5 px-4 text-right">Importo Fattura</th>
+                                <th class="py-3.5 px-4 text-right">Liquidato / Residuo</th>
                                 <th class="py-3.5 px-4 text-center">Stato</th>
                                 <th class="py-3.5 px-4">Note</th>
+                                <th class="py-3.5 px-4 text-center">Azioni</th>
                             </tr>
                         </thead>
                         <tbody id="suppliers-table-body" class="divide-y divide-slate-100"></tbody>
+                        <tfoot id="suppliers-table-footer"></tfoot>
                     </table>
                 </div>
             </div>
@@ -2138,13 +2144,17 @@
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Importo (€) *</label>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Importo Totale (€) *</label>
                             <input type="number" step="0.01" id="quote-amount" required placeholder="350.00" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
                         </div>
                         <div>
                             <label class="block text-xs font-semibold text-slate-700 mb-1">Data Scadenza *</label>
                             <input type="date" id="quote-due-date" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
                         </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Acconto già versato (€) <span class="text-slate-400 font-normal">(Opzionale)</span></label>
+                        <input type="number" step="0.01" id="quote-paid-amount" placeholder="0.00 (lascia vuoto se non pagato)" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
                     </div>
                     <div class="pt-4 flex justify-end space-x-2 border-t border-slate-100">
                         <button type="button" onclick="closeNewQuoteModal()" class="px-4 py-2 text-xs font-semibold text-slate-600">Annulla</button>
@@ -2198,11 +2208,16 @@
                         </div>
                         <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-700 mb-1">Stato Pagamento</label>
-                            <select id="supplier-status" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
-                                <option value="Pagato">Pagato</option>
-                                <option value="Da liquidare">Da liquidare</option>
+                            <select id="supplier-status" onchange="toggleSupplierPartialInput()" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <option value="Da liquidare" selected>Da liquidare</option>
+                                <option value="Parziale">Parziale (con acconto)</option>
+                                <option value="Pagato">Pagato (saldato)</option>
                                 <option value="In elaborazione">In elaborazione</option>
                             </select>
+                        </div>
+                        <div id="supplier-paid-amount-container" class="col-span-2 hidden">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Acconto già liquidato (€) *</label>
+                            <input type="number" step="0.01" id="supplier-paid-amount" placeholder="0.00" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
                         </div>
                         <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-700 mb-1">Note Aggiuntive</label>
@@ -2212,6 +2227,125 @@
                     <div class="pt-4 flex justify-end space-x-2 border-t border-slate-100">
                         <button type="button" onclick="closeNewSupplierModal()" class="px-4 py-2 text-xs font-semibold text-slate-600">Annulla</button>
                         <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">Registra Fattura</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Registra Pagamento / Acconto / Saldo -->
+    <div id="modal-record-payment" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeRecordPaymentModal()"></div>
+            <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100">
+                <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                            <i id="record-payment-icon" class="fa-solid fa-money-bill-wave text-emerald-600"></i>
+                            <span id="record-payment-title">Registra Pagamento</span>
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5" id="record-payment-subtitle">Inserisci un acconto parziale o il saldo totale</p>
+                    </div>
+                    <button onclick="closeRecordPaymentModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+
+                <!-- Scheda Riepilogo Documento -->
+                <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider" id="record-payment-type-label">Condomino / Rata</div>
+                            <div class="text-sm font-bold text-slate-900 mt-0.5" id="record-payment-subject">-</div>
+                            <div class="text-xs text-slate-500" id="record-payment-desc">-</div>
+                        </div>
+                        <span id="record-payment-status-badge" class="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-100 text-amber-800">In sospeso</span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-200/60 text-center">
+                        <div class="p-2 rounded-xl bg-white border border-slate-100">
+                            <div class="text-[10px] font-semibold text-slate-400 uppercase">Totale</div>
+                            <div class="text-xs font-bold text-slate-800" id="record-payment-total">€ 0,00</div>
+                        </div>
+                        <div class="p-2 rounded-xl bg-white border border-slate-100">
+                            <div class="text-[10px] font-semibold text-slate-400 uppercase">Già Pagato</div>
+                            <div class="text-xs font-bold text-emerald-600" id="record-payment-already-paid">€ 0,00</div>
+                        </div>
+                        <div class="p-2 rounded-xl bg-white border border-rose-100 bg-rose-50/30">
+                            <div class="text-[10px] font-semibold text-rose-500 uppercase">Residuo</div>
+                            <div class="text-xs font-extrabold text-rose-600" id="record-payment-residual">€ 0,00</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Registrazione Versamento -->
+                <form id="form-record-payment" onsubmit="handleConfirmPayment(event)" class="mt-4 space-y-4">
+                    <input type="hidden" id="record-payment-type">
+                    <input type="hidden" id="record-payment-id">
+
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-xs font-bold text-slate-700">Importo Versamento (€) *</label>
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" onclick="setQuickPaymentAmount('full')" class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold border border-emerald-200">
+                                    <i class="fa-solid fa-check-double mr-1"></i>Saldo Totale
+                                </button>
+                                <button type="button" onclick="setQuickPaymentAmount('half')" class="text-[11px] px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 font-semibold border border-amber-200">
+                                    50%
+                                </button>
+                            </div>
+                        </div>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 text-sm font-bold">€</span>
+                            <input type="number" step="0.01" min="0.01" id="record-payment-amount" required placeholder="0.00"
+                                class="w-full pl-8 pr-3.5 py-2.5 text-sm font-bold text-slate-900 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 transition">
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1" id="record-payment-calc-hint">Inserisci l'importo dell'acconto o premi 'Saldo Totale'.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Data Pagamento *</label>
+                            <input type="date" id="record-payment-date" required class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Metodo di Pagamento</label>
+                            <select id="record-payment-method" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <option value="Bonifico Bancario">Bonifico Bancario</option>
+                                <option value="RiBa">RiBa</option>
+                                <option value="Contanti">Contanti</option>
+                                <option value="Assegno Bancario">Assegno Bancario</option>
+                                <option value="POS / Carta">POS / Carta</option>
+                                <option value="Altro">Altro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Note / Causale</label>
+                        <input type="text" id="record-payment-notes" placeholder="Es. Acconto 1ª rata o Saldo con bonifico..." class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300">
+                    </div>
+
+                    <!-- Opzione Prima Nota -->
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
+                        <input type="checkbox" id="record-payment-journal" checked class="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                        <label for="record-payment-journal" class="text-xs text-slate-700 cursor-pointer select-none">
+                            <span class="font-bold text-slate-900 block">Registra in Prima Nota (Libro Giornale)</span>
+                            <span class="text-slate-500 text-[11px]">Genera automaticamente la scrittura contabile collegata a questa transazione.</span>
+                        </label>
+                    </div>
+
+                    <!-- Storico Acconti Precedenti -->
+                    <div id="record-payment-history-container" class="hidden">
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Storico Pagamenti Effettuati</label>
+                        <div id="record-payment-history-list" class="max-h-32 overflow-y-auto space-y-1 pr-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                            <!-- Popolato dinamicamente -->
+                        </div>
+                    </div>
+
+                    <div class="pt-3 flex justify-end space-x-2 border-t border-slate-100">
+                        <button type="button" onclick="closeRecordPaymentModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800">Annulla</button>
+                        <button type="submit" id="btn-submit-record-payment" class="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition">
+                            <i class="fa-solid fa-check mr-1.5"></i>Registra Pagamento
+                        </button>
                     </div>
                 </form>
             </div>
@@ -2462,7 +2596,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261013_v3"></script>
+    <script src="app_v4.js?v=20261014_v3"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

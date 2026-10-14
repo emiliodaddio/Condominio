@@ -80,12 +80,16 @@ app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, ch
             { header: 'Fornitore', key: 'supplier_name', width: 35 },
             { header: 'Categoria', key: 'category', width: 25 },
             { header: 'N. Fattura', key: 'invoice_number', width: 18 },
-            { header: 'Importo', key: 'amount', width: 18 },
+            { header: 'Importo Totale', key: 'amount', width: 18 },
+            { header: 'Liquidato', key: 'paid_amount', width: 18 },
+            { header: 'Residuo', key: 'residual', width: 18 },
             { header: 'Stato', key: 'status', width: 18 },
             { header: 'Data Pagamento', key: 'payment_date', width: 18 }
         ];
 
         sheetSuppliers.getColumn('amount').numFmt = '"€"#,##0.00';
+        sheetSuppliers.getColumn('paid_amount').numFmt = '"€"#,##0.00';
+        sheetSuppliers.getColumn('residual').numFmt = '"€"#,##0.00';
 
         const supplierRows = await new Promise((resolve, reject) => {
             db.all('SELECT * FROM supplier_payments WHERE condominio_id = ? ORDER BY payment_date DESC', [req.condominio_id], (err, rows) => {
@@ -94,7 +98,11 @@ app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, ch
         });
         
         supplierRows.forEach(r => {
-            if (r.status !== 'Pagato') r.payment_date = '-';
+            const tot = parseFloat(r.amount) || 0;
+            const paid = parseFloat(r.paid_amount) || (r.status === 'Pagato' ? tot : 0);
+            r.paid_amount = paid;
+            r.residual = Math.max(0, tot - paid);
+            if (r.status !== 'Pagato' && !r.payment_date) r.payment_date = '-';
             sheetSuppliers.addRow(r);
         });
 
@@ -104,12 +112,16 @@ app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, ch
             { header: 'Condomino', key: 'condomino_nome', width: 35 },
             { header: 'Titolo', key: 'title', width: 35 },
             { header: 'Scadenza', key: 'due_date', width: 15 },
-            { header: 'Importo', key: 'amount', width: 18 },
+            { header: 'Importo Quota', key: 'amount', width: 18 },
+            { header: 'Versato', key: 'paid_amount', width: 18 },
+            { header: 'Residuo', key: 'residual', width: 18 },
             { header: 'Stato', key: 'status', width: 18 },
             { header: 'Data Pagamento', key: 'payment_date', width: 18 }
         ];
         
         sheetQuotes.getColumn('amount').numFmt = '"€"#,##0.00';
+        sheetQuotes.getColumn('paid_amount').numFmt = '"€"#,##0.00';
+        sheetQuotes.getColumn('residual').numFmt = '"€"#,##0.00';
 
         const quoteRows = await new Promise((resolve, reject) => {
             db.all(`SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome 
@@ -121,8 +133,12 @@ app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, ch
         });
         
         quoteRows.forEach(r => {
+            const tot = parseFloat(r.amount) || 0;
+            const paid = parseFloat(r.paid_amount) || (r.status === 'Pagato' ? tot : 0);
             r.condomino_nome = r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto';
-            if (r.status !== 'Pagato') r.payment_date = '-';
+            r.paid_amount = paid;
+            r.residual = Math.max(0, tot - paid);
+            if (r.status !== 'Pagato' && !r.payment_date) r.payment_date = '-';
             sheetQuotes.addRow(r);
         });
 
@@ -142,7 +158,21 @@ const JWT_SECRET = 'chiave_segreta_condominio_sicura_123!';
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Disabilita completamente il caching dei file statici e delle risposte per evitare problemi di cache del browser
+app.use((req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+    next();
+});
+
+app.use(express.static(path.join(__dirname, 'public'), {
+    etag: false,
+    lastModified: false,
+    maxAge: 0
+}));
 
 // Assicura l'esistenza della cartella uploads
 const uploadDir = path.join(__dirname, 'public', 'uploads');
@@ -460,8 +490,63 @@ db.run(`CREATE TABLE IF NOT EXISTS assemblies (
             });
         });
 
+        ensurePartialPaymentColumns();
         seedInitialData();
     });
+}
+
+function ensurePartialPaymentColumns() {
+    if (db.type === 'mysql') {
+        db.all("SHOW COLUMNS FROM quotes LIKE 'paid_amount'", [], (err, rows) => {
+            if (!err && (!rows || rows.length === 0)) {
+                db.run("ALTER TABLE quotes ADD COLUMN paid_amount DOUBLE DEFAULT 0", [], () => {
+                    db.run("UPDATE quotes SET paid_amount = amount WHERE status = 'Pagato'");
+                });
+            }
+        });
+        db.all("SHOW COLUMNS FROM quotes LIKE 'payment_history'", [], (err, rows) => {
+            if (!err && (!rows || rows.length === 0)) {
+                db.run("ALTER TABLE quotes ADD COLUMN payment_history TEXT");
+            }
+        });
+        db.all("SHOW COLUMNS FROM supplier_payments LIKE 'paid_amount'", [], (err, rows) => {
+            if (!err && (!rows || rows.length === 0)) {
+                db.run("ALTER TABLE supplier_payments ADD COLUMN paid_amount DOUBLE DEFAULT 0", [], () => {
+                    db.run("UPDATE supplier_payments SET paid_amount = amount WHERE status = 'Pagato'");
+                });
+            }
+        });
+        db.all("SHOW COLUMNS FROM supplier_payments LIKE 'payment_history'", [], (err, rows) => {
+            if (!err && (!rows || rows.length === 0)) {
+                db.run("ALTER TABLE supplier_payments ADD COLUMN payment_history TEXT");
+            }
+        });
+    } else {
+        db.all("PRAGMA table_info(quotes)", [], (err, cols) => {
+            if (!err && cols) {
+                if (!cols.some(c => c.name === 'paid_amount')) {
+                    db.run("ALTER TABLE quotes ADD COLUMN paid_amount REAL DEFAULT 0", () => {
+                        db.run("UPDATE quotes SET paid_amount = amount WHERE status = 'Pagato'");
+                    });
+                }
+                if (!cols.some(c => c.name === 'payment_history')) {
+                    db.run("ALTER TABLE quotes ADD COLUMN payment_history TEXT");
+                }
+            }
+        });
+        db.all("PRAGMA table_info(supplier_payments)", [], (err, cols) => {
+            if (!err && cols) {
+                if (!cols.some(c => c.name === 'paid_amount')) {
+                    db.run("ALTER TABLE supplier_payments ADD COLUMN paid_amount REAL DEFAULT 0", () => {
+                        db.run("UPDATE supplier_payments SET paid_amount = amount WHERE status = 'Pagato'");
+                    });
+                }
+                if (!cols.some(c => c.name === 'payment_history')) {
+                    db.run("ALTER TABLE supplier_payments ADD COLUMN payment_history TEXT");
+                }
+            }
+        });
+    }
 }
 
 function seedInitialData() {
@@ -992,24 +1077,42 @@ app.get('/api/condominios', authenticateToken, (req, res) => {
     }
 });
 
-// Quote e Receivables (Crediti) con ANONIMIZZAZIONE
+// Quote e Receivables (Crediti) con ANONIMIZZAZIONE e SALDO PARZIALE
 app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => {
     db.all(`SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome, ui.identificativo as unita 
              FROM quotes q 
              LEFT JOIN anagrafica_persone p ON q.persona_id = p.id 
              LEFT JOIN unita_immobiliari ui ON q.unita_id = ui.id 
-             WHERE q.condominio_id = ? AND q.status = 'In sospeso'`, 
+             WHERE q.condominio_id = ? AND (q.status != 'Pagato' OR (q.amount - COALESCE(q.paid_amount, 0)) > 0.009)`, 
     [req.condominio_id], (err, rows) => {
         if (err) return res.status(500).json({success: false, message: err.message});
         if (req.role_in_condominio === 'admin') {
-            res.json({ success: true, data: rows.map(r => ({ ...r, debitore: r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto', unita: r.unita || '-', titolo_quota: r.title, importo: r.amount, scadenza: r.due_date })) });
+            res.json({ success: true, data: rows.map(r => {
+                const total = parseFloat(r.amount) || 0;
+                const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
+                const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+                return {
+                    ...r,
+                    debitore: r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto',
+                    unita: r.unita || '-',
+                    titolo_quota: r.title,
+                    importo_totale: total,
+                    importo_versato: paid,
+                    importo: residual,
+                    residual: residual,
+                    scadenza: r.due_date,
+                    status: r.status
+                };
+            }) });
         } else {
             // Anonimizzazione
             let i = 1;
             const data = rows.map(r => {
-                // TODO: match user with persona if possible, for now just anonymize all
+                const total = parseFloat(r.amount) || 0;
+                const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
+                const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
                 return {
-                    id: r.id, is_my_quote: false, importo: r.amount, scadenza: r.due_date, titolo_quota: r.title,
+                    id: r.id, is_my_quote: false, importo: residual, importo_totale: total, importo_versato: paid, residual: residual, scadenza: r.due_date, titolo_quota: r.title, status: r.status,
                     debitore: 'Condòmino #' + (i++), unita: 'Unità Riservata'
                 };
             });
@@ -1028,17 +1131,55 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
     [req.condominio_id], (err, rows) => {
         if (err) return res.status(500).json({success: false, message: err.message});
         // Remap to match what frontend expects
-        const mapped = rows.map(r => ({...r, condomino_nome: r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto', condomino_unita: r.condomino_unita || '-'}));
+        const mapped = rows.map(r => {
+            const total = parseFloat(r.amount) || 0;
+            const paid = (r.paid_amount !== undefined && r.paid_amount !== null)
+                ? parseFloat(r.paid_amount)
+                : (r.status === 'Pagato' ? total : 0);
+            const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+            return {
+                ...r, 
+                amount: total,
+                paid_amount: paid,
+                residual: residual,
+                condomino_nome: r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto', 
+                condomino_unita: r.condomino_unita || '-',
+                unita: r.condomino_unita || '-'
+            };
+        });
         res.json({ success: true, data: mapped });
     });
 });
 
 app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { persona_id, unita_id, type, title, amount, due_date } = req.body;
-    const status = 'In sospeso';
+    const { persona_id, unita_id, type, title, amount, due_date, paid_amount, payment_method, notes } = req.body;
+    const personaVal = (persona_id !== undefined && persona_id !== '' && persona_id !== null) ? parseInt(persona_id, 10) : null;
+    const unitaVal = (unita_id !== undefined && unita_id !== '' && unita_id !== null) ? parseInt(unita_id, 10) : null;
+    const amountVal = parseFloat(amount) || 0;
+    const paidVal = Math.max(0, Math.min(amountVal, parseFloat(paid_amount) || 0));
+    
+    let status = 'In sospeso';
+    if (paidVal >= (amountVal - 0.009) && amountVal > 0) {
+        status = 'Pagato';
+    } else if (paidVal > 0) {
+        status = 'Parziale';
+    }
+
+    let history = [];
+    if (paidVal > 0) {
+        history.push({
+            id: Date.now(),
+            date: new Date().toISOString().split('T')[0],
+            amount: paidVal,
+            method: payment_method || 'Bonifico Bancario',
+            note: notes || (status === 'Pagato' ? 'Saldo alla creazione' : 'Acconto iniziale'),
+            registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
+        });
+    }
+
     db.run(
-        `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, due_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.condominio_id, persona_id, unita_id, type, title, amount, due_date, status],
+        `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, payment_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', title, amountVal, paidVal, due_date, status, history.length > 0 ? JSON.stringify(history) : null],
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             res.json({ success: true, id: this.lastID });
@@ -1048,14 +1189,18 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCond
 
 app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
-    const { amount, due_date, status } = req.body;
+    const { amount, due_date, status, paid_amount } = req.body;
+    const amountVal = parseFloat(amount) || 0;
+    const paidVal = (paid_amount !== undefined && paid_amount !== null)
+        ? parseFloat(paid_amount)
+        : (status === 'Pagato' ? amountVal : 0);
     let payment_date = null;
     if (status === 'Pagato') {
         payment_date = new Date().toISOString().split('T')[0];
     }
     db.run(
-        `UPDATE quotes SET amount = ?, due_date = ?, status = ?, payment_date = COALESCE(payment_date, ?) WHERE id = ? AND condominio_id = ?`,
-        [amount, due_date, status, payment_date, id, req.condominio_id],
+        `UPDATE quotes SET amount = ?, paid_amount = ?, due_date = ?, status = ?, payment_date = COALESCE(payment_date, ?) WHERE id = ? AND condominio_id = ?`,
+        [amountVal, paidVal, due_date, status, payment_date, id, req.condominio_id],
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             res.json({ success: true });
@@ -1063,16 +1208,90 @@ app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkC
     );
 });
 
-app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+// Registrazione Saldo / Acconto Quota Condominiale
+app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
-    const paymentDate = new Date().toISOString().split('T')[0];
-    db.run("UPDATE quotes SET status = 'Pagato', payment_date = ? WHERE id = ? AND condominio_id = ?",
-        [paymentDate, id, req.condominio_id],
-        function(err) {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true, message: 'Quota saldata' });
-        }
-    );
+    let { amount_paying, payment_amount, amount, payment_date, payment_method, note, notes, add_to_journal, create_journal_entry } = req.body || {};
+    const inputPaying = (payment_amount !== undefined && payment_amount !== null) ? payment_amount : ((amount_paying !== undefined && amount_paying !== null) ? amount_paying : amount);
+    const inputNote = notes || note;
+    const shouldAddToJournal = (create_journal_entry !== undefined) ? create_journal_entry : (add_to_journal !== false && add_to_journal !== undefined ? add_to_journal : true);
+
+    db.get('SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome FROM quotes q LEFT JOIN anagrafica_persone p ON q.persona_id = p.id WHERE q.id = ? AND q.condominio_id = ?', [id, req.condominio_id], (err, quote) => {
+        if (err || !quote) return res.status(404).json({ success: false, message: 'Quota non trovata' });
+
+        const totalAmount = parseFloat(quote.amount) || 0;
+        const alreadyPaid = (quote.paid_amount !== undefined && quote.paid_amount !== null)
+            ? parseFloat(quote.paid_amount)
+            : (quote.status === 'Pagato' ? totalAmount : 0);
+        const currentResidual = Math.max(0, Math.round((totalAmount - alreadyPaid) * 100) / 100);
+
+        let paying = parseFloat(inputPaying);
+        if (isNaN(paying) || paying <= 0) paying = currentResidual;
+        if (paying > currentResidual) paying = currentResidual;
+        paying = Math.round(paying * 100) / 100;
+
+        const newPaidAmount = Math.min(totalAmount, Math.round((alreadyPaid + paying) * 100) / 100);
+        const newStatus = newPaidAmount >= (totalAmount - 0.009) ? 'Pagato' : 'Parziale';
+        const pDate = payment_date || new Date().toISOString().split('T')[0];
+        const pMethod = payment_method || 'Bonifico Bancario';
+        const pNote = inputNote || (newStatus === 'Pagato' ? 'Saldo Quota' : 'Acconto Quota');
+
+        let history = [];
+        try {
+            if (quote.payment_history) history = JSON.parse(quote.payment_history);
+        } catch (_) {}
+        history.push({
+            id: Date.now(),
+            date: pDate,
+            amount: paying,
+            method: pMethod,
+            note: pNote,
+            registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
+        });
+
+        db.run(
+            `UPDATE quotes SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?`,
+            [newPaidAmount, newStatus, pDate, JSON.stringify(history), id, req.condominio_id],
+            function(updErr) {
+                if (updErr) return res.status(500).json({ success: false, message: updErr.message });
+
+                logAudit(req.user.id, req.condominio_id, `Registrato Incasso Quota (€ ${paying.toFixed(2)} - ${newStatus})`, 'quotes', id, null, req.ip);
+
+                // Registrazione automatica nel Libro Giornale (se richiesta)
+                if (shouldAddToJournal) {
+                    const desc = `Incasso Quota (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${quote.title}${pNote ? ' - ' + pNote : ''}`;
+                    const nominativo = quote.persona_cognome ? `${quote.persona_cognome} ${quote.persona_nome}` : 'Condòmino';
+                    db.run(
+                        `INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [req.condominio_id, pDate, 'AUTO', 'Incasso Quota', desc, paying, 0, nominativo],
+                        function() {
+                            res.json({
+                                success: true,
+                                message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                                newStatus,
+                                paid_amount: newPaidAmount,
+                                residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                            });
+                        }
+                    );
+                } else {
+                    res.json({
+                        success: true,
+                        message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                        newStatus,
+                        paid_amount: newPaidAmount,
+                        residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                    });
+                }
+            }
+        );
+    });
+});
+
+app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    // Inoltra alla gestione completa pay
+    req.url = `/api/quotes/${req.params.id}/pay`;
+    app._router.handle(req, res);
 });
 
 app.delete('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
@@ -1294,45 +1513,183 @@ app.put('/api/suppliers/:id', authenticateToken, requireCondominio, checkCondoLi
 });
 
 app.get('/api/supplier-payments', authenticateToken, requireCondominio, (req, res) => {
-    db.all('SELECT * FROM supplier_payments WHERE condominio_id = ? ORDER BY payment_date DESC', [req.condominio_id], (err, rows) => {
-        res.json({ success: true, data: rows || [] });
+    db.all('SELECT * FROM supplier_payments WHERE condominio_id = ? ORDER BY payment_date DESC, id DESC', [req.condominio_id], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
+        const mapped = (rows || []).map(r => {
+            const total = parseFloat(r.amount) || 0;
+            const paid = (r.paid_amount !== undefined && r.paid_amount !== null)
+                ? parseFloat(r.paid_amount)
+                : (r.status === 'Pagato' ? total : 0);
+            const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+            return {
+                ...r,
+                amount: total,
+                paid_amount: paid,
+                residual: residual
+            };
+        });
+        res.json({ success: true, data: mapped });
     });
 });
 
 app.post('/api/supplier-payments', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { supplier_name, category, invoice_number, amount, payment_date, status, notes } = req.body;
-    db.run('INSERT INTO supplier_payments (condominio_id, supplier_name, category, invoice_number, amount, payment_date, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [req.condominio_id, supplier_name, category, invoice_number, amount, payment_date, status, notes], function(err) {
-            res.json({ success: !err });
+    const { supplier_name, category, invoice_number, amount, payment_date, status, notes, paid_amount, payment_method } = req.body;
+    const amountVal = parseFloat(amount) || 0;
+    let paidVal = (paid_amount !== undefined && paid_amount !== null && paid_amount !== '') ? parseFloat(paid_amount) : (status === 'Pagato' ? amountVal : 0);
+    paidVal = Math.max(0, Math.min(amountVal, paidVal));
+    
+    let initialStatus = status || 'Da liquidare';
+    if (paidVal >= (amountVal - 0.009) && amountVal > 0) {
+        initialStatus = 'Pagato';
+    } else if (paidVal > 0) {
+        initialStatus = 'Parziale';
+    }
+
+    let history = [];
+    if (paidVal > 0) {
+        history.push({
+            id: Date.now(),
+            date: payment_date || new Date().toISOString().split('T')[0],
+            amount: paidVal,
+            method: payment_method || 'Bonifico Bancario',
+            note: notes || (initialStatus === 'Pagato' ? 'Saldo alla registrazione' : 'Acconto iniziale'),
+            registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
+        });
+    }
+
+    db.run('INSERT INTO supplier_payments (condominio_id, supplier_name, category, invoice_number, amount, paid_amount, payment_date, status, notes, payment_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [req.condominio_id, supplier_name, category, invoice_number, amountVal, paidVal, payment_date, initialStatus, notes, history.length > 0 ? JSON.stringify(history) : null], function(err) {
+            if (err) return res.status(500).json({ success: false, message: err.message });
+            res.json({ success: true, id: this.lastID });
         });
 });
+
 app.put('/api/supplier-payments/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { amount, status } = req.body;
-    db.run('UPDATE supplier_payments SET amount = ?, status = ? WHERE id = ? AND condominio_id = ?',
-        [amount, status, req.params.id, req.condominio_id], function(err) {
+    const { amount, status, paid_amount, notes } = req.body;
+    const amountVal = parseFloat(amount) || 0;
+    const paidVal = (paid_amount !== undefined && paid_amount !== null) ? parseFloat(paid_amount) : (status === 'Pagato' ? amountVal : 0);
+    db.run('UPDATE supplier_payments SET amount = ?, paid_amount = ?, status = ?, notes = COALESCE(?, notes) WHERE id = ? AND condominio_id = ?',
+        [amountVal, paidVal, status, notes || null, req.params.id, req.condominio_id], function(err) {
             if (err) return res.status(500).json({ success: false, error: err.message });
             res.json({ success: true });
         });
 });
 
+// Registrazione Saldo / Acconto Fattura Fornitore
+app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const { id } = req.params;
+    let { amount_paying, payment_amount, amount, payment_date, payment_method, note, notes, add_to_journal, create_journal_entry } = req.body || {};
+    const inputPaying = (payment_amount !== undefined && payment_amount !== null) ? payment_amount : ((amount_paying !== undefined && amount_paying !== null) ? amount_paying : amount);
+    const inputNote = notes || note;
+    const shouldAddToJournal = (create_journal_entry !== undefined) ? create_journal_entry : (add_to_journal !== false && add_to_journal !== undefined ? add_to_journal : true);
+
+    db.get('SELECT * FROM supplier_payments WHERE id = ? AND condominio_id = ?', [id, req.condominio_id], (err, supplier) => {
+        if (err || !supplier) return res.status(404).json({ success: false, message: 'Fattura fornitore non trovata' });
+
+        const totalAmount = parseFloat(supplier.amount) || 0;
+        const alreadyPaid = (supplier.paid_amount !== undefined && supplier.paid_amount !== null)
+            ? parseFloat(supplier.paid_amount)
+            : (supplier.status === 'Pagato' ? totalAmount : 0);
+        const currentResidual = Math.max(0, Math.round((totalAmount - alreadyPaid) * 100) / 100);
+
+        let paying = parseFloat(inputPaying);
+        if (isNaN(paying) || paying <= 0) paying = currentResidual;
+        if (paying > currentResidual) paying = currentResidual;
+        paying = Math.round(paying * 100) / 100;
+
+        const newPaidAmount = Math.min(totalAmount, Math.round((alreadyPaid + paying) * 100) / 100);
+        const newStatus = newPaidAmount >= (totalAmount - 0.009) ? 'Pagato' : 'Parziale';
+        const pDate = payment_date || new Date().toISOString().split('T')[0];
+        const pMethod = payment_method || 'Bonifico Bancario';
+        const pNote = inputNote || (newStatus === 'Pagato' ? 'Saldo Fattura' : 'Acconto Fattura');
+
+        let history = [];
+        try {
+            if (supplier.payment_history) history = JSON.parse(supplier.payment_history);
+        } catch (_) {}
+        history.push({
+            id: Date.now(),
+            date: pDate,
+            amount: paying,
+            method: pMethod,
+            note: pNote,
+            registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
+        });
+
+        db.run(
+            `UPDATE supplier_payments SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?`,
+            [newPaidAmount, newStatus, pDate, JSON.stringify(history), id, req.condominio_id],
+            function(updErr) {
+                if (updErr) return res.status(500).json({ success: false, message: updErr.message });
+
+                logAudit(req.user.id, req.condominio_id, `Registrato Pagamento Fornitore (€ ${paying.toFixed(2)} - ${newStatus})`, 'supplier_payments', id, null, req.ip);
+
+                // Registrazione automatica nel Libro Giornale (se richiesta)
+                if (shouldAddToJournal) {
+                    const desc = `Pagamento Fornitore (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${supplier.supplier_name} - Fatt. ${supplier.invoice_number || 'N/D'}${pNote ? ' - ' + pNote : ''}`;
+                    db.run(
+                        `INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [req.condominio_id, pDate, supplier.invoice_number || 'AUTO', 'Pagamento Fornitore', desc, 0, paying, supplier.supplier_name],
+                        function() {
+                            res.json({
+                                success: true,
+                                message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                                newStatus,
+                                paid_amount: newPaidAmount,
+                                residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                            });
+                        }
+                    );
+                } else {
+                    res.json({
+                        success: true,
+                        message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                        newStatus,
+                        paid_amount: newPaidAmount,
+                        residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                    });
+                }
+            }
+        );
+    });
+});
+
 
 app.get('/api/accounting-summary', authenticateToken, requireCondominio, (req, res) => {
     const condominioId = req.condominio_id;
-    const data = { totalReceived: 0, totalReceivables: 0, totalSuppliersPaid: 0, totalSuppliersDebt: 0 };
-    
-    db.serialize(() => {
-        db.get("SELECT SUM(amount) as sum FROM quotes WHERE condominio_id = ? AND status = 'Pagato'", [condominioId], (err, row) => {
-            if (row && row.sum) data.totalReceived = row.sum;
-        });
-        db.get("SELECT SUM(amount) as sum FROM quotes WHERE condominio_id = ? AND status = 'In sospeso'", [condominioId], (err, row) => {
-            if (row && row.sum) data.totalReceivables = row.sum;
-        });
-        db.get("SELECT SUM(amount) as sum FROM supplier_payments WHERE condominio_id = ? AND status = 'Pagato'", [condominioId], (err, row) => {
-            if (row && row.sum) data.totalSuppliersPaid = row.sum;
-        });
-        db.get("SELECT SUM(amount) as sum FROM supplier_payments WHERE condominio_id = ? AND status != 'Pagato'", [condominioId], (err, row) => {
-            if (row && row.sum) data.totalSuppliersDebt = row.sum;
-            // Ultima query, invia la risposta!
+
+    const qQuotes = `
+        SELECT 
+            COALESCE(SUM(COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totalReceived,
+            COALESCE(SUM(amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totalReceivables
+        FROM quotes 
+        WHERE condominio_id = ?
+    `;
+
+    const qSuppliers = `
+        SELECT 
+            COALESCE(SUM(COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totalSuppliersPaid,
+            COALESCE(SUM(amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totalSuppliersDebt
+        FROM supplier_payments 
+        WHERE condominio_id = ?
+    `;
+
+    db.get(qQuotes, [condominioId], (err1, rowQuotes) => {
+        if (err1) {
+            console.error('Errore accounting-summary quotes:', err1);
+            return res.status(500).json({ success: false, message: err1.message });
+        }
+        db.get(qSuppliers, [condominioId], (err2, rowSuppliers) => {
+            if (err2) {
+                console.error('Errore accounting-summary suppliers:', err2);
+                return res.status(500).json({ success: false, message: err2.message });
+            }
+            const data = {
+                totalReceived: parseFloat(rowQuotes && rowQuotes.totalReceived) || 0,
+                totalReceivables: parseFloat(rowQuotes && rowQuotes.totalReceivables) || 0,
+                totalSuppliersPaid: parseFloat(rowSuppliers && rowSuppliers.totalSuppliersPaid) || 0,
+                totalSuppliersDebt: parseFloat(rowSuppliers && rowSuppliers.totalSuppliersDebt) || 0
+            };
             res.json({ success: true, data });
         });
     });

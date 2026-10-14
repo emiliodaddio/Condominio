@@ -341,13 +341,63 @@ async function loadAccountingData() {
         const recData = await recRes.json();
         const supData = await supRes.json();
 
-        // 1. KPI Cards
-        if (sumData.success) {
-            document.getElementById('kpi-total-received').textContent = formatCurrency(sumData.data.totalReceived);
-            document.getElementById('kpi-total-receivables').textContent = formatCurrency(sumData.data.totalReceivables);
-            document.getElementById('kpi-suppliers-paid').textContent = formatCurrency(sumData.data.totalSuppliersPaid);
-            document.getElementById('kpi-suppliers-debt').textContent = formatCurrency(sumData.data.totalSuppliersDebt);
+        // 1. KPI Cards: calcola con fallback in tempo reale basato sulle quote e fatture caricate
+        let calcReceived = 0;
+        let calcReceivables = 0;
+        if (quotesData.success && Array.isArray(quotesData.data)) {
+            calcReceived = quotesData.data.reduce((acc, q) => {
+                const amt = parseFloat(q.amount) || 0;
+                const paid = parseFloat(q.paid_amount);
+                if (!isNaN(paid) && paid > 0) return acc + paid;
+                return q.status === 'Pagato' ? acc + amt : acc;
+            }, 0);
+            calcReceivables = quotesData.data.reduce((acc, q) => {
+                if (q.status === 'Pagato') return acc;
+                const amt = parseFloat(q.amount) || 0;
+                const paid = parseFloat(q.paid_amount) || 0;
+                return acc + Math.max(0, Math.round((amt - paid) * 100) / 100);
+            }, 0);
+        } else if (recData.success && Array.isArray(recData.data)) {
+            calcReceivables = recData.data.reduce((acc, r) => acc + (parseFloat(r.importo || r.amount) || 0), 0);
         }
+
+        let calcSuppPaid = 0;
+        let calcSuppDebt = 0;
+        if (supData.success && Array.isArray(supData.data)) {
+            calcSuppPaid = supData.data.reduce((acc, s) => {
+                const amt = parseFloat(s.amount) || 0;
+                const paid = parseFloat(s.paid_amount);
+                if (!isNaN(paid) && paid > 0) return acc + paid;
+                return s.status === 'Pagato' ? acc + amt : acc;
+            }, 0);
+            calcSuppDebt = supData.data.reduce((acc, s) => {
+                if (s.status === 'Pagato') return acc;
+                const amt = parseFloat(s.amount) || 0;
+                const paid = parseFloat(s.paid_amount) || 0;
+                return acc + Math.max(0, Math.round((amt - paid) * 100) / 100);
+            }, 0);
+        }
+
+        const totReceived = (sumData.success && sumData.data && sumData.data.totalReceived !== undefined)
+            ? Number(sumData.data.totalReceived)
+            : calcReceived;
+
+        const totReceivables = (sumData.success && sumData.data && sumData.data.totalReceivables !== undefined)
+            ? Number(sumData.data.totalReceivables)
+            : calcReceivables;
+
+        const totSuppPaid = (sumData.success && sumData.data && sumData.data.totalSuppliersPaid !== undefined)
+            ? Number(sumData.data.totalSuppliersPaid)
+            : calcSuppPaid;
+
+        const totSuppDebt = (sumData.success && sumData.data && sumData.data.totalSuppliersDebt !== undefined)
+            ? Number(sumData.data.totalSuppliersDebt)
+            : calcSuppDebt;
+
+        document.getElementById('kpi-total-received').textContent = formatCurrency(totReceived);
+        document.getElementById('kpi-total-receivables').textContent = formatCurrency(totReceivables);
+        document.getElementById('kpi-suppliers-paid').textContent = formatCurrency(totSuppPaid);
+        document.getElementById('kpi-suppliers-debt').textContent = formatCurrency(totSuppDebt);
 
         // 2. Tabella Quote (filtrata automaticamente dal backend in base al ruolo)
         if (quotesData.success) {
@@ -378,6 +428,7 @@ async function loadAccountingData() {
 function renderQuotesTable() {
     const tbody = document.getElementById('quotes-table-body');
     const header = document.getElementById('quotes-table-header');
+    const tfoot = document.getElementById('quotes-table-footer');
     const isAdmin = state.currentUser.role === 'admin';
 
     // Intestazione condizionale della tabella
@@ -388,6 +439,7 @@ function renderQuotesTable() {
             <th class="py-3.5 px-4">Descrizione Quota</th>
             <th class="py-3.5 px-4">Scadenza</th>
             <th class="py-3.5 px-4 text-right">Importo</th>
+            <th class="py-3.5 px-4 text-right">Versato / Residuo</th>
             <th class="py-3.5 px-4 text-center">Stato</th>
             <th class="py-3.5 px-4 text-center">Azioni</th>
         `;
@@ -397,47 +449,86 @@ function renderQuotesTable() {
             <th class="py-3.5 px-4">Descrizione Quota</th>
             <th class="py-3.5 px-4">Scadenza</th>
             <th class="py-3.5 px-4 text-right">Importo</th>
+            <th class="py-3.5 px-4 text-right">Versato / Residuo</th>
             <th class="py-3.5 px-4 text-center">Stato</th>
             <th class="py-3.5 px-4 text-center">Data Saldo</th>
         `;
     }
 
-    if (state.quotes.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Nessuna quota registrata.</td></tr>`;
+    if (!state.quotes || state.quotes.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${isAdmin ? 8 : 7}" class="py-8 text-center text-slate-400">Nessuna quota registrata.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
         return;
     }
 
+    const totalAmount = state.quotes.reduce((acc, q) => acc + (parseFloat(q.amount) || 0), 0);
+    const totalPaid = state.quotes.reduce((acc, q) => {
+        const amt = parseFloat(q.amount) || 0;
+        const paid = parseFloat(q.paid_amount);
+        if (!isNaN(paid) && paid > 0) return acc + paid;
+        return q.status === 'Pagato' ? acc + amt : acc;
+    }, 0);
+    const totalPending = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100);
+
     tbody.innerHTML = state.quotes.map(q => {
-        const isPaid = q.status === 'Pagato';
-        const badgeClass = isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200';
+        const amt = parseFloat(q.amount) || 0;
+        const paid = parseFloat(q.paid_amount) || (q.status === 'Pagato' ? amt : 0);
+        const residual = q.residual !== undefined ? parseFloat(q.residual) : Math.max(0, Math.round((amt - paid) * 100) / 100);
+        const isPaid = q.status === 'Pagato' || residual <= 0.009;
+        const isPartial = q.status === 'Parziale' || (!isPaid && paid > 0.009);
+
+        let badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+        let statusText = q.status || 'In sospeso';
+        if (isPaid) {
+            badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+            statusText = 'Pagato';
+        } else if (isPartial) {
+            badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+            statusText = '<i class="fa-solid fa-hourglass-half mr-1 text-[10px]"></i>Parziale';
+        }
+
         const isOrd = q.type === 'ordinaria';
         const typeBadge = isOrd ? '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700">Ordinaria</span>' : '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-700">Straordinaria</span>';
+        const displayUnita = q.unita || q.condomino_unita || '';
+
+        const versatoResiduoCell = `
+            <td class="py-3.5 px-4 text-right text-xs">
+                <div class="font-bold text-emerald-600">${formatCurrency(paid)}</div>
+                <div class="text-[11px] ${residual > 0.009 ? 'text-rose-500 font-semibold' : 'text-slate-400'}">Res. ${formatCurrency(residual)}</div>
+            </td>
+        `;
 
         if (isAdmin) {
-            let payAction = isPaid
-                ? '<span class="text-xs text-slate-400"><i class="fa-solid fa-check mr-1 text-emerald-500"></i> Saldata</span>'
-                : `<button onclick="markQuoteAsPaid(${q.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Segna come incassata">Saldato</button>`;
-            
+            let payAction = '';
             if (isPaid) {
-                payAction += ` <button onclick="sendReceipt(${q.id})" class="ml-1 px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Invia Ricevuta via Email"><i class="fa-solid fa-envelope"></i> Ricevuta</button>`;
+                payAction = `
+                    <button onclick="openPaymentModal('quote', ${q.id})" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold no-print" title="Visualizza dettagli e storico versamenti"><i class="fa-solid fa-receipt mr-1"></i>Saldata</button>
+                    <button onclick="sendReceipt(${q.id})" class="ml-1 px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Invia Ricevuta via Email"><i class="fa-solid fa-envelope"></i> Ricevuta</button>
+                `;
             } else {
-                payAction += ` <button onclick="sendReminder(${q.id})" class="ml-1 px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Invia Sollecito di Pagamento"><i class="fa-solid fa-bell"></i> Sollecito</button>`;
+                payAction = `
+                    <button onclick="openPaymentModal('quote', ${q.id})" class="px-2.5 py-1 ${isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="${isPartial ? 'Registra ulteriore acconto o saldo' : 'Registra incasso o acconto'}">
+                        <i class="fa-solid fa-money-bill-wave mr-1"></i>${isPartial ? 'Acconto / Saldo' : 'Incassa'}
+                    </button>
+                    <button onclick="sendReminder(${q.id})" class="ml-1 px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Invia Sollecito di Pagamento"><i class="fa-solid fa-bell"></i> Sollecito</button>
+                `;
             }
             
-            payAction += ` <button onclick="editQuote(${q.id})" class="ml-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Modifica la rata"><i class="fa-solid fa-pen"></i></button>`;
+            payAction += ` <button onclick="editQuote(${q.id})" class="ml-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold no-print" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>`;
 
             return `
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="py-3.5 px-4">
-                        <div class="font-bold text-slate-900">${q.persona_cognome ? q.persona_cognome + ' ' + q.persona_nome : 'Sconosciuto'}</div>
-                        <div class="text-xs text-slate-500">${q.unita || ''}</div>
+                        <div class="font-bold text-slate-900">${q.persona_cognome ? q.persona_cognome + ' ' + (q.persona_nome || '') : (q.condomino_nome || 'Sconosciuto')}</div>
+                        <div class="text-xs text-slate-500">${displayUnita}</div>
                     </td>
                     <td class="py-3.5 px-4">${typeBadge}</td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
                     <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(q.due_date)}</td>
-                    <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(q.amount)}</td>
-                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${q.status}</span></td>
-                    <td class="py-3.5 px-4 text-center">${payAction}</td>
+                    <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(amt)}</td>
+                    ${versatoResiduoCell}
+                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${statusText}</span></td>
+                    <td class="py-3.5 px-4 text-center whitespace-nowrap">${payAction}</td>
                 </tr>
             `;
         } else {
@@ -446,13 +537,59 @@ function renderQuotesTable() {
                     <td class="py-3.5 px-4">${typeBadge}</td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
                     <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(q.due_date)}</td>
-                    <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(q.amount)}</td>
-                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${q.status}</span></td>
-                    <td class="py-3.5 px-4 text-center text-xs text-slate-500">${q.payment_date ? formatDate(q.payment_date) : '<span class="italic text-slate-400">In attesa</span>'}</td>
+                    <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(amt)}</td>
+                    ${versatoResiduoCell}
+                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${statusText}</span></td>
+                    <td class="py-3.5 px-4 text-center text-xs text-slate-500">${q.payment_date ? formatDate(q.payment_date) : (isPartial ? '<span class="text-amber-600 font-semibold">Parzialmente versato</span>' : '<span class="italic text-slate-400">In attesa</span>')}</td>
                 </tr>
             `;
         }
     }).join('');
+
+    // Calcolo riga totale in fondo alla tabella Quote
+    if (tfoot) {
+        if (isAdmin) {
+            tfoot.innerHTML = `
+                <tr class="bg-slate-50 border-t-2 border-slate-300 font-bold text-xs text-slate-700">
+                    <td colspan="4" class="py-3.5 px-4">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span>TOTALE QUOTE (${state.quotes.length}):</span>
+                            <span class="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                <i class="fa-solid fa-check-double mr-1 text-[10px]"></i> Incassate: ${formatCurrency(totalPaid)}
+                            </span>
+                            <span class="inline-flex items-center text-[11px] font-bold text-amber-800 bg-amber-100/90 border border-amber-200 px-2 py-0.5 rounded-full">
+                                <i class="fa-solid fa-clock mr-1 text-[10px]"></i> Da Riscuotere: ${formatCurrency(totalPending)}
+                            </span>
+                        </div>
+                    </td>
+                    <td class="py-3.5 px-4 text-right font-extrabold text-slate-900 text-sm">${formatCurrency(totalAmount)}</td>
+                    <td class="py-3.5 px-4 text-right text-xs">
+                        <div class="font-bold text-emerald-600">${formatCurrency(totalPaid)}</div>
+                        <div class="text-[11px] text-rose-500 font-bold">Res. ${formatCurrency(totalPending)}</div>
+                    </td>
+                    <td colspan="2"></td>
+                </tr>
+            `;
+        } else {
+            tfoot.innerHTML = `
+                <tr class="bg-slate-50 border-t-2 border-slate-300 font-bold text-xs text-slate-700">
+                    <td colspan="3" class="py-3.5 px-4">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span>TOTALE TUE QUOTE:</span>
+                            <span class="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">Saldate: ${formatCurrency(totalPaid)}</span>
+                            <span class="inline-flex items-center text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">Da Saldare: ${formatCurrency(totalPending)}</span>
+                        </div>
+                    </td>
+                    <td class="py-3.5 px-4 text-right font-extrabold text-slate-900 text-sm">${formatCurrency(totalAmount)}</td>
+                    <td class="py-3.5 px-4 text-right text-xs">
+                        <div class="font-bold text-emerald-600">${formatCurrency(totalPaid)}</div>
+                        <div class="text-[11px] text-rose-500 font-bold">Res. ${formatCurrency(totalPending)}</div>
+                    </td>
+                    <td colspan="2"></td>
+                </tr>
+            `;
+        }
+    }
 }
 
 /**
@@ -460,6 +597,7 @@ function renderQuotesTable() {
  */
 function renderReceivablesTable(recData) {
     const tbody = document.getElementById('receivables-table-body');
+    const tfoot = document.getElementById('receivables-table-footer');
     const badgeContainer = document.getElementById('privacy-badge-container');
     const isAdmin = state.currentUser.role === 'admin';
 
@@ -479,14 +617,37 @@ function renderReceivablesTable(recData) {
     }
 
     if (!recData.data || recData.data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400">Nessun credito in sospeso. Tutti i Condomini sono in regola!</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Nessun credito in sospeso. Tutti i Condomini sono in regola!</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
         return;
     }
 
+    const sumReceivables = recData.data.reduce((acc, r) => acc + (parseFloat(r.importo || r.amount) || 0), 0);
+
     tbody.innerHTML = recData.data.map(r => {
-        // Se è la propria quota del condomino, evidenzia con un colore differente
         const isOwn = r.is_my_quote;
         const nameClass = isOwn ? 'font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded' : 'font-medium text-slate-700';
+
+        const residual = parseFloat(r.importo || r.amount) || 0;
+        const total = parseFloat(r.importo_totale) || (residual + (parseFloat(r.importo_versato) || 0));
+        const paid = parseFloat(r.importo_versato) || 0;
+        const isPartial = r.status === 'Parziale' || paid > 0.009;
+
+        const statusBadge = isPartial
+            ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Già versati € ${paid.toFixed(2)}"><i class="fa-solid fa-hourglass-half mr-1 text-[10px]"></i>Parziale</span>`
+            : `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">In sospeso</span>`;
+
+        let actionHtml = '-';
+        if (isAdmin) {
+            actionHtml = `
+                <div class="flex items-center justify-center gap-1.5 no-print">
+                    <button onclick="openPaymentModal('quote', ${r.id})" class="px-2.5 py-1 ${isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded-lg text-xs font-bold shadow-2xs" title="Registra incasso o acconto">
+                        <i class="fa-solid fa-money-bill-wave mr-1"></i>${isPartial ? 'Acconto / Saldo' : 'Incassa'}
+                    </button>
+                    <button onclick="editQuote(${r.id})" class="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>
+                </div>
+            `;
+        }
 
         return `
             <tr class="hover:bg-slate-50 transition-colors ${isOwn ? 'bg-amber-50/30' : ''}">
@@ -499,33 +660,85 @@ function renderReceivablesTable(recData) {
                 <td class="py-3.5 px-4 text-xs text-slate-600">${r.unita}</td>
                 <td class="py-3.5 px-4 text-xs font-medium text-slate-800">${r.titolo_quota}</td>
                 <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(r.scadenza)}</td>
-                <td class="py-3.5 px-4 text-right font-bold text-rose-600">${formatCurrency(r.importo)}</td>
-                <td class="py-3.5 px-4 text-center">
-                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                        In sospeso
-                    </span>
-                    ${state.currentUser.role === 'admin' ? `<button onclick="editQuote(${r.id})" class="ml-2 text-amber-500 hover:text-amber-700 no-print"><i class="fa-solid fa-pen"></i></button>` : ''}
+                <td class="py-3.5 px-4 text-right">
+                    <div class="font-bold text-rose-600 text-sm">${formatCurrency(residual)}</div>
+                    ${isPartial ? `<div class="text-[11px] text-slate-400">Tot: ${formatCurrency(total)} (Vers: ${formatCurrency(paid)})</div>` : ''}
                 </td>
+                <td class="py-3.5 px-4 text-center">${statusBadge}</td>
+                <td class="py-3.5 px-4 text-center">${actionHtml}</td>
             </tr>
         `;
     }).join('');
+
+    // Calcolo riga totale in fondo alla tabella Crediti da Riscuotere
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr class="bg-amber-50/70 border-t-2 border-amber-200 font-bold text-xs">
+                <td colspan="4" class="py-3.5 px-4 text-amber-900 flex items-center gap-2">
+                    <i class="fa-solid fa-calculator text-amber-600"></i>
+                    <span>TOTALE CREDITI DA RISCUOTERE (${recData.data.length} quote insolute o parziali):</span>
+                </td>
+                <td class="py-3.5 px-4 text-right font-black text-rose-600 text-sm">${formatCurrency(sumReceivables)}</td>
+                <td class="py-3.5 px-4 text-center text-xs text-amber-800">In sospeso</td>
+                <td></td>
+            </tr>
+        `;
+    }
 }
 
 function renderSuppliersTable() {
     const tbody = document.getElementById('suppliers-table-body');
+    const tfoot = document.getElementById('suppliers-table-footer');
     const isAdmin = state.currentUser.role === 'admin';
-    if (state.suppliers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Nessuna fattura registrata.</td></tr>`;
+    if (!state.suppliers || state.suppliers.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-slate-400">Nessuna fattura registrata.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
         return;
     }
 
+    const totInvoices = state.suppliers.reduce((acc, s) => acc + (parseFloat(s.amount) || 0), 0);
+    const totPaid = state.suppliers.reduce((acc, s) => {
+        const amt = parseFloat(s.amount) || 0;
+        const paid = parseFloat(s.paid_amount);
+        if (!isNaN(paid) && paid > 0) return acc + paid;
+        return s.status === 'Pagato' ? acc + amt : acc;
+    }, 0);
+    const totResidual = Math.max(0, Math.round((totInvoices - totPaid) * 100) / 100);
+
     tbody.innerHTML = state.suppliers.map(s => {
-        const isPaid = s.status === 'Pagato';
-        const badge = isPaid 
-            ? '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">Pagato</span>'
-            : '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">Da Liquidare</span>';
-        const editAction = isAdmin ? ` <button onclick="editSupplier(${s.id})" class="ml-2 text-amber-500 hover:text-amber-700 no-print"><i class="fa-solid fa-pen"></i></button>` : '';
-    
+        const totalAmount = parseFloat(s.amount) || 0;
+        const paidAmount = parseFloat(s.paid_amount) || (s.status === 'Pagato' ? totalAmount : 0);
+        const residual = s.residual !== undefined ? parseFloat(s.residual) : Math.max(0, Math.round((totalAmount - paidAmount) * 100) / 100);
+        const isPaid = s.status === 'Pagato' || residual <= 0.009;
+        const isPartial = s.status === 'Parziale' || (!isPaid && paidAmount > 0.009);
+
+        let badge = '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">Da Liquidare</span>';
+        if (isPaid) {
+            badge = '<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">Pagato</span>';
+        } else if (isPartial) {
+            badge = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Residuo: ${formatCurrency(residual)}"><i class="fa-solid fa-hourglass-half mr-1 text-[10px]"></i>Parziale</span>`;
+        }
+
+        let actionHtml = '-';
+        if (isAdmin) {
+            if (isPaid) {
+                actionHtml = `
+                    <div class="flex items-center justify-center gap-1.5 no-print">
+                        <button onclick="openPaymentModal('supplier', ${s.id})" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold no-print" title="Visualizza dettagli e storico pagamenti"><i class="fa-solid fa-receipt mr-1"></i>Liquidata</button>
+                        <button onclick="editSupplier(${s.id})" class="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+                    </div>
+                `;
+            } else {
+                actionHtml = `
+                    <div class="flex items-center justify-center gap-1.5 no-print">
+                        <button onclick="openPaymentModal('supplier', ${s.id})" class="px-2.5 py-1 ${isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white rounded-lg text-xs font-bold shadow-2xs" title="${isPartial ? 'Registra ulteriore acconto o saldo' : 'Liquida fattura o versa acconto'}">
+                            <i class="fa-solid fa-money-bill-wave mr-1"></i>${isPartial ? 'Acconto / Saldo' : 'Liquida'}
+                        </button>
+                        <button onclick="editSupplier(${s.id})" class="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+                    </div>
+                `;
+            }
+        }
 
         return `
             <tr class="hover:bg-slate-50 transition-colors">
@@ -533,38 +746,270 @@ function renderSuppliersTable() {
                 <td class="py-3.5 px-4"><span class="px-2 py-0.5 rounded text-xs bg-slate-100">${s.category}</span></td>
                 <td class="py-3.5 px-4 font-mono text-xs text-slate-600">${s.invoice_number || '-'}</td>
                 <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(s.payment_date)}</td>
-                <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(s.amount)}</td>
-                <td class="py-3.5 px-4 text-center">${badge}${editAction}</td>
-                <td class="py-3.5 px-4 text-xs text-slate-500 max-w-xs truncate">${s.notes || '-'}</td>
+                <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(totalAmount)}</td>
+                <td class="py-3.5 px-4 text-right text-xs">
+                    <div class="font-bold text-emerald-600">${formatCurrency(paidAmount)}</div>
+                    <div class="text-[11px] ${residual > 0.009 ? 'text-rose-500 font-semibold' : 'text-slate-400'}">Res. ${formatCurrency(residual)}</div>
+                </td>
+                <td class="py-3.5 px-4 text-center">${badge}</td>
+                <td class="py-3.5 px-4 text-xs text-slate-500 max-w-xs truncate" title="${s.notes || ''}">${s.notes || '-'}</td>
+                <td class="py-3.5 px-4 text-center whitespace-nowrap">${actionHtml}</td>
             </tr>
         `;
     }).join('');
+
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr class="bg-slate-50 border-t-2 border-slate-300 font-bold text-xs text-slate-700">
+                <td colspan="4" class="py-3.5 px-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span>FATTURE FORNITORI (${state.suppliers.length}):</span>
+                        <span class="inline-flex items-center text-[11px] font-bold text-blue-800 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full">
+                            <i class="fa-solid fa-check mr-1 text-[10px]"></i> Liquidato: ${formatCurrency(totPaid)}
+                        </span>
+                        <span class="inline-flex items-center text-[11px] font-bold text-rose-800 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
+                            <i class="fa-solid fa-clock mr-1 text-[10px]"></i> Da Saldare: ${formatCurrency(totResidual)}
+                        </span>
+                    </div>
+                </td>
+                <td class="py-3.5 px-4 text-right font-extrabold text-slate-900 text-sm">${formatCurrency(totInvoices)}</td>
+                <td class="py-3.5 px-4 text-right text-xs">
+                    <div class="font-bold text-emerald-600">${formatCurrency(totPaid)}</div>
+                    <div class="text-[11px] text-rose-500 font-bold">Res. ${formatCurrency(totResidual)}</div>
+                </td>
+                <td colspan="3"></td>
+            </tr>
+        `;
+    }
 }
 
-async function markQuoteAsPaid(quoteId) {
+// ============================================================================
+// GESTIONE MODALE REGISTRAZIONE PAGAMENTO / ACCONTO / SALDO
+// ============================================================================
+
+let currentPaymentResidual = 0;
+
+function openPaymentModal(type, id) {
     if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
         showToast("Condominio in Sola Lettura: registrazione pagamenti bloccata.", "warning");
         return;
     }
-    if (!confirm('Confermi la registrazione dell\'avvenuto saldo per questa quota?')) return;
+
+    let item = null;
+    if (type === 'quote') {
+        item = (state.quotes || []).find(q => q.id === id) || (state.receivables || []).find(r => r.id === id);
+    } else if (type === 'supplier') {
+        item = (state.suppliers || []).find(s => s.id === id);
+    }
+
+    if (!item) {
+        showToast('Elemento contabile non trovato.', 'error');
+        return;
+    }
+
+    const amount = parseFloat(item.amount || item.importo_totale || item.importo || 0);
+    const paidAmount = parseFloat(item.paid_amount || item.importo_versato || 0);
+    const residual = item.residual !== undefined 
+        ? parseFloat(item.residual) 
+        : Math.max(0, Math.round((amount - paidAmount) * 100) / 100);
+
+    currentPaymentResidual = residual > 0 ? residual : amount;
+
+    document.getElementById('record-payment-type').value = type;
+    document.getElementById('record-payment-id').value = id;
+
+    const modalTitle = document.getElementById('record-payment-title');
+    const modalSubtitle = document.getElementById('record-payment-subtitle');
+    const typeLabel = document.getElementById('record-payment-type-label');
+    const subjectEl = document.getElementById('record-payment-subject');
+    const descEl = document.getElementById('record-payment-desc');
+    const statusBadge = document.getElementById('record-payment-status-badge');
+    const iconEl = document.getElementById('record-payment-icon');
+
+    if (type === 'quote') {
+        modalTitle.textContent = 'Registra Incasso Quota Condominiale';
+        modalSubtitle.textContent = 'Incasso da condomino (saldo o acconto parziale)';
+        typeLabel.textContent = 'Condòmino / Unità';
+        iconEl.className = 'fa-solid fa-money-bill-wave text-emerald-600';
+        
+        const condName = item.persona_cognome 
+            ? `${item.persona_cognome} ${item.persona_nome || ''}` 
+            : (item.condomino_nome || item.debitore || 'Condòmino');
+        subjectEl.textContent = condName;
+        descEl.textContent = `${item.title || item.titolo_quota || 'Quota'} — ${item.unita || item.condomino_unita || ''}`;
+        
+        document.getElementById('record-payment-notes').value = `Incasso quota da ${condName}`;
+    } else {
+        modalTitle.textContent = 'Registra Pagamento Fattura Fornitore';
+        modalSubtitle.textContent = 'Pagamento fattura fornitore (saldo o acconto)';
+        typeLabel.textContent = 'Fornitore / Fattura';
+        iconEl.className = 'fa-solid fa-file-invoice-dollar text-indigo-600';
+
+        subjectEl.textContent = item.supplier_name || 'Fornitore';
+        descEl.textContent = `Fattura: ${item.invoice_number || 'N/D'} — Categoria: ${item.category || '-'}`;
+
+        document.getElementById('record-payment-notes').value = `Pagamento fattura ${item.invoice_number || ''} ${item.supplier_name || ''}`.trim();
+    }
+
+    // Totali nella scheda
+    document.getElementById('record-payment-total').textContent = formatCurrency(amount);
+    document.getElementById('record-payment-already-paid').textContent = formatCurrency(paidAmount);
+    document.getElementById('record-payment-residual').textContent = formatCurrency(residual);
+
+    if (item.status === 'Pagato') {
+        statusBadge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800';
+        statusBadge.textContent = 'Pagato';
+    } else if (item.status === 'Parziale' || paidAmount > 0.009) {
+        statusBadge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-100 text-amber-800';
+        statusBadge.textContent = 'Parziale';
+    } else {
+        statusBadge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-100 text-rose-800';
+        statusBadge.textContent = item.status || 'In sospeso';
+    }
+
+    // Amount input default
+    const amountInput = document.getElementById('record-payment-amount');
+    amountInput.value = currentPaymentResidual > 0 ? currentPaymentResidual.toFixed(2) : amount.toFixed(2);
+    document.getElementById('record-payment-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('record-payment-journal').checked = true;
+
+    updatePaymentCalcHint();
+
+    // Listener dinamico per l'importo
+    amountInput.oninput = updatePaymentCalcHint;
+
+    // Storico pagamenti
+    const historyContainer = document.getElementById('record-payment-history-container');
+    const historyList = document.getElementById('record-payment-history-list');
+    let history = [];
+    if (item.payment_history) {
+        try {
+            history = typeof item.payment_history === 'string' ? JSON.parse(item.payment_history) : item.payment_history;
+        } catch (e) {
+            history = [];
+        }
+    }
+
+    if (Array.isArray(history) && history.length > 0) {
+        historyContainer.classList.remove('hidden');
+        historyList.innerHTML = history.map((h) => `
+            <div class="flex items-center justify-between text-xs py-1.5 border-b border-slate-200/60 last:border-b-0">
+                <div>
+                    <span class="font-bold text-emerald-700">${formatCurrency(h.amount)}</span>
+                    <span class="text-slate-400 ml-1.5">${formatDate(h.date)}</span>
+                    ${h.method ? `<span class="ml-1 text-[10px] text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded font-medium">${h.method}</span>` : ''}
+                </div>
+                <div class="text-[11px] text-slate-500 italic max-w-[180px] truncate" title="${h.notes || ''}">
+                    ${h.notes || 'Versamento'}
+                </div>
+            </div>
+        `).join('');
+    } else {
+        historyContainer.classList.add('hidden');
+        historyList.innerHTML = '';
+    }
+
+    document.getElementById('modal-record-payment').classList.remove('hidden');
+}
+
+function closeRecordPaymentModal() {
+    const modal = document.getElementById('modal-record-payment');
+    if (modal) modal.classList.add('hidden');
+}
+
+function setQuickPaymentAmount(mode) {
+    const input = document.getElementById('record-payment-amount');
+    if (!input) return;
+    if (mode === 'full') {
+        input.value = currentPaymentResidual > 0 ? currentPaymentResidual.toFixed(2) : '0.00';
+    } else if (mode === 'half') {
+        const half = Math.round((currentPaymentResidual / 2) * 100) / 100;
+        input.value = half > 0 ? half.toFixed(2) : '0.00';
+    }
+    updatePaymentCalcHint();
+}
+
+function updatePaymentCalcHint() {
+    const val = parseFloat(document.getElementById('record-payment-amount')?.value) || 0;
+    const hint = document.getElementById('record-payment-calc-hint');
+    if (!hint) return;
+    if (val <= 0) {
+        hint.innerHTML = 'Inserisci l\'importo dell\'acconto o premi "Saldo Totale".';
+        hint.className = 'text-[11px] text-slate-400 mt-1';
+    } else if (val >= currentPaymentResidual - 0.009) {
+        hint.innerHTML = '<span class="text-emerald-600 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>Questo importo salderà completamente il documento (Stato: Pagato).</span>';
+    } else {
+        const rem = Math.max(0, Math.round((currentPaymentResidual - val) * 100) / 100);
+        hint.innerHTML = `<span class="text-amber-600 font-semibold"><i class="fa-solid fa-hourglass-half mr-1"></i>Acconto parziale registrato. Residuo rimanente: <strong>${formatCurrency(rem)}</strong> (Stato: Parziale).</span>`;
+    }
+}
+
+async function handleConfirmPayment(event) {
+    event.preventDefault();
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: registrazione pagamenti bloccata.", "warning");
+        return;
+    }
+
+    const type = document.getElementById('record-payment-type').value;
+    const id = document.getElementById('record-payment-id').value;
+    const payment_amount = parseFloat(document.getElementById('record-payment-amount').value);
+    const payment_date = document.getElementById('record-payment-date').value;
+    const payment_method = document.getElementById('record-payment-method').value;
+    const notes = document.getElementById('record-payment-notes').value.trim();
+    const create_journal_entry = document.getElementById('record-payment-journal').checked;
+
+    if (!payment_amount || payment_amount <= 0) {
+        showToast('Inserisci un importo valido maggiore di zero.', 'warning');
+        return;
+    }
+
+    const url = type === 'quote' ? `/api/quotes/${id}/pay` : `/api/supplier-payments/${id}/pay`;
+    const btn = document.getElementById('btn-submit-record-payment');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Registrazione...';
+    }
 
     try {
-        const res = await fetch(`/api/quotes/${quoteId}/pay`, {
-            method: 'PATCH',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ payment_date: new Date().toISOString().slice(0, 10) })
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                payment_amount,
+                payment_date,
+                payment_method,
+                notes,
+                create_journal_entry
+            })
         });
         const data = await res.json();
         if (res.ok && data.success) {
-            showToast('Pagamento registrato con successo!', 'success');
-            loadAccountingData();
+            showToast(data.message || 'Pagamento registrato con successo!', 'success');
+            closeRecordPaymentModal();
+            await loadAccountingData();
+            if (typeof loadGiornale === 'function') loadGiornale();
         } else {
-            showToast(data.message || 'Errore aggiornamento quota.', 'error');
+            showToast(data.message || 'Errore nella registrazione del pagamento.', 'error');
         }
-    } catch (_) {
-        showToast('Errore di connessione.', 'error');
+    } catch (err) {
+        console.error('Errore pagamento:', err);
+        showToast('Errore di connessione durante la registrazione del pagamento.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-check mr-1.5"></i>Registra Pagamento';
+        }
     }
 }
+
+async function markQuoteAsPaid(quoteId) {
+    openPaymentModal('quote', quoteId);
+}
+
 
 // ============================================================================
 // 5. PANNELLO GESTIONE UTENTI (ESCLUSIVO AMMINISTRATORE)
@@ -1047,6 +1492,8 @@ async function openNewQuoteModal() {
 
 function closeNewQuoteModal() {
     document.getElementById('modal-new-quote').classList.add('hidden');
+    const pInput = document.getElementById('quote-paid-amount');
+    if (pInput) pInput.value = '';
 }
 
 async function handleCreateQuote(event) {
@@ -1055,12 +1502,18 @@ async function handleCreateQuote(event) {
         showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
         return;
     }
+    const personaVal = document.getElementById('quote-persona-id') ? document.getElementById('quote-persona-id').value : '';
+    const unitaVal = document.getElementById('quote-unita-id') ? document.getElementById('quote-unita-id').value : '';
+    const amountVal = parseFloat(document.getElementById('quote-amount').value) || 0;
+    const paidVal = parseFloat(document.getElementById('quote-paid-amount')?.value) || 0;
+
     const payload = {
-        persona_id: document.getElementById('quote-persona-id').value,
-        unita_id: document.getElementById('quote-unita-id') ? document.getElementById('quote-unita-id').value : null,
+        persona_id: personaVal ? parseInt(personaVal, 10) : null,
+        unita_id: unitaVal ? parseInt(unitaVal, 10) : null,
         type: document.getElementById('quote-type').value,
         title: document.getElementById('quote-title').value.trim(),
-        amount: document.getElementById('quote-amount').value,
+        amount: amountVal,
+        paid_amount: paidVal,
         due_date: document.getElementById('quote-due-date').value
     };
 
@@ -1141,8 +1594,21 @@ function openNewSupplierModal() {
     }
 }
 
+function toggleSupplierPartialInput() {
+    const status = document.getElementById('supplier-status')?.value;
+    const container = document.getElementById('supplier-paid-amount-container');
+    if (container) {
+        if (status === 'Parziale') container.classList.remove('hidden');
+        else container.classList.add('hidden');
+    }
+}
+
 function closeNewSupplierModal() {
     document.getElementById('modal-new-supplier').classList.add('hidden');
+    const pInput = document.getElementById('supplier-paid-amount');
+    if (pInput) pInput.value = '';
+    const container = document.getElementById('supplier-paid-amount-container');
+    if (container) container.classList.add('hidden');
 }
 
 async function handleCreateSupplier(event) {
@@ -1151,13 +1617,19 @@ async function handleCreateSupplier(event) {
         showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
         return;
     }
+    const statusVal = document.getElementById('supplier-status').value;
+    const paidVal = statusVal === 'Parziale'
+        ? (parseFloat(document.getElementById('supplier-paid-amount')?.value) || 0)
+        : (statusVal === 'Pagato' ? parseFloat(document.getElementById('supplier-amount').value) || 0 : 0);
+
     const payload = {
         supplier_name: document.getElementById('supplier-name').value.trim(),
         category: document.getElementById('supplier-category').value,
         invoice_number: document.getElementById('supplier-invoice').value.trim(),
         amount: document.getElementById('supplier-amount').value,
+        paid_amount: paidVal,
         payment_date: document.getElementById('supplier-date').value,
-        status: document.getElementById('supplier-status').value,
+        status: statusVal,
         notes: document.getElementById('supplier-notes').value.trim()
     };
 
@@ -1393,6 +1865,7 @@ function updateLicenseReadOnlyUI() {
         '#admin-add-supplier-btn',
         '#admin-edit-form button[type="submit"]',
         'button[onclick*="markQuoteAsPaid"]',
+        'button[onclick*="openPaymentModal"]',
         'button[onclick*="editQuote"]',
         'button[onclick*="sendReceipt"]',
         'button[onclick*="sendReminder"]',
@@ -2066,6 +2539,7 @@ async function handleEditSubmit(e) {
         payload = {
             ...currentEditItem,
             amount: parseFloat(document.getElementById('edit-amount').value),
+            paid_amount: parseFloat(document.getElementById('edit-paid-amount')?.value || currentEditItem.paid_amount || 0),
             due_date: document.getElementById('edit-date').value,
             status: document.getElementById('edit-status').value
         };
@@ -2088,6 +2562,7 @@ async function handleEditSubmit(e) {
         payload = {
             ...currentEditItem,
             amount: parseFloat(document.getElementById('edit-amount').value),
+            paid_amount: parseFloat(document.getElementById('edit-paid-amount')?.value || currentEditItem.paid_amount || 0),
             status: document.getElementById('edit-status').value
         };
     } else if (currentEditType === 'user') {
@@ -2127,11 +2602,15 @@ async function editQuote(id) {
         showToast("Condominio in Sola Lettura: modifica rate bloccata.", "warning");
         return;
     }
-    const q = state.quotes.find(x => x.id === id) || { amount: 0, due_date: '', status: 'In sospeso', title: 'Quota' };
+    const q = state.quotes.find(x => x.id === id) || { amount: 0, paid_amount: 0, due_date: '', status: 'In sospeso', title: 'Quota' };
     const fields = `
         <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">Importo (à)</label>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Importo Totale (€)</label>
             <input type="number" step="0.01" id="edit-amount" value="${q.amount}" class="w-full border rounded-xl p-2.5 text-sm" required>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Importo Già Versato (€)</label>
+            <input type="number" step="0.01" id="edit-paid-amount" value="${q.paid_amount || 0}" class="w-full border rounded-xl p-2.5 text-sm">
         </div>
         <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Scadenza</label>
@@ -2141,6 +2620,7 @@ async function editQuote(id) {
             <label class="block text-xs font-bold text-slate-700 mb-1">Stato</label>
             <select id="edit-status" class="w-full border rounded-xl p-2.5 text-sm">
                 <option value="In sospeso" ${q.status === 'In sospeso' ? 'selected' : ''}>In sospeso</option>
+                <option value="Parziale" ${q.status === 'Parziale' ? 'selected' : ''}>Parziale</option>
                 <option value="Pagato" ${q.status === 'Pagato' ? 'selected' : ''}>Pagato</option>
             </select>
         </div>
@@ -2149,16 +2629,21 @@ async function editQuote(id) {
 }
 
 async function editSupplier(id) {
-    const s = state.suppliers.find(x => x.id === id) || { amount: 0, status: 'Da liquidare', supplier_name: 'Fornitore' };
+    const s = state.suppliers.find(x => x.id === id) || { amount: 0, paid_amount: 0, status: 'Da liquidare', supplier_name: 'Fornitore' };
     const fields = `
         <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">Importo (à)</label>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Importo Fattura (€)</label>
             <input type="number" step="0.01" id="edit-amount" value="${s.amount}" class="w-full border rounded-xl p-2.5 text-sm" required>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Importo Già Liquidato (€)</label>
+            <input type="number" step="0.01" id="edit-paid-amount" value="${s.paid_amount || 0}" class="w-full border rounded-xl p-2.5 text-sm">
         </div>
         <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Stato Pagamento</label>
             <select id="edit-status" class="w-full border rounded-xl p-2.5 text-sm">
                 <option value="Da liquidare" ${s.status === 'Da liquidare' ? 'selected' : ''}>Da liquidare</option>
+                <option value="Parziale" ${s.status === 'Parziale' ? 'selected' : ''}>Parziale</option>
                 <option value="In elaborazione" ${s.status === 'In elaborazione' ? 'selected' : ''}>In elaborazione</option>
                 <option value="Pagato" ${s.status === 'Pagato' ? 'selected' : ''}>Pagato</option>
             </select>
