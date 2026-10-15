@@ -1127,32 +1127,17 @@
                     </div>
                 </div>
 
-                <!-- Card: Unità Immobiliari (Admin) -->
-                <div onclick="switchTab('unita')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-amber-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-building"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-amber-600 transition-colors">Unità Immobiliari</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Gestisci il registro anagrafico e le tabelle millesimali delle unità del fabbricato.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600">
-                        <span>Gestione millesimi</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
-                <!-- Card: Anagrafica (Admin) -->
+                <!-- Card: Anagrafica Condominio & Tabelle Millesimali (Admin) -->
                 <div onclick="switchTab('anagrafica')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-emerald-300">
                     <div>
                         <div class="w-13 h-13 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
                             <i class="fa-solid fa-address-book"></i>
                         </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-emerald-600 transition-colors">Anagrafica & Rubrica</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Gestisci i condòmini, i loro recapiti e le operazioni di subentro o comproprietà.</p>
+                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-emerald-600 transition-colors">Anagrafica Condominio</h3>
+                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registro anagrafico unificato: condòmini, unità immobiliari e tabelle millesimali.</p>
                     </div>
                     <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-600">
-                        <span>Rubrica residenti</span>
+                        <span>Anagrafica & Millesimi</span>
                         <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                     </div>
                 </div>
@@ -1771,13 +1756,14 @@
                 <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
                     <div>
                         <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
-                            <i class="fa-solid fa-address-book text-indigo-600"></i>
-                            Rubrica Persone (Proprietari / Conduttori)
+                            <i class="fa-solid fa-address-book text-emerald-600"></i>
+                            Anagrafica Condominio & Tabelle Millesimali
                         </h2>
-                        <p class="text-xs text-slate-500">Gestione dell'anagrafica centralizzata delle persone fisiche o giuridiche del condominio</p>
+                        <p class="text-xs text-slate-500">Registro anagrafe condominiale completo: condòmini, unità immobiliari e millesimi</p>
                     </div>
-                    <button type="button" onclick="openPersonaModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors">
-                        <i class="fa-solid fa-plus mr-1"></i> Nuova Persona
+                    <button type="button" onclick="openPersonaModal()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Nuovo Condòmino / Unità</span>
                     </button>
                 </div>
                 <div class="overflow-x-auto">
@@ -2131,35 +2117,9 @@
             <div id="audit-container" class="bg-white p-4 border rounded-2xl shadow-xs text-sm"></div>
         </section>
 
-    <!-- SEZIONE ANAGRAFICA & MILLESIMI -->
-<section id="tab-unita" class="tab-pane hidden space-y-6">
-    <div class="flex justify-between items-center">
-        <h2 class="text-2xl font-extrabold text-slate-800">Unità e Tabelle Millesimali</h2>
-        <button onclick="openUnitaModal()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition-all admin-only">
-            <i class="fa-solid fa-plus mr-2"></i> Nuova Unità
-        </button>
-    </div>
-    
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
-                        <th class="px-6 py-4 font-bold">Unità</th>
-                        <th class="px-6 py-4 font-bold">Tipo</th>
-                        <th class="px-6 py-4 font-bold">Proprietario</th>
-                        <th class="px-6 py-4 font-bold">Conduttore</th>
-                        <th class="px-6 py-4 font-bold">Mill. Proprietà (A)</th>
-                        <th class="px-6 py-4 font-bold">Mill. Scale (B)</th>
-                        <th class="px-6 py-4 font-bold">Mill. Ascensore (C)</th>
-                        <th class="px-6 py-4 font-bold text-right admin-only">Azioni</th>
-                    </tr>
-                </thead>
-                <tbody id="unita-list" class="divide-y divide-slate-100 text-sm">
-                    <!-- Popolato via JS -->
-                </tbody>
-            </table>
-        </div>
+    <!-- Sezione Unità e Tabelle Millesimali rimossa (integrata in tab-anagrafica) -->
+    <div id="tab-unita" class="hidden">
+        <table class="hidden"><tbody id="unita-list"></tbody></table>
     </div>
 
     <!-- Modale Unità -->
@@ -2257,7 +2217,6 @@
             </form>
         </div>
     </div>
-</section>
     </main>
 
     <!-- Modale Dettaglio Ticket & Timeline -->
@@ -2882,7 +2841,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261015_v4"></script>
+    <script src="app_v4.js?v=20261015_v5"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

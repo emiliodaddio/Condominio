@@ -259,12 +259,14 @@ function setupUIForRole() {
 // ============================================================================
 
 function switchTab(tabId) {
+    if (tabId === 'unita') {
+        return switchTab('anagrafica');
+    }
     state.currentTab = tabId;
 
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
     const target = document.getElementById(`tab-${tabId}`);
     if (target) target.classList.remove('hidden');
-    if (tabId === 'unita') loadUnita();
 
     // Gestione visibilità tasto "Torna alla Dashboard" e Breadcrumb di navigazione
     const tabNames = {
@@ -274,8 +276,7 @@ function switchTab(tabId) {
         'communications': 'Comunicazioni & Circolari',
         'tickets': 'Segnalazioni Guasti & Manutenzioni',
         'admin-profile': 'Studio Amministratore',
-        'unita': 'Unità & Tabelle Millesimali',
-        'anagrafica': 'Rubrica & Anagrafica Residenti',
+        'anagrafica': 'Anagrafica Condominio & Tabelle Millesimali',
         'banca': 'Banca & Cassa',
         'giornale': 'Libro Giornale',
         'audit': 'Registro Log & Attività',
