@@ -3016,7 +3016,15 @@ async function loadUnita() {
         
         if (res.ok && data.success) {
             state.unitaList = data.data; // Salviamo nello state
-            tbody.innerHTML = data.data.map(u => `
+            tbody.innerHTML = data.data.map(u => {
+                const propDisplay = (u.prop_cognome || u.prop_nome)
+                    ? `${u.prop_cognome || ''} ${u.prop_nome || ''}`.trim()
+                    : (u.condomino_nome || 'Nessuno');
+                const condDisplay = (u.cond_cognome || u.cond_nome)
+                    ? `${u.cond_cognome || ''} ${u.cond_nome || ''}`.trim()
+                    : '-';
+                const userEmail = u.condomino_email ? `<div class="text-[11px] text-slate-400"><i class="fa-solid fa-user-circle mr-1"></i>${u.condomino_email}</div>` : '';
+                return `
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="px-6 py-4">
                         <div class="font-bold text-slate-800">${u.identificativo}</div>
@@ -3024,23 +3032,24 @@ async function loadUnita() {
                     </td>
                     <td class="px-6 py-4"><span class="px-2 py-1 bg-slate-100 rounded-lg text-xs font-semibold">${u.tipo}</span></td>
                     <td class="px-6 py-4">
-                        <div class="font-bold text-slate-700">${u.condomino_nome || 'Nessuno'}</div>
-                        ${u.condomino_email ? `<div class="text-[11px] text-slate-400">${u.condomino_email}</div>` : ''}
+                        <div class="font-bold text-slate-700">${propDisplay}</div>
+                        ${userEmail}
                     </td>
-                    <td class="px-6 py-4 font-mono">${u.millesimi_proprieta.toFixed(2)}</td>
-                    <td class="px-6 py-4 font-mono">${u.millesimi_scale.toFixed(2)}</td>
-                    <td class="px-6 py-4 font-mono">${u.millesimi_ascensore.toFixed(2)}</td>
+                    <td class="px-6 py-4 font-medium text-slate-600">${condDisplay}</td>
+                    <td class="px-6 py-4 font-mono">${(parseFloat(u.millesimi_proprieta) || 0).toFixed(2)}</td>
+                    <td class="px-6 py-4 font-mono">${(parseFloat(u.millesimi_scale) || 0).toFixed(2)}</td>
+                    <td class="px-6 py-4 font-mono">${(parseFloat(u.millesimi_ascensore) || 0).toFixed(2)}</td>
                     <td class="px-6 py-4 text-right admin-only">
-                        <button onclick="openUnitaModal(${u.id})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                        <button onclick="openUnitaModal(${u.id})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Modifica Unità">
                             <i class="fa-solid fa-pen"></i>
                         </button>
                     </td>
                 </tr>
-            `).join('');
+            `;}).join('');
         }
         applyRoleVisibility();
     } catch(e) {
-        console.error(e);
+        console.error('Errore loadUnita', e);
     }
 }
 
@@ -3054,21 +3063,51 @@ async function openUnitaModal(uId = null) {
         u = state.unitaList.find(x => x.id === uId);
     }
 
-    // Carica la rubrica per i select
+    // 1. Carica la rubrica persone per i select Proprietario e Conduttore
     try {
         const res = await fetch('/api/anagrafica-persone', { headers: getAuthHeaders() });
         const data = await res.json();
         if (data.success) {
+            state.anagraficaPersone = data.data;
             const selProp = document.getElementById('unita-proprietario');
             const selCond = document.getElementById('unita-conduttore');
-            let opts = '<option value="">-- Seleziona --</option>';
-            data.data.forEach(p => {
-                opts += `<option value="${p.id}">${p.cognome} ${p.nome} (${p.ruolo_default})</option>`;
-            });
-            if(selProp) selProp.innerHTML = opts;
-            if(selCond) selCond.innerHTML = opts;
+            
+            let propOpts = '<option value="">-- Seleziona Proprietario --</option>';
+            let condOpts = '<option value="">-- Nessun Inquilino --</option>';
+            
+            if (data.data && data.data.length > 0) {
+                data.data.forEach(p => {
+                    const label = `${p.cognome} ${p.nome}${p.ruolo_default ? ' (' + p.ruolo_default + ')' : ''}`;
+                    propOpts += `<option value="${p.id}">${label}</option>`;
+                    condOpts += `<option value="${p.id}">${label}</option>`;
+                });
+            } else {
+                propOpts = '<option value="">-- Nessuna persona in Rubrica (vai in Anagrafica) --</option>';
+            }
+            
+            if (selProp) selProp.innerHTML = propOpts;
+            if (selCond) selCond.innerHTML = condOpts;
         }
-    } catch(e) { console.error('Errore fetch rubrica', e); }
+    } catch(e) { console.error('Errore fetch rubrica persone', e); }
+
+    // 2. Carica gli utenti registrati per il select Account Utente Piattaforma (User ID)
+    try {
+        const resUsers = await fetch('/api/users', { headers: getAuthHeaders() });
+        const dataUsers = await resUsers.json();
+        if (dataUsers.success) {
+            state.users = dataUsers.data;
+            const selUser = document.getElementById('unita-user-id');
+            if (selUser) {
+                let userOpts = '<option value="">-- Nessun Account Web Collegato (Sfitto/Esterno) --</option>';
+                if (dataUsers.data && dataUsers.data.length > 0) {
+                    dataUsers.data.forEach(usr => {
+                        userOpts += `<option value="${usr.id}">${usr.nome} (${usr.email})</option>`;
+                    });
+                }
+                selUser.innerHTML = userOpts;
+            }
+        }
+    } catch(e) { console.error('Errore fetch users', e); }
 
     document.getElementById('unita-modal-title').textContent = u ? 'Modifica Unità' : 'Nuova Unità';
     document.getElementById('unita-id').value = u ? u.id : '';
@@ -3081,6 +3120,7 @@ async function openUnitaModal(uId = null) {
     document.getElementById('unita-mill-asc').value = u ? u.millesimi_ascensore : '0';
     if(document.getElementById('unita-proprietario')) document.getElementById('unita-proprietario').value = u ? (u.proprietario_id || '') : '';
     if(document.getElementById('unita-conduttore')) document.getElementById('unita-conduttore').value = u ? (u.conduttore_id || '') : '';
+    if(document.getElementById('unita-user-id')) document.getElementById('unita-user-id').value = u ? (u.user_id || '') : '';
     
     document.getElementById('unita-modal').classList.remove('hidden');
 }
@@ -3096,16 +3136,21 @@ async function saveUnita(e) {
         return;
     }
     const id = document.getElementById('unita-id').value;
+    const propVal = document.getElementById('unita-proprietario') ? document.getElementById('unita-proprietario').value : null;
+    const condVal = document.getElementById('unita-conduttore') ? document.getElementById('unita-conduttore').value : null;
+    const userVal = document.getElementById('unita-user-id') ? document.getElementById('unita-user-id').value : null;
+
     const body = {
         identificativo: document.getElementById('unita-identificativo').value,
         tipo: document.getElementById('unita-tipo').value,
         scala: document.getElementById('unita-scala').value,
         piano: document.getElementById('unita-piano').value,
-        millesimi_proprieta: parseFloat(document.getElementById('unita-mill-prop').value),
-        millesimi_scale: parseFloat(document.getElementById('unita-mill-scale').value),
-        millesimi_ascensore: parseFloat(document.getElementById('unita-mill-asc').value),
-        proprietario_id: document.getElementById('unita-proprietario') && document.getElementById('unita-proprietario').value ? parseInt(document.getElementById('unita-proprietario').value) : null,
-        conduttore_id: document.getElementById('unita-conduttore') && document.getElementById('unita-conduttore').value ? parseInt(document.getElementById('unita-conduttore').value) : null
+        millesimi_proprieta: parseFloat(document.getElementById('unita-mill-prop').value) || 0,
+        millesimi_scale: parseFloat(document.getElementById('unita-mill-scale').value) || 0,
+        millesimi_ascensore: parseFloat(document.getElementById('unita-mill-asc').value) || 0,
+        proprietario_id: propVal ? parseInt(propVal, 10) : null,
+        conduttore_id: condVal ? parseInt(condVal, 10) : null,
+        user_id: userVal ? parseInt(userVal, 10) : null
     };
 
     const method = id ? 'PUT' : 'POST';
@@ -3121,11 +3166,14 @@ async function saveUnita(e) {
         if (res.ok) {
             closeUnitaModal();
             loadUnita();
+            showToast(id ? "Unità aggiornata con successo." : "Nuova unità censita con successo.", "success");
         } else {
-            alert("Errore salvataggio unita");
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.message || "Errore salvataggio unità");
         }
     } catch(err) {
         console.error(err);
+        showToast("Errore di rete o server durante il salvataggio.", "error");
     }
 }
 

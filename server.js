@@ -1406,9 +1406,14 @@ app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, 
 });
 
 app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
-    db.all(`SELECT u.*, us.nome as condomino_nome, us.email as condomino_email 
+    db.all(`SELECT u.*, 
+            us.nome as condomino_nome, us.email as condomino_email,
+            p.nome as prop_nome, p.cognome as prop_cognome,
+            c.nome as cond_nome, c.cognome as cond_cognome
             FROM unita_immobiliari u 
             LEFT JOIN users us ON u.user_id = us.id 
+            LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id 
+            LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
             WHERE u.condominio_id = ? 
             ORDER BY u.identificativo ASC`, [req.condominio_id], (err, rows) => {
         res.json({ success: true, data: rows });
