@@ -1008,6 +1008,10 @@
                                 <i class="fa-solid fa-building text-blue-300"></i>
                                 <span>Scale: <b id="dash-condo-scala" class="text-white">...</b></span>
                             </div>
+                            <button onclick="switchTab('condominio')" class="admin-only hidden sm:ml-auto px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs flex items-center gap-1.5 backdrop-blur-sm border border-white/25 shadow-xs transition cursor-pointer" title="Modifica dati del fabbricato">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                                <span>Modifica Dati Stabile</span>
+                            </button>
                         </div>
 
                         <div id="dash-admin-details" class="flex flex-wrap items-center gap-3 sm:gap-4 text-blue-100/90 pt-3 border-t border-white/10 hidden">
@@ -1127,17 +1131,32 @@
                     </div>
                 </div>
 
-                <!-- Card: Anagrafica Condominio & Tabelle Millesimali (Admin) -->
+                <!-- Card: Dati Condominio & Fabbricato (Admin) -->
+                <div onclick="switchTab('condominio')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-amber-300">
+                    <div>
+                        <div class="w-13 h-13 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
+                            <i class="fa-solid fa-city"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-amber-600 transition-colors">Dati Condominio</h3>
+                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Denominazione, indirizzo, codice fiscale e struttura dello stabile.</p>
+                    </div>
+                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600">
+                        <span>Dati dello stabile</span>
+                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                    </div>
+                </div>
+
+                <!-- Card: Anagrafica Condòmini & Millesimi (Admin) -->
                 <div onclick="switchTab('anagrafica')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-emerald-300">
                     <div>
                         <div class="w-13 h-13 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
                             <i class="fa-solid fa-address-book"></i>
                         </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-emerald-600 transition-colors">Anagrafica Condominio</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registro anagrafico unificato: condòmini, unità immobiliari e tabelle millesimali.</p>
+                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-emerald-600 transition-colors">Anagrafica Condòmini</h3>
+                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registro residenti, proprietari, conduttori, unità e millesimi.</p>
                     </div>
                     <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-600">
-                        <span>Anagrafica & Millesimi</span>
+                        <span>Registro condòmini & Millesimi</span>
                         <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                     </div>
                 </div>
@@ -1738,17 +1757,90 @@
             </div>
         </section>
     
-        <!-- V2.0 ANAGRAFICA -->
-        <section id="tab-anagrafica" class="tab-pane hidden space-y-8">
-            <h2 class="text-2xl font-bold">Anagrafica Condominio</h2>
-            <div class="bg-white p-5 rounded-2xl shadow-xs border">
-                <form id="form-condominio" onsubmit="handleSaveCondominio(event)" class="grid grid-cols-2 gap-4">
-                    <input type="text" id="condominio-nome" placeholder="Nome Condominio" class="border p-2 rounded">
-                    <input type="text" id="condominio-indirizzo" placeholder="Indirizzo" class="border p-2 rounded">
-                    <input type="text" id="condominio-cf" placeholder="Codice Fiscale" class="border p-2 rounded">
-                    <input type="text" id="condominio-scala" placeholder="Scale (es. A, B)" class="border p-2 rounded">
-                    <button type="submit" class="col-span-2 bg-blue-600 text-white p-2 rounded font-bold">Salva Dati Condominio</button>
+        <!-- TAB: DATI UFFICIALI DEL CONDOMINIO & FABBRICATO -->
+        <section id="tab-condominio" class="tab-pane hidden space-y-6">
+            <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-8 opacity-5"><i class="fa-solid fa-city text-9xl"></i></div>
+                <div class="relative z-10 flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+                    <div>
+                        <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1.5 mb-2">
+                            <i class="fa-solid fa-building"></i> Scheda Fabbricato
+                        </span>
+                        <h2 class="text-2xl font-black text-slate-900 tracking-tight">Dati Generali del Condominio</h2>
+                        <p class="text-sm text-slate-500 mt-1">Configurazione della denominazione ufficiale, indirizzo, codice fiscale e struttura dello stabile.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="switchTab('anagrafica')" class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs">
+                            <i class="fa-solid fa-users text-emerald-600"></i>
+                            <span>Vai ad Anagrafica Condòmini</span>
+                        </button>
+                    </div>
+                </div>
+
+                <form id="form-condominio" onsubmit="handleSaveCondominio(event)" class="space-y-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-city text-amber-600"></i> Denominazione Condominio *
+                            </label>
+                            <input type="text" id="condominio-nome" required placeholder="es. Condominio Parco dei Fiori" class="w-full text-sm font-bold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
+                            <p class="text-[11px] text-slate-400 mt-1">Il nome comparirà nell'intestazione della piattaforma, nei bilanci e nelle comunicazioni ufficiali.</p>
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-location-dot text-amber-600"></i> Indirizzo Completo *
+                            </label>
+                            <input type="text" id="condominio-indirizzo" required placeholder="es. Via Alessandro Manzoni 24, 00100 Roma (RM)" class="w-full text-sm font-semibold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-fingerprint text-amber-600"></i> Codice Fiscale del Condominio
+                            </label>
+                            <input type="text" id="condominio-cf" placeholder="es. 90012345678" class="w-full text-sm font-mono font-bold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs uppercase">
+                            <p class="text-[11px] text-slate-400 mt-1">Codice fiscale numerico attribuito dall'Agenzia delle Entrate.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-stairs text-amber-600"></i> Scale / Struttura Fabbricato
+                            </label>
+                            <input type="text" id="condominio-scala" placeholder="es. Scale A, B oppure Palazzina 1-2" class="w-full text-sm font-semibold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
+                            <p class="text-[11px] text-slate-400 mt-1">Indicazione delle scale o corpi di fabbrica presenti.</p>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                        <button type="button" onclick="switchTab('dashboard')" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition">
+                            Annulla
+                        </button>
+                        <button type="submit" class="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-600/20 flex items-center gap-2 transition-all">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span>Salva Dati Condominio</span>
+                        </button>
+                    </div>
                 </form>
+            </div>
+        </section>
+
+        <!-- TAB: ANAGRAFICA CONDÒMINI & TABELLE MILLESIMALI -->
+        <section id="tab-anagrafica" class="tab-pane hidden space-y-6">
+            <!-- Banner Dati Stabile -->
+            <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50/90 to-orange-50/70 border border-amber-200/80 flex flex-col sm:flex-row justify-between sm:items-center gap-3 shadow-2xs">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-lg shrink-0">
+                        <i class="fa-solid fa-city"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-800 text-xs sm:text-sm">Dati Ufficiali del Fabbricato</h4>
+                        <p class="text-[11px] text-slate-500">Denominazione, indirizzo, codice fiscale e struttura dello stabile.</p>
+                    </div>
+                </div>
+                <button type="button" onclick="switchTab('condominio')" class="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    <span>Modifica Dati Condominio</span>
+                </button>
             </div>
         
             <!-- SEZIONE RUBRICA ANAGRAFICA -->
@@ -2841,7 +2933,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261015_v5"></script>
+    <script src="app_v4.js?v=20261015_v6"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

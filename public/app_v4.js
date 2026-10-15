@@ -276,7 +276,8 @@ function switchTab(tabId) {
         'communications': 'Comunicazioni & Circolari',
         'tickets': 'Segnalazioni Guasti & Manutenzioni',
         'admin-profile': 'Studio Amministratore',
-        'anagrafica': 'Anagrafica Condominio & Tabelle Millesimali',
+        'condominio': 'Dati Ufficiali del Condominio',
+        'anagrafica': 'Anagrafica Condòmini & Tabelle Millesimali',
         'banca': 'Banca & Cassa',
         'giornale': 'Libro Giornale',
         'audit': 'Registro Log & Attività',
@@ -310,6 +311,7 @@ function switchTab(tabId) {
 
     if (tabId === 'accounting') loadAccountingData();
     if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); }
+    else if (tabId === 'condominio') loadAnagrafica();
     else if (tabId === 'assemblies') loadAssembliesData();
     else if (tabId === 'communications') loadConvocationsLog();
     else if (tabId === 'tickets') loadTicketsData();
@@ -2036,10 +2038,10 @@ async function handleSaveCondominio(e) {
         return;
     }
     const payload = {
-        nome: document.getElementById('condominio-nome').value,
-        indirizzo: document.getElementById('condominio-indirizzo').value,
-        cf: document.getElementById('condominio-cf').value,
-        scala: document.getElementById('condominio-scala').value,
+        nome: (document.getElementById('condominio-nome').value || '').trim(),
+        indirizzo: (document.getElementById('condominio-indirizzo').value || '').trim(),
+        cf: (document.getElementById('condominio-cf').value || '').trim().toUpperCase(),
+        scala: (document.getElementById('condominio-scala').value || '').trim(),
         piano: ''
     };
     try {
@@ -2049,9 +2051,25 @@ async function handleSaveCondominio(e) {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.success) { showToast(data.message || 'Dati salvati con successo!', 'success'); document.getElementById('header-condo-name').textContent = payload.nome; }
-        else showToast('Errore salvataggio', 'error');
-    } catch(err) { showToast('Errore rete', 'error'); }
+        if (data.success) { 
+            showToast('Dati del condominio salvati con successo!', 'success'); 
+            const headerCondo = document.getElementById('header-condo-name');
+            if (headerCondo) headerCondo.textContent = payload.nome;
+            const dashNome = document.getElementById('dash-condo-nome');
+            if (dashNome) dashNome.textContent = payload.nome.toUpperCase();
+            const dashInd = document.getElementById('dash-condo-indirizzo');
+            if (dashInd) dashInd.textContent = payload.indirizzo || 'N/D';
+            const dashCf = document.getElementById('dash-condo-cf');
+            if (dashCf) dashCf.textContent = payload.cf || 'N/D';
+            const dashSc = document.getElementById('dash-condo-scala');
+            if (dashSc) dashSc.textContent = payload.scala || 'Unica';
+            loadAnagrafica();
+        } else {
+            showToast('Errore nel salvataggio: ' + (data.error || data.message || ''), 'error');
+        }
+    } catch(err) { 
+        showToast('Errore di comunicazione col server', 'error'); 
+    }
 }
 
 async function loadBanca() {
