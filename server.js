@@ -611,10 +611,16 @@ function initDatabase() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
         
-        // Aggiungi colonne proprietario e conduttore alle unita
+        // Aggiungi colonne anagrafica residenti e unita
         db.run("ALTER TABLE anagrafica_persone ADD COLUMN cellulare TEXT", (err) => { /* ignora se esiste */ });
+        db.run("ALTER TABLE anagrafica_persone ADD COLUMN data_nascita TEXT", (err) => { /* ignora se esiste */ });
+        db.run("ALTER TABLE anagrafica_persone ADD COLUMN luogo_nascita TEXT", (err) => { /* ignora se esiste */ });
+        db.run("ALTER TABLE anagrafica_persone ADD COLUMN residenza TEXT", (err) => { /* ignora se esiste */ });
+        db.run("ALTER TABLE anagrafica_persone ADD COLUMN pec TEXT", (err) => { /* ignora se esiste */ });
         db.run("ALTER TABLE unita_immobiliari ADD COLUMN proprietario_id INTEGER", (err) => { /* ignora se esiste */ });
         db.run("ALTER TABLE unita_immobiliari ADD COLUMN conduttore_id INTEGER", (err) => { /* ignora se esiste */ });
+        db.run("ALTER TABLE unita_immobiliari ADD COLUMN dati_catastali TEXT", (err) => { /* ignora se esiste */ });
+        db.run("ALTER TABLE unita_immobiliari ADD COLUMN interno TEXT", (err) => { /* ignora se esiste */ });
 
         db.run(`CREATE TABLE IF NOT EXISTS unita_immobiliari (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1367,41 +1373,182 @@ app.post('/api/2fa/reset/:userId', authenticateToken, requireCondominio, isAdmin
 
 
 // ==========================================
-// ANAGRAFICA PERSONE (RUBRICA)
+// ANAGRAFICA PERSONE (RUBRICA & REGISTRO ANAGRAFE)
 // ==========================================
+
+function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback) {
+    if (!uData) return callback ? callback(null) : null;
+    let ident = (uData.identificativo || '').trim();
+    const interno = (uData.interno || '').trim();
+    if (!ident && interno) {
+        ident = 'Int. ' + interno;
+    }
+    // Se non ci sono campi unità compilati, non sincronizziamo l'unità
+    if (!ident && !interno && !uData.millesimi_proprieta && !uData.scala && !uData.piano && !uData.dati_catastali) {
+        return callback ? callback(null) : null;
+    }
+    if (!ident) {
+        ident = (uData.tipo || 'Unità') + ' ' + (interno || personaId);
+    }
+
+    const isConduttore = (ruolo === 'Conduttore');
+    
+    // Cerca se esiste già un'unità associata: per unita_id specificato, oppure già collegata a questa persona, oppure per stesso identificativo
+    const searchParams = [condominio_id];
+    let queryCond = '';
+    if (uData.unita_id) {
+        queryCond = 'id = ?';
+        searchParams.push(parseInt(uData.unita_id, 10));
+    } else {
+        queryCond = '(proprietario_id = ? OR conduttore_id = ?) OR LOWER(identificativo) = LOWER(?)';
+        searchParams.push(personaId, personaId, ident);
+    }
+
+    db.get(`SELECT id FROM unita_immobiliari WHERE condominio_id = ? AND (${queryCond}) LIMIT 1`, 
+    searchParams, (err, existing) => {
+        if (err) return callback ? callback(err) : null;
+        
+        if (existing) {
+            const updateSql = isConduttore
+                ? `UPDATE unita_immobiliari SET conduttore_id = ?, identificativo = ?, tipo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, dati_catastali = ? WHERE id = ?`
+                : `UPDATE unita_immobiliari SET proprietario_id = ?, identificativo = ?, tipo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, dati_catastali = ? WHERE id = ?`;
+            db.run(updateSql, [
+                personaId, 
+                ident, 
+                uData.tipo || 'Appartamento', 
+                uData.scala || '', 
+                uData.piano || '', 
+                interno || '', 
+                parseFloat(uData.millesimi_proprieta) || 0, 
+                parseFloat(uData.millesimi_scale) || 0, 
+                parseFloat(uData.millesimi_ascensore) || 0, 
+                uData.dati_catastali || '', 
+                existing.id
+            ], callback);
+        } else {
+            const insertSql = isConduttore
+                ? `INSERT INTO unita_immobiliari (condominio_id, identificativo, tipo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali, conduttore_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                : `INSERT INTO unita_immobiliari (condominio_id, identificativo, tipo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali, proprietario_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            db.run(insertSql, [
+                condominio_id, 
+                ident, 
+                uData.tipo || 'Appartamento', 
+                uData.scala || '', 
+                uData.piano || '', 
+                interno || '', 
+                parseFloat(uData.millesimi_proprieta) || 0, 
+                parseFloat(uData.millesimi_scale) || 0, 
+                parseFloat(uData.millesimi_ascensore) || 0, 
+                uData.dati_catastali || '', 
+                personaId
+            ], callback);
+        }
+    });
+}
+
 app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, res) => {
-    db.all('SELECT * FROM anagrafica_persone WHERE condominio_id = ? ORDER BY cognome ASC, nome ASC', [req.condominio_id], (err, rows) => {
+    const sql = `
+        SELECT p.*,
+               (SELECT id FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_id,
+               (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_identificativo,
+               (SELECT tipo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_tipo,
+               (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_scala,
+               (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_piano,
+               (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_interno,
+               (SELECT millesimi_proprieta FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_prop,
+               (SELECT millesimi_scale FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_scale,
+               (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_asc,
+               (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_dati_catastali
+        FROM anagrafica_persone p
+        WHERE p.condominio_id = ?
+        ORDER BY p.cognome ASC, p.nome ASC`;
+    db.all(sql, [req.condominio_id], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
         res.json({ success: true, data: rows || [] });
     });
 });
 
 app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes } = req.body;
-    db.run(`INSERT INTO anagrafica_persone (condominio_id, nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.condominio_id, nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default || 'Proprietario', notes], 
+    const {
+        nome, cognome, codice_fiscale, data_nascita, luogo_nascita, residenza,
+        telefono, cellulare, email, pec, ruolo_default, notes,
+        unita_id, unita_identificativo, unita_tipo, unita_scala, unita_piano, unita_interno,
+        unita_mill_prop, unita_mill_scale, unita_mill_asc, unita_dati_catastali
+    } = req.body;
+    
+    if (!nome || !cognome) {
+        return res.status(400).json({ success: false, message: 'Nome e Cognome sono obbligatori.' });
+    }
+
+    db.run(`INSERT INTO anagrafica_persone (condominio_id, nome, cognome, codice_fiscale, data_nascita, luogo_nascita, residenza, telefono, cellulare, email, pec, ruolo_default, notes) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.condominio_id, nome, cognome, codice_fiscale || null, data_nascita || null, luogo_nascita || null, residenza || null, telefono || null, cellulare || null, email || null, pec || null, ruolo_default || 'Proprietario', notes || null], 
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true, id: this.lastID });
+            const personaId = this.lastID;
+            handleSyncPersonaUnita(req.condominio_id, personaId, ruolo_default, {
+                unita_id,
+                identificativo: unita_identificativo,
+                tipo: unita_tipo,
+                scala: unita_scala,
+                piano: unita_piano,
+                interno: unita_interno,
+                millesimi_proprieta: unita_mill_prop,
+                millesimi_scale: unita_mill_scale,
+                millesimi_ascensore: unita_mill_asc,
+                dati_catastali: unita_dati_catastali
+            }, (errSync) => {
+                logAudit(req.user.id, req.condominio_id, 'Creata Persona in Anagrafica', 'anagrafica_persone', personaId, null, req.ip);
+                res.json({ success: true, id: personaId });
+            });
     });
 });
 
 app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes } = req.body;
+    const {
+        nome, cognome, codice_fiscale, data_nascita, luogo_nascita, residenza,
+        telefono, cellulare, email, pec, ruolo_default, notes,
+        unita_id, unita_identificativo, unita_tipo, unita_scala, unita_piano, unita_interno,
+        unita_mill_prop, unita_mill_scale, unita_mill_asc, unita_dati_catastali
+    } = req.body;
+
+    if (!nome || !cognome) {
+        return res.status(400).json({ success: false, message: 'Nome e Cognome sono obbligatori.' });
+    }
+
     db.run(`UPDATE anagrafica_persone 
-            SET nome = ?, cognome = ?, codice_fiscale = ?, telefono = ?, cellulare = ?, email = ?, ruolo_default = ?, notes = ? 
+            SET nome = ?, cognome = ?, codice_fiscale = ?, data_nascita = ?, luogo_nascita = ?, residenza = ?, telefono = ?, cellulare = ?, email = ?, pec = ?, ruolo_default = ?, notes = ? 
             WHERE id = ? AND condominio_id = ?`,
-        [nome, cognome, codice_fiscale, telefono, cellulare, email, ruolo_default, notes, req.params.id, req.condominio_id], 
+        [nome, cognome, codice_fiscale || null, data_nascita || null, luogo_nascita || null, residenza || null, telefono || null, cellulare || null, email || null, pec || null, ruolo_default || 'Proprietario', notes || null, req.params.id, req.condominio_id], 
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true });
+            handleSyncPersonaUnita(req.condominio_id, req.params.id, ruolo_default, {
+                unita_id,
+                identificativo: unita_identificativo,
+                tipo: unita_tipo,
+                scala: unita_scala,
+                piano: unita_piano,
+                interno: unita_interno,
+                millesimi_proprieta: unita_mill_prop,
+                millesimi_scale: unita_mill_scale,
+                millesimi_ascensore: unita_mill_asc,
+                dati_catastali: unita_dati_catastali
+            }, (errSync) => {
+                logAudit(req.user.id, req.condominio_id, 'Modificata Persona in Anagrafica', 'anagrafica_persone', req.params.id, null, req.ip);
+                res.json({ success: true });
+            });
     });
 });
 
 app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    db.run('DELETE FROM anagrafica_persone WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], function(err) {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true });
+    db.run('UPDATE unita_immobiliari SET proprietario_id = NULL WHERE proprietario_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
+        db.run('UPDATE unita_immobiliari SET conduttore_id = NULL WHERE conduttore_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
+            db.run('DELETE FROM anagrafica_persone WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], function(err) {
+                if (err) return res.status(500).json({ success: false, message: err.message });
+                logAudit(req.user.id, req.condominio_id, 'Eliminata Persona da Anagrafica', 'anagrafica_persone', req.params.id, null, req.ip);
+                res.json({ success: true });
+            });
+        });
     });
 });
 
@@ -1421,7 +1568,7 @@ app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore } = req.body;
+    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali } = req.body;
     
     // Controllo limite massimo unità consentite dalla licenza
     db.get('SELECT max_units FROM condo_licenses WHERE condominio_id = ?', [req.condominio_id], (errLic, licRow) => {
@@ -1435,24 +1582,24 @@ app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, checkCondo
                 });
             }
 
-            db.run(`INSERT INTO unita_immobiliari (condominio_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, conduttore_id) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [req.condominio_id, user_id || null, tipo || 'Appartamento', identificativo, scala, piano, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null], 
+            db.run(`INSERT INTO unita_immobiliari (condominio_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, conduttore_id, dati_catastali) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [req.condominio_id, user_id || null, tipo || 'Appartamento', identificativo, scala, piano, interno || null, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, dati_catastali || null], 
                 function(err) {
                     if (err) return res.status(500).json({ success: false, message: err.message });
                     logAudit(req.user.id, req.condominio_id, 'Creata Unità Immobiliare', 'unita_immobiliari', this.lastID, null, req.ip);
-                    res.json({ success: true });
+                    res.json({ success: true, id: this.lastID });
             });
         });
     });
 });
 
 app.put('/api/unita/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, millesimi_proprieta, millesimi_scale, millesimi_ascensore } = req.body;
+    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali } = req.body;
     db.run(`UPDATE unita_immobiliari 
-            SET user_id = ?, tipo = ?, identificativo = ?, scala = ?, piano = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, proprietario_id = ?, conduttore_id = ?
+            SET user_id = ?, tipo = ?, identificativo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, proprietario_id = ?, conduttore_id = ?, dati_catastali = ?
             WHERE id = ? AND condominio_id = ?`,
-        [user_id || null, tipo || 'Appartamento', identificativo, scala, piano, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, req.params.id, req.condominio_id], 
+        [user_id || null, tipo || 'Appartamento', identificativo, scala, piano, interno || null, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, dati_catastali || null, req.params.id, req.condominio_id], 
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             logAudit(req.user.id, req.condominio_id, 'Modificata Unità Immobiliare', 'unita_immobiliari', req.params.id, null, req.ip);

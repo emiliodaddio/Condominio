@@ -3024,11 +3024,14 @@ async function loadUnita() {
                     ? `${u.cond_cognome || ''} ${u.cond_nome || ''}`.trim()
                     : '-';
                 const userEmail = u.condomino_email ? `<div class="text-[11px] text-slate-400"><i class="fa-solid fa-user-circle mr-1"></i>${u.condomino_email}</div>` : '';
+                const internoStr = u.interno ? ` | Int: ${u.interno}` : '';
+                const catastaliStr = u.dati_catastali ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5"><i class="fa-solid fa-landmark text-[9px] mr-1"></i>${u.dati_catastali}</div>` : '';
                 return `
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="px-6 py-4">
                         <div class="font-bold text-slate-800">${u.identificativo}</div>
-                        <div class="text-[11px] text-slate-400">Sc: ${u.scala || '-'} | P: ${u.piano || '-'}</div>
+                        <div class="text-[11px] text-slate-400">Sc: ${u.scala || '-'} | P: ${u.piano || '-'}${internoStr}</div>
+                        ${catastaliStr}
                     </td>
                     <td class="px-6 py-4"><span class="px-2 py-1 bg-slate-100 rounded-lg text-xs font-semibold">${u.tipo}</span></td>
                     <td class="px-6 py-4">
@@ -3115,6 +3118,8 @@ async function openUnitaModal(uId = null) {
     document.getElementById('unita-tipo').value = u ? u.tipo : 'Appartamento';
     document.getElementById('unita-scala').value = u ? (u.scala || '') : '';
     document.getElementById('unita-piano').value = u ? (u.piano || '') : '';
+    if(document.getElementById('unita-interno')) document.getElementById('unita-interno').value = u ? (u.interno || '') : '';
+    if(document.getElementById('unita-dati-catastali')) document.getElementById('unita-dati-catastali').value = u ? (u.dati_catastali || '') : '';
     document.getElementById('unita-mill-prop').value = u ? u.millesimi_proprieta : '0';
     document.getElementById('unita-mill-scale').value = u ? u.millesimi_scale : '0';
     document.getElementById('unita-mill-asc').value = u ? u.millesimi_ascensore : '0';
@@ -3145,6 +3150,8 @@ async function saveUnita(e) {
         tipo: document.getElementById('unita-tipo').value,
         scala: document.getElementById('unita-scala').value,
         piano: document.getElementById('unita-piano').value,
+        interno: document.getElementById('unita-interno') ? document.getElementById('unita-interno').value.trim() : '',
+        dati_catastali: document.getElementById('unita-dati-catastali') ? document.getElementById('unita-dati-catastali').value.trim() : '',
         millesimi_proprieta: parseFloat(document.getElementById('unita-mill-prop').value) || 0,
         millesimi_scale: parseFloat(document.getElementById('unita-mill-scale').value) || 0,
         millesimi_ascensore: parseFloat(document.getElementById('unita-mill-asc').value) || 0,
@@ -3166,6 +3173,7 @@ async function saveUnita(e) {
         if (res.ok) {
             closeUnitaModal();
             loadUnita();
+            if (typeof loadRubrica === 'function') loadRubrica();
             showToast(id ? "Unità aggiornata con successo." : "Nuova unità censita con successo.", "success");
         } else {
             const errData = await res.json().catch(() => ({}));
@@ -4167,25 +4175,102 @@ function renderRubricaTable() {
     const tbody = document.getElementById('persone-table-body');
     if (!tbody) return;
     if (!state.anagraficaPersone || state.anagraficaPersone.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400">Nessuna persona in rubrica.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="py-12 text-center text-slate-400"><i class="fa-solid fa-users text-3xl mb-2 text-slate-300 block"></i>Nessuna persona inserita nell\'anagrafica.<br><span class="text-xs text-slate-400">Clicca su "Nuova Persona" in alto per censire un condòmino o proprietario con la relativa unità.</span></td></tr>';
         return;
     }
     
-    tbody.innerHTML = state.anagraficaPersone.map(p => `
-        <tr class="hover:bg-slate-50 transition-colors">
-            <td class="py-3.5 px-4 font-bold text-slate-900">${p.cognome} ${p.nome}</td>
-            <td class="py-3.5 px-4 font-mono text-xs text-slate-600">${p.codice_fiscale || '-'}</td>
-            <td class="py-3.5 px-4 text-xs text-slate-500">
-                ${p.telefono ? `<i class="fa-solid fa-phone mr-1"></i> ${p.telefono}<br>` : ''}
-                ${p.cellulare ? `<i class="fa-solid fa-mobile-screen mr-1"></i> ${p.cellulare}<br>` : ''}
-                ${p.email ? `<i class="fa-solid fa-envelope mr-1"></i> ${p.email}` : ''}
-            </td>
-            <td class="py-3.5 px-4"><span class="px-2 py-0.5 rounded text-xs bg-slate-100">${p.ruolo_default}</span></td>
-            <td class="py-3.5 px-4 text-right">
-                <button onclick="openPersonaModal(${p.id})" class="text-amber-500 hover:text-amber-700 ml-2"><i class="fa-solid fa-pen"></i></button>
-            </td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = state.anagraficaPersone.map(p => {
+        // Dettagli anagrafici secondari (residenza, nascita)
+        let extraBio = [];
+        if (p.residenza) extraBio.push(`<span title="Residenza"><i class="fa-solid fa-house-chimney text-slate-400 mr-1"></i>${p.residenza}</span>`);
+        if (p.luogo_nascita || p.data_nascita) {
+            let nStr = 'Nato ';
+            if (p.luogo_nascita) nStr += `a ${p.luogo_nascita} `;
+            if (p.data_nascita) nStr += `il ${p.data_nascita}`;
+            extraBio.push(`<span title="Nascita"><i class="fa-solid fa-cake-candles text-slate-400 mr-1"></i>${nStr.trim()}</span>`);
+        }
+        const extraBioHtml = extraBio.length > 0 
+            ? `<div class="text-[11px] text-slate-500 mt-1 space-y-0.5">${extraBio.join('<br>')}</div>` 
+            : '';
+
+        // Dettaglio Unità
+        let unitaHtml = '';
+        if (p.unita_identificativo || p.unita_interno) {
+            const ident = p.unita_identificativo || ('Int. ' + p.unita_interno);
+            const tipo = p.unita_tipo || 'Unità';
+            const sc = p.unita_scala ? `Sc: <b class="text-slate-700">${p.unita_scala}</b>` : '';
+            const pi = p.unita_piano ? `P: <b class="text-slate-700">${p.unita_piano}</b>` : '';
+            const inT = p.unita_interno ? `Int: <b class="text-slate-700">${p.unita_interno}</b>` : '';
+            const locDetails = [sc, pi, inT].filter(Boolean).join(' | ');
+            const catast = p.unita_dati_catastali ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5"><i class="fa-solid fa-landmark text-[9px] mr-1"></i>${p.unita_dati_catastali}</div>` : '';
+            unitaHtml = `
+                <div class="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">${tipo}</span>
+                    <span>${ident}</span>
+                </div>
+                ${locDetails ? `<div class="text-[11px] text-slate-500 mt-0.5">${locDetails}</div>` : ''}
+                ${catast}
+            `;
+        } else {
+            unitaHtml = `<span class="text-slate-400 italic text-xs">Nessuna unità collegata</span>`;
+        }
+
+        // Millesimi
+        let millHtml = '';
+        if (p.unita_mill_prop !== null && p.unita_mill_prop !== undefined && (parseFloat(p.unita_mill_prop) > 0 || parseFloat(p.unita_mill_scale) > 0 || parseFloat(p.unita_mill_asc) > 0)) {
+            millHtml = `
+                <div class="font-mono text-xs"><span class="text-slate-500 font-sans text-[11px]">Prop:</span> <b class="text-slate-900">${(parseFloat(p.unita_mill_prop) || 0).toFixed(2)}</b></div>
+                <div class="font-mono text-[11px] text-slate-500 mt-0.5">Sc: ${(parseFloat(p.unita_mill_scale) || 0).toFixed(2)} | Asc: ${(parseFloat(p.unita_mill_asc) || 0).toFixed(2)}</div>
+            `;
+        } else {
+            millHtml = `<span class="text-slate-400 text-xs">-</span>`;
+        }
+
+        // Contatti
+        let contatti = [];
+        if (p.cellulare) contatti.push(`<div class="text-xs text-slate-700"><i class="fa-solid fa-mobile-screen text-emerald-600 mr-1.5 w-3.5 text-center"></i>${p.cellulare}</div>`);
+        if (p.telefono) contatti.push(`<div class="text-xs text-slate-600"><i class="fa-solid fa-phone text-slate-400 mr-1.5 w-3.5 text-center"></i>${p.telefono}</div>`);
+        if (p.email) contatti.push(`<div class="text-xs text-slate-700 truncate max-w-[200px]"><i class="fa-solid fa-envelope text-blue-500 mr-1.5 w-3.5 text-center"></i><a href="mailto:${p.email}" class="hover:underline text-blue-600">${p.email}</a></div>`);
+        if (p.pec) contatti.push(`<div class="text-[11px] text-indigo-700 truncate max-w-[200px] font-medium"><i class="fa-solid fa-stamp text-indigo-500 mr-1.5 w-3.5 text-center"></i>${p.pec}</div>`);
+        const contattiHtml = contatti.length > 0 ? contatti.join('') : '<span class="text-slate-400 text-xs">-</span>';
+
+        // Badge Ruolo
+        const isConduttore = p.ruolo_default === 'Conduttore';
+        const isUsufruttuario = p.ruolo_default === 'Usufruttuario';
+        const isComproprietario = p.ruolo_default === 'Comproprietario';
+        let badgeClass = 'bg-indigo-50 text-indigo-700 border border-indigo-200/80';
+        if (isConduttore) badgeClass = 'bg-amber-50 text-amber-700 border border-amber-200/80';
+        else if (isUsufruttuario) badgeClass = 'bg-purple-50 text-purple-700 border border-purple-200/80';
+        else if (isComproprietario) badgeClass = 'bg-teal-50 text-teal-700 border border-teal-200/80';
+
+        const safeNome = (p.cognome + ' ' + p.nome).replace(/'/g, "\\'");
+
+        return `
+            <tr class="hover:bg-slate-50/80 transition-colors">
+                <td class="py-3.5 px-4">
+                    <div class="font-bold text-slate-900 text-sm">${p.cognome} ${p.nome}</div>
+                    ${extraBioHtml}
+                </td>
+                <td class="py-3.5 px-4 font-mono text-xs text-slate-700 uppercase font-semibold">${p.codice_fiscale || '-'}</td>
+                <td class="py-3.5 px-4">${unitaHtml}</td>
+                <td class="py-3.5 px-4">${millHtml}</td>
+                <td class="py-3.5 px-4 space-y-0.5">${contattiHtml}</td>
+                <td class="py-3.5 px-4">
+                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${badgeClass}">
+                        ${p.ruolo_default || 'Proprietario'}
+                    </span>
+                </td>
+                <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                    <button onclick="openPersonaModal(${p.id})" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors" title="Modifica Scheda">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button onclick="deletePersona(${p.id}, '${safeNome}')" class="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors ml-1" title="Elimina Persona">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function openPersonaModal(id = null) {
@@ -4196,15 +4281,40 @@ function openPersonaModal(id = null) {
     let p = null;
     if (id && state.anagraficaPersone) p = state.anagraficaPersone.find(x => x.id === id);
     
-    document.getElementById('persona-modal-title').textContent = p ? 'Modifica Persona' : 'Nuova Persona';
+    const titleEl = document.getElementById('persona-modal-title');
+    if (titleEl) {
+        titleEl.innerHTML = p 
+            ? `<i class="fa-solid fa-user-pen text-indigo-600"></i> Modifica Scheda: ${p.cognome} ${p.nome}`
+            : `<i class="fa-solid fa-user-plus text-indigo-600"></i> Nuova Scheda Anagrafica Condòmino`;
+    }
+        
     document.getElementById('persona-id').value = p ? p.id : '';
-    document.getElementById('persona-nome').value = p ? p.nome : '';
-    document.getElementById('persona-cognome').value = p ? p.cognome : '';
-    document.getElementById('persona-cf').value = p ? (p.codice_fiscale || '') : '';
-    document.getElementById('persona-tel').value = p ? (p.telefono || '') : '';
-    document.getElementById('persona-cell').value = p ? (p.cellulare || '') : '';
-    document.getElementById('persona-email').value = p ? (p.email || '') : '';
+    document.getElementById('persona-unita-id').value = p ? (p.unita_id || '') : '';
+    document.getElementById('persona-cognome').value = p ? (p.cognome || '') : '';
+    document.getElementById('persona-nome').value = p ? (p.nome || '') : '';
     document.getElementById('persona-ruolo').value = p ? (p.ruolo_default || 'Proprietario') : 'Proprietario';
+    document.getElementById('persona-cf').value = p ? (p.codice_fiscale || '') : '';
+    document.getElementById('persona-data-nascita').value = p ? (p.data_nascita || '') : '';
+    document.getElementById('persona-luogo-nascita').value = p ? (p.luogo_nascita || '') : '';
+    document.getElementById('persona-residenza').value = p ? (p.residenza || '') : '';
+    
+    document.getElementById('persona-cell').value = p ? (p.cellulare || '') : '';
+    document.getElementById('persona-tel').value = p ? (p.telefono || '') : '';
+    document.getElementById('persona-email').value = p ? (p.email || '') : '';
+    document.getElementById('persona-pec').value = p ? (p.pec || '') : '';
+    
+    document.getElementById('persona-unita-identificativo').value = p ? (p.unita_identificativo || '') : '';
+    document.getElementById('persona-unita-tipo').value = p ? (p.unita_tipo || 'Appartamento') : 'Appartamento';
+    document.getElementById('persona-unita-scala').value = p ? (p.unita_scala || '') : '';
+    document.getElementById('persona-unita-piano').value = p ? (p.unita_piano || '') : '';
+    document.getElementById('persona-unita-interno').value = p ? (p.unita_interno || '') : '';
+    document.getElementById('persona-unita-catastali').value = p ? (p.unita_dati_catastali || '') : '';
+    
+    document.getElementById('persona-unita-mill-prop').value = p ? (p.unita_mill_prop ?? '0') : '';
+    document.getElementById('persona-unita-mill-scale').value = p ? (p.unita_mill_scale ?? '0') : '';
+    document.getElementById('persona-unita-mill-asc').value = p ? (p.unita_mill_asc ?? '0') : '';
+    
+    document.getElementById('persona-notes').value = p ? (p.notes || '') : '';
     
     document.getElementById('modal-persona').classList.remove('hidden');
 }
@@ -4221,13 +4331,30 @@ async function savePersona(e) {
     }
     const id = document.getElementById('persona-id').value;
     const body = {
-        nome: document.getElementById('persona-nome').value,
-        cognome: document.getElementById('persona-cognome').value,
-        codice_fiscale: document.getElementById('persona-cf').value,
-        telefono: document.getElementById('persona-tel').value,
-        cellulare: document.getElementById('persona-cell').value,
-        email: document.getElementById('persona-email').value,
-        ruolo_default: document.getElementById('persona-ruolo').value
+        cognome: document.getElementById('persona-cognome').value.trim(),
+        nome: document.getElementById('persona-nome').value.trim(),
+        codice_fiscale: document.getElementById('persona-cf').value.trim(),
+        ruolo_default: document.getElementById('persona-ruolo').value,
+        data_nascita: document.getElementById('persona-data-nascita').value,
+        luogo_nascita: document.getElementById('persona-luogo-nascita').value.trim(),
+        residenza: document.getElementById('persona-residenza').value.trim(),
+        cellulare: document.getElementById('persona-cell').value.trim(),
+        telefono: document.getElementById('persona-tel').value.trim(),
+        email: document.getElementById('persona-email').value.trim(),
+        pec: document.getElementById('persona-pec').value.trim(),
+        
+        unita_id: document.getElementById('persona-unita-id').value || null,
+        unita_identificativo: document.getElementById('persona-unita-identificativo').value.trim(),
+        unita_tipo: document.getElementById('persona-unita-tipo').value,
+        unita_scala: document.getElementById('persona-unita-scala').value.trim(),
+        unita_piano: document.getElementById('persona-unita-piano').value.trim(),
+        unita_interno: document.getElementById('persona-unita-interno').value.trim(),
+        unita_dati_catastali: document.getElementById('persona-unita-catastali').value.trim(),
+        unita_mill_prop: parseFloat(document.getElementById('persona-unita-mill-prop').value) || 0,
+        unita_mill_scale: parseFloat(document.getElementById('persona-unita-mill-scale').value) || 0,
+        unita_mill_asc: parseFloat(document.getElementById('persona-unita-mill-asc').value) || 0,
+        
+        notes: document.getElementById('persona-notes').value.trim()
     };
 
     const method = id ? 'PUT' : 'POST';
@@ -4235,13 +4362,50 @@ async function savePersona(e) {
 
     try {
         const res = await fetch(url, {
-            method, headers: getAuthHeaders(), body: JSON.stringify(body)
+            method,
+            headers: getAuthHeaders(),
+            body: JSON.stringify(body)
         });
-        if (res.ok) {
+        const data = await res.json();
+        if (res.ok && data.success) {
             closePersonaModal();
+            showToast(id ? "Scheda persona e unità aggiornate con successo!" : "Persona e unità create con successo!", "success");
             loadRubrica();
-        } else { alert("Errore"); }
-    } catch(err) { console.error(err); }
+            if (typeof loadUnita === 'function') loadUnita();
+        } else {
+            showToast(data.message || "Errore durante il salvataggio", "error");
+        }
+    } catch(err) {
+        console.error(err);
+        showToast("Errore di rete o del server", "error");
+    }
+}
+
+async function deletePersona(id, nominativo) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
+    if (!confirm(`Sei sicuro di voler eliminare "${nominativo}" dall'anagrafica? L'eventuale unità collegata non verrà cancellata ma rimarrà senza assegnazione.`)) {
+        return;
+    }
+    try {
+        const res = await fetch('/api/anagrafica-persone/' + id, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast("Persona eliminata dall'anagrafica.", "info");
+            loadRubrica();
+            if (typeof loadUnita === 'function') loadUnita();
+        } else {
+            showToast(data.message || "Errore durante l'eliminazione", "error");
+        }
+    } catch(e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
 }
 
 // ============================================================================
