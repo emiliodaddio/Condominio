@@ -3026,10 +3026,14 @@ async function loadUnita() {
                 const userEmail = u.condomino_email ? `<div class="text-[11px] text-slate-400"><i class="fa-solid fa-user-circle mr-1"></i>${u.condomino_email}</div>` : '';
                 const internoStr = u.interno ? ` | Int: ${u.interno}` : '';
                 const catastaliStr = u.dati_catastali ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5"><i class="fa-solid fa-landmark text-[9px] mr-1"></i>${u.dati_catastali}</div>` : '';
+                let displayIdent = u.identificativo || '';
+                if (/^(Appartamento|Unit[àa])\s*\d+$/i.test(displayIdent)) {
+                    displayIdent = u.interno ? `Int. ${u.interno}` : (u.tipo || 'Unità');
+                }
                 return `
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="px-6 py-4">
-                        <div class="font-bold text-slate-800">${u.identificativo}</div>
+                        <div class="font-bold text-slate-800">${displayIdent}</div>
                         <div class="text-[11px] text-slate-400">Sc: ${u.scala || '-'} | P: ${u.piano || '-'}${internoStr}</div>
                         ${catastaliStr}
                     </td>
@@ -4195,20 +4199,29 @@ function renderRubricaTable() {
 
         // Dettaglio Unità
         let unitaHtml = '';
-        if (p.unita_identificativo || p.unita_interno) {
-            const ident = p.unita_identificativo || ('Int. ' + p.unita_interno);
-            const tipo = p.unita_tipo || 'Unità';
+        const hasUnita = p.unita_id || p.unita_identificativo || p.unita_interno || p.unita_scala || p.unita_piano || p.unita_dati_catastali || (parseFloat(p.unita_mill_prop) > 0);
+        if (hasUnita) {
+            const tipo = p.unita_tipo || 'Appartamento';
+            let rawIdent = (p.unita_identificativo || '').trim();
+            // Ignoriamo codici fittizi come 'Appartamento 60005' o identificativi ridondanti
+            const isAutoId = /^(Appartamento|Unit[àa])\s*\d+$/i.test(rawIdent);
+            const isJustTipo = rawIdent.toLowerCase() === tipo.toLowerCase();
+            const isJustInterno = p.unita_interno && (rawIdent.toLowerCase() === ('int. ' + p.unita_interno).toLowerCase() || rawIdent.toLowerCase() === ('interno ' + p.unita_interno).toLowerCase() || rawIdent.toLowerCase() === p.unita_interno.toLowerCase());
+            
+            const customIdent = (!isAutoId && !isJustTipo && !isJustInterno) ? rawIdent : '';
+            
             const sc = p.unita_scala ? `Sc: <b class="text-slate-700">${p.unita_scala}</b>` : '';
             const pi = p.unita_piano ? `P: <b class="text-slate-700">${p.unita_piano}</b>` : '';
             const inT = p.unita_interno ? `Int: <b class="text-slate-700">${p.unita_interno}</b>` : '';
             const locDetails = [sc, pi, inT].filter(Boolean).join(' | ');
             const catast = p.unita_dati_catastali ? `<div class="text-[10px] text-slate-400 font-mono mt-0.5"><i class="fa-solid fa-landmark text-[9px] mr-1"></i>${p.unita_dati_catastali}</div>` : '';
+            
             unitaHtml = `
                 <div class="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
                     <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">${tipo}</span>
-                    <span>${ident}</span>
+                    ${customIdent ? `<span class="text-xs text-slate-700 font-semibold">${customIdent}</span>` : ''}
                 </div>
-                ${locDetails ? `<div class="text-[11px] text-slate-500 mt-0.5">${locDetails}</div>` : ''}
+                ${locDetails ? `<div class="text-[11px] text-slate-600 font-medium mt-0.5">${locDetails}</div>` : ''}
                 ${catast}
             `;
         } else {
@@ -4303,7 +4316,11 @@ function openPersonaModal(id = null) {
     document.getElementById('persona-email').value = p ? (p.email || '') : '';
     document.getElementById('persona-pec').value = p ? (p.pec || '') : '';
     
-    document.getElementById('persona-unita-identificativo').value = p ? (p.unita_identificativo || '') : '';
+    let identVal = p ? (p.unita_identificativo || '') : '';
+    if (/^(Appartamento|Unit[àa])\s*\d+$/i.test(identVal)) {
+        identVal = '';
+    }
+    document.getElementById('persona-unita-identificativo').value = identVal;
     document.getElementById('persona-unita-tipo').value = p ? (p.unita_tipo || 'Appartamento') : 'Appartamento';
     document.getElementById('persona-unita-scala').value = p ? (p.unita_scala || '') : '';
     document.getElementById('persona-unita-piano').value = p ? (p.unita_piano || '') : '';

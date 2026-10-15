@@ -923,6 +923,31 @@ function ensureAnagraficaAndUnitaColumns(callback) {
             });
         }
     });
+
+    // Pulizia identificativi fittizi (es. 'Appartamento 60005') generati da ID persona
+    try {
+        db.all("SELECT id, identificativo, tipo, interno, scala, piano FROM unita_immobiliari WHERE identificativo LIKE 'Appartamento %' OR identificativo LIKE 'Unità %'", [], (err, rows) => {
+            if (!err && rows && rows.length > 0) {
+                rows.forEach(r => {
+                    if (/^(Appartamento|Unit[àa])\s+\d+$/i.test(r.identificativo)) {
+                        let clean = '';
+                        if (r.interno) clean = 'Int. ' + r.interno;
+                        else if (r.scala || r.piano) {
+                            const parts = [];
+                            if (r.scala) parts.push('Sc. ' + r.scala);
+                            if (r.piano) parts.push('P. ' + r.piano);
+                            clean = (r.tipo || 'Appartamento') + ' ' + parts.join(' ');
+                        } else {
+                            clean = r.tipo || 'Appartamento';
+                        }
+                        db.run("UPDATE unita_immobiliari SET identificativo = ? WHERE id = ?", [clean, r.id], () => {});
+                    }
+                });
+            }
+        });
+    } catch(e) {
+        console.warn('⚠️ Pulizia identificativi unità:', e.message);
+    }
 }
 
 function ensurePartialPaymentColumns() {
@@ -1435,6 +1460,10 @@ app.post('/api/2fa/reset/:userId', authenticateToken, requireCondominio, isAdmin
 function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback, isRetry = false) {
     if (!uData) return callback ? callback(null) : null;
     let ident = (uData.identificativo || '').trim();
+    // Se l'identificativo fornito è un vecchio codice fittizio tipo 'Appartamento 60005', azzeralo
+    if (/^(Appartamento|Unit[àa])\s*\d+$/i.test(ident)) {
+        ident = '';
+    }
     const interno = (uData.interno || '').trim();
     if (!ident && interno) {
         ident = 'Int. ' + interno;
@@ -1444,7 +1473,16 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
         return callback ? callback(null) : null;
     }
     if (!ident) {
-        ident = (uData.tipo || 'Unità') + ' ' + (interno || personaId);
+        if (interno) {
+            ident = 'Int. ' + interno;
+        } else if (uData.scala || uData.piano) {
+            const parts = [];
+            if (uData.scala) parts.push('Sc. ' + uData.scala);
+            if (uData.piano) parts.push('P. ' + uData.piano);
+            ident = (uData.tipo || 'Appartamento') + ' ' + parts.join(' ');
+        } else {
+            ident = (uData.tipo || 'Appartamento');
+        }
     }
 
     const isConduttore = (ruolo === 'Conduttore');
