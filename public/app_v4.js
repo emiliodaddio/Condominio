@@ -3152,7 +3152,7 @@ async function saveUnita(e) {
     const body = {
         identificativo: document.getElementById('unita-identificativo').value,
         tipo: document.getElementById('unita-tipo').value,
-        scala: document.getElementById('unita-scala').value,
+        scala: (document.getElementById('unita-scala').value || '').trim().toUpperCase(),
         piano: document.getElementById('unita-piano').value,
         interno: document.getElementById('unita-interno') ? document.getElementById('unita-interno').value.trim() : '',
         dati_catastali: document.getElementById('unita-dati-catastali') ? document.getElementById('unita-dati-catastali').value.trim() : '',
@@ -4363,7 +4363,7 @@ async function savePersona(e) {
         unita_id: document.getElementById('persona-unita-id').value || null,
         unita_identificativo: document.getElementById('persona-unita-identificativo').value.trim(),
         unita_tipo: document.getElementById('persona-unita-tipo').value,
-        unita_scala: document.getElementById('persona-unita-scala').value.trim(),
+        unita_scala: document.getElementById('persona-unita-scala').value.trim().toUpperCase(),
         unita_piano: document.getElementById('persona-unita-piano').value.trim(),
         unita_interno: document.getElementById('persona-unita-interno').value.trim(),
         unita_dati_catastali: document.getElementById('persona-unita-catastali').value.trim(),
