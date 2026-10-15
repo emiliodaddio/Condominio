@@ -1036,7 +1036,7 @@ async function loadUsersList() {
             if (state.users.length === 0) {
                 document.getElementById('users-table-body').innerHTML = '<tr><td colspan="7" class="text-center p-4">Nessun utente trovato nel database (Array vuoto)</td></tr>';
             } else {
-                renderUsersTable(); loadSecurityLogs();
+                renderUsersTable();
                 populateQuoteUsersSelect(); populateCommUsersSelect();
             }
         } else {
@@ -1048,6 +1048,9 @@ async function loadUsersList() {
         document.getElementById('users-table-body').innerHTML = '<tr><td colspan="7" class="text-center p-4 text-rose-500">Errore Fetch: ' + err.message + '</td></tr>';
         console.error('Errore caricamento lista utenti:', err);
     }
+    
+    // Popola tendina selezione condòmino per nuove credenziali
+    populateUsersPersonaSelect();
 }
 
 
@@ -1096,6 +1099,202 @@ function renderUsersTable() {
     }
 
 }
+
+// ============================================================================
+// GESTIONE UTENTI - TENDINA ANAGRAFICA E CREAZIONE CREDENZIALI
+// ============================================================================
+
+async function populateUsersPersonaSelect() {
+    const sel = document.getElementById('new-user-persona-select');
+    if (!sel) return;
+
+    if (!state.anagraficaPersone || state.anagraficaPersone.length === 0) {
+        try {
+            const res = await fetch('/api/anagrafica-persone', { headers: getAuthHeaders() });
+            const data = await res.json();
+            if (data.success && Array.isArray(data.data)) {
+                state.anagraficaPersone = data.data;
+            }
+        } catch(e) {
+            console.error('Errore caricamento anagrafica per tendina utenti:', e);
+        }
+    }
+
+    if (!state.anagraficaPersone || state.anagraficaPersone.length === 0) {
+        sel.innerHTML = '<option value="">-- Nessun condòmino censito in Anagrafica --</option>';
+        return;
+    }
+
+    const currentVal = sel.value;
+    const sorted = [...state.anagraficaPersone].sort((a, b) => {
+        const nameA = `${a.cognome || ''} ${a.nome || ''}`.trim().toLowerCase();
+        const nameB = `${b.cognome || ''} ${b.nome || ''}`.trim().toLowerCase();
+        return nameA.localeCompare(nameB, 'it');
+    });
+
+    sel.innerHTML = '<option value="">-- Seleziona un condòmino dall\'anagrafica --</option>' + 
+        sorted.map(p => {
+            const cognome = (p.cognome || '').trim();
+            const nome = (p.nome || '').trim();
+            const nominativo = `${cognome} ${nome}`.trim() || 'Senza Nominativo';
+            const ruolo = p.ruolo_default || 'Condòmino';
+            const extra = p.unita_identificativo ? ` [${p.unita_identificativo}]` : '';
+            return `<option value="${p.id}">${nominativo} (${ruolo}${extra})</option>`;
+        }).join('');
+
+    if (currentVal) sel.value = currentVal;
+}
+
+function onSelectCondominoForUser(personaId) {
+    const hiddenId = document.getElementById('new-user-persona-id');
+    const inputNome = document.getElementById('new-user-nome');
+    const inputCognome = document.getElementById('new-user-cognome');
+    const inputEmail = document.getElementById('new-user-email');
+    const inputUnita = document.getElementById('new-user-unita');
+    const inputTelefono = document.getElementById('new-user-telefono');
+    const inputCatasto = document.getElementById('new-user-catasto');
+    const selectRole = document.getElementById('new-user-role');
+
+    if (!personaId || !state.anagraficaPersone) {
+        if (hiddenId) hiddenId.value = '';
+        if (inputNome) inputNome.value = '';
+        if (inputCognome) inputCognome.value = '';
+        if (inputEmail) inputEmail.value = '';
+        if (inputUnita) inputUnita.value = '';
+        if (inputTelefono) inputTelefono.value = '';
+        if (inputCatasto) inputCatasto.value = '';
+        return;
+    }
+
+    const p = state.anagraficaPersone.find(x => String(x.id) === String(personaId));
+    if (!p) return;
+
+    if (hiddenId) hiddenId.value = p.id;
+    if (inputNome) inputNome.value = p.nome || '';
+    if (inputCognome) inputCognome.value = p.cognome || '';
+    if (inputEmail) inputEmail.value = p.email || '';
+
+    // Telefono / cellulare
+    const tel = p.cellulare || p.telefono || '';
+    if (inputTelefono) inputTelefono.value = tel;
+
+    // Unità info
+    let unitaStr = '';
+    if (p.unita_identificativo) {
+        unitaStr = p.unita_identificativo;
+        const details = [];
+        if (p.unita_scala) details.push(`Sc. ${p.unita_scala}`);
+        if (p.unita_piano) details.push(`P. ${p.unita_piano}`);
+        if (p.unita_interno) details.push(`Int. ${p.unita_interno}`);
+        if (details.length > 0) unitaStr += ` (${details.join(', ')})`;
+    }
+    if (inputUnita) inputUnita.value = unitaStr;
+    if (inputCatasto) inputCatasto.value = p.unita_dati_catastali || '';
+
+    if (selectRole && !selectRole.value) {
+        selectRole.value = 'condomino';
+    }
+}
+
+async function handleCreateUser(e) {
+    if (e) e.preventDefault();
+
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Condominio in Sola Lettura: creazione credenziali bloccata.", "warning");
+        return;
+    }
+
+    const personaId = document.getElementById('new-user-persona-id')?.value || document.getElementById('new-user-persona-select')?.value;
+    const nome = document.getElementById('new-user-nome')?.value?.trim();
+    const cognome = document.getElementById('new-user-cognome')?.value?.trim();
+    const email = document.getElementById('new-user-email')?.value?.trim();
+    const password = document.getElementById('new-user-password')?.value;
+    const role = document.getElementById('new-user-role')?.value || 'condomino';
+    const unita = document.getElementById('new-user-unita')?.value || '';
+    const telefono = document.getElementById('new-user-telefono')?.value || '';
+    const dati_catastali = document.getElementById('new-user-catasto')?.value || '';
+
+    if (!personaId) {
+        showToast('Devi prima selezionare un condòmino censito in Anagrafica', 'warning');
+        const sel = document.getElementById('new-user-persona-select');
+        if (sel) sel.focus();
+        return;
+    }
+
+    if (!nome || !cognome) {
+        showToast('Nome e Cognome obbligatori', 'warning');
+        return;
+    }
+
+    if (!email) {
+        showToast('Inserisci un\'email valida per il login del condòmino', 'warning');
+        const em = document.getElementById('new-user-email');
+        if (em) em.focus();
+        return;
+    }
+
+    if (!password || password.length < 8) {
+        showToast('La password provvisoria deve contenere almeno 8 caratteri', 'warning');
+        const pwd = document.getElementById('new-user-password');
+        if (pwd) pwd.focus();
+        return;
+    }
+
+    const submitBtn = document.getElementById('btn-submit-user');
+    const originalText = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Creazione in corso...';
+    }
+
+    try {
+        const nominativoCompleto = `${nome} ${cognome}`.trim();
+        const res = await fetch('/api/users', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                persona_id: personaId,
+                nome: nominativoCompleto,
+                email: email,
+                password: password,
+                role: role,
+                unita: unita,
+                telefono: telefono,
+                dati_catastali: dati_catastali
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Credenziali create con successo!', 'success');
+            const form = document.getElementById('form-create-user');
+            if (form) form.reset();
+            if (document.getElementById('new-user-persona-id')) document.getElementById('new-user-persona-id').value = '';
+            if (document.getElementById('new-user-nome')) document.getElementById('new-user-nome').value = '';
+            if (document.getElementById('new-user-cognome')) document.getElementById('new-user-cognome').value = '';
+            if (document.getElementById('new-user-email')) document.getElementById('new-user-email').value = '';
+            if (document.getElementById('new-user-unita')) document.getElementById('new-user-unita').value = '';
+            if (document.getElementById('new-user-telefono')) document.getElementById('new-user-telefono').value = '';
+            if (document.getElementById('new-user-catasto')) document.getElementById('new-user-catasto').value = '';
+            
+            await loadUsersList();
+        } else {
+            showToast(data.message || 'Errore durante la creazione delle credenziali', 'error');
+        }
+    } catch(err) {
+        console.error('Errore handleCreateUser:', err);
+        showToast('Errore di connessione con il server', 'error');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    }
+}
+
+window.populateUsersPersonaSelect = populateUsersPersonaSelect;
+window.onSelectCondominoForUser = onSelectCondominoForUser;
+window.handleCreateUser = handleCreateUser;
 
 async function populateQuoteUsersSelect() {
     const selPersona = document.getElementById('quote-persona-id');
@@ -4190,6 +4389,7 @@ async function loadRubrica() {
         if (data.success) {
             state.anagraficaPersone = data.data;
             renderRubricaTable();
+            if (typeof populateUsersPersonaSelect === 'function') populateUsersPersonaSelect();
         }
     } catch(e) { console.error('Errore loadRubrica', e); }
 }

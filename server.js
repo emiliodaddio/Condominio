@@ -2069,7 +2069,7 @@ app.get('/api/users', authenticateToken, requireCondominio, isAdmin, (req, res) 
 });
 
 app.post('/api/users', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { nome, email, password, unita, role, telefono, dati_catastali } = req.body;
+    const { persona_id, nome, email, password, unita, role, telefono, dati_catastali } = req.body;
     if (!nome || !email || !password) {
         return res.status(400).json({ success: false, message: 'Nome, email e password sono obbligatori.' });
     }
@@ -2088,6 +2088,12 @@ app.post('/api/users', authenticateToken, requireCondominio, isAdmin, checkCondo
                         db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita, dati_catastali) VALUES (?, ?, ?, ?, ?)', 
                             [existingUser.id, req.condominio_id, role || 'condomino', unita || '', dati_catastali || null], (err3) => {
                             if (err3) return res.status(500).json({ success: false, message: 'Utente già presente in questo condominio' });
+                            if (persona_id) {
+                                db.run(`UPDATE unita_immobiliari SET user_id = ? WHERE condominio_id = ? AND (proprietario_id = ? OR conduttore_id = ?)`,
+                                    [existingUser.id, req.condominio_id, persona_id, persona_id], () => {});
+                                db.run(`UPDATE anagrafica_persone SET email = COALESCE(NULLIF(email, ''), ?) WHERE id = ? AND condominio_id = ?`,
+                                    [cleanEmail, persona_id, req.condominio_id], () => {});
+                            }
                             logAudit(req.user.id, req.condominio_id, 'Assegnazione Utente Esistente', 'user_condominios', existingUser.id, null, req.ip);
                             return res.json({ success: true, message: 'Utente esistente aggiunto al condominio' });
                         });
@@ -2104,6 +2110,12 @@ app.post('/api/users', authenticateToken, requireCondominio, isAdmin, checkCondo
         db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita, dati_catastali) VALUES (?, ?, ?, ?, ?)', 
             [newUserId, req.condominio_id, role || 'condomino', unita || '', dati_catastali || null], function(err2) {
             if (err2) return res.status(500).json({ success: false, message: 'Errore associazione condominio' });
+            if (persona_id) {
+                db.run(`UPDATE unita_immobiliari SET user_id = ? WHERE condominio_id = ? AND (proprietario_id = ? OR conduttore_id = ?)`,
+                    [newUserId, req.condominio_id, persona_id, persona_id], () => {});
+                db.run(`UPDATE anagrafica_persone SET email = COALESCE(NULLIF(email, ''), ?) WHERE id = ? AND condominio_id = ?`,
+                    [cleanEmail, persona_id, req.condominio_id], () => {});
+            }
             logAudit(req.user.id, req.condominio_id, 'Creazione Utente', 'users', newUserId, null, req.ip);
             res.json({ success: true, message: 'Utente creato con successo' });
         });

@@ -1637,90 +1637,88 @@
             </div>
 
             <div class="flex flex-col gap-8">
-                <!-- Form Creazione Credenziali -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs no-print">
-                    <h3 class="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-                        <i class="fa-solid fa-user-plus text-indigo-600"></i> Genera Nuove Credenziali
-                    </h3>
-                    <p class="text-xs text-slate-500 mb-5">Crea un nuovo account per un condòmino</p>
+                <!-- Form Creazione Credenziali (Semplificato e Collegato all'Anagrafica) -->
+                <div class="bg-white p-6 sm:p-7 rounded-2xl border border-slate-200 shadow-xs no-print">
+                    <div class="mb-5 pb-4 border-b border-slate-100">
+                        <h3 class="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-user-plus text-indigo-600"></i> Genera Credenziali per Condòmino
+                        </h3>
+                        <p class="text-xs text-slate-500">Seleziona un condòmino censito in anagrafica per creare l'account di accesso web.</p>
+                    </div>
 
                     <form id="form-create-user" onsubmit="handleCreateUser(event)" class="space-y-4">
+                        <input type="hidden" id="new-user-persona-id">
+                        <input type="hidden" id="new-user-unita">
+                        <input type="hidden" id="new-user-telefono">
+                        <input type="hidden" id="new-user-catasto">
+
+                        <!-- 1. Tendina Selezione Condòmino -->
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Nome e Cognome *</label>
-                            <input type="text" id="new-user-nome" required placeholder="Es: Paolo Gialli" 
-                                class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-address-book text-indigo-600"></i> Seleziona Condòmino dall'Anagrafica *
+                            </label>
+                            <select id="new-user-persona-select" required onchange="onSelectCondominoForUser(this.value)" class="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="">-- Caricamento anagrafica in corso... --</option>
+                            </select>
+                            <p class="text-[11px] text-slate-400 mt-1">Puoi abilitare solo condòmini precedentemente censiti nella scheda Anagrafica.</p>
                         </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Email di Accesso *</label>
-                            <input type="email" id="new-user-email" required placeholder="Es: paolo.gialli@email.it" 
-                                class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <!-- 2. Nome e Cognome -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nome *</label>
+                                <input type="text" id="new-user-nome" required readonly placeholder="Seleziona condòmino" 
+                                    class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 focus:outline-none cursor-not-allowed">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cognome *</label>
+                                <input type="text" id="new-user-cognome" required readonly placeholder="Seleziona condòmino" 
+                                    class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 focus:outline-none cursor-not-allowed">
+                            </div>
                         </div>
 
+                        <!-- 3. Email di Accesso -->
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Password Iniziale *</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                                <i class="fa-solid fa-envelope text-indigo-600"></i> Email di Accesso (Login) *
+                            </label>
+                            <input type="email" id="new-user-email" required placeholder="es. condomino@email.it" 
+                                class="w-full px-3.5 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <p class="text-[11px] text-slate-400 mt-1">Email usata dal condòmino per accedere al portale (precompilata dall'anagrafica se presente).</p>
+                        </div>
+
+                        <!-- 4. Password Iniziale -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                                <i class="fa-solid fa-key text-indigo-600"></i> Password Iniziale *
+                            </label>
                             <div class="relative">
-                                <input type="password" id="new-user-password" required placeholder="Es: Condomino1! (8 car, 1 maiusc, 1 num, 1 spec)" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10">
+                                <input type="password" id="new-user-password" required placeholder="Minimo 8 caratteri" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10 font-mono">
                                 <button type="button" onclick="togglePasswordVisibility('new-user-password', 'eye-icon-new-user')" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
                                     <i id="eye-icon-new-user" class="fa-solid fa-eye"></i>
                                 </button>
                             </div>
+                            <p class="text-[11px] text-slate-400 mt-1">Comunica questa password provvisoria al condòmino.</p>
                         </div>
 
+                        <!-- 5. Ruolo Assegnato -->
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Unità Immobiliare / Scala</label>
-                            <input type="text" id="new-user-unita" placeholder="Es: Scala B - Int. 6" 
-                                class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Telefono</label>
-                            <input type="text" id="new-user-telefono" placeholder="Es. 333 1234567" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Dati Catastali</label>
-                            <div class="grid grid-cols-4 gap-2">
-                                <input type="text" id="new-user-catasto-sez" placeholder="Sez." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <input type="text" id="new-user-catasto-fg" placeholder="Fg." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <input type="text" id="new-user-catasto-part" placeholder="Part." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <input type="text" id="new-user-catasto-sub" placeholder="Sub." class="w-full px-2 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Ruolo Assegnato</label>
-                            <select id="new-user-role" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
-                                <option value="condomino" selected>Condòmino (Accesso standard)</option>
-                                <option value="admin">Amministratore (Accesso completo)</option>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-shield text-indigo-600"></i> Ruolo Assegnato
+                            </label>
+                            <select id="new-user-role" class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="condomino" selected>Condòmino (Accesso standard alle proprie quote e comunicazioni)</option>
+                                <option value="admin">Amministratore (Accesso gestionale completo)</option>
                             </select>
                         </div>
 
-                        <button type="submit" id="btn-submit-user" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors">
-                            Crea Credenziali Utente
-                        </button>
+                        <div class="pt-2">
+                            <button type="submit" id="btn-submit-user" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-user-check"></i>
+                                <span>Crea Credenziali Utente</span>
+                            </button>
+                        </div>
                     </form>
-                </div>
-
-                <!-- Log Sicurezza -->
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden no-print">
-                    <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
-                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-                            <i class="fa-solid fa-shield-halved text-indigo-700"></i>
-                            Registro Attività di Sicurezza (Log)
-                        </h3>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm">
-                            <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
-                                <tr>
-                                    <th class="py-3.5 px-4">Data/Ora</th>
-                                    <th class="py-3.5 px-4">Utente</th>
-                                    <th class="py-3.5 px-4">Azione Effettuata</th>
-                                </tr>
-                            </thead>
-                            <tbody id="security-logs-body" class="divide-y divide-slate-100">
-                                <tr><td colspan="3" class="text-center p-4 text-slate-400">Caricamento log...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
                 </div>
 
                 <!-- Tabella Elenco Utenti Esistenti -->
@@ -2933,7 +2931,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261015_v6"></script>
+    <script src="app_v4.js?v=20261015_v7"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
