@@ -1190,22 +1190,6 @@
                         <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                     </div>
                 </div>
-                
-                <!-- Card: Audit Log (Admin) -->
-                <div onclick="switchTab('audit')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-slate-400">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center text-2xl mb-4 group-hover:bg-slate-700 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-slate-700 transition-colors">Registro Log</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Tracciamento delle operazioni per garantire trasparenza e conformità normativa.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-600">
-                        <span>Registro attività</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
                 <!-- Card: Gestione Utenti (Admin) -->
                 <div onclick="switchTab('users')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-400">
                     <div>
@@ -2201,11 +2185,8 @@
             </div>
         </section>
 
-        <!-- V2.0 AUDIT LOG -->
-        <section id="tab-audit" class="tab-pane hidden space-y-8">
-            <h2 class="text-2xl font-bold">Registro Accessi e Modifiche</h2>
-            <div id="audit-container" class="bg-white p-4 border rounded-2xl shadow-xs text-sm"></div>
-        </section>
+        <!-- V2.0 AUDIT LOG (riservato esclusivamente a SuperUser in cabina di regia) -->
+        <div id="tab-audit" class="hidden"><div id="audit-container"></div></div>
 
     <!-- Sezione Unità e Tabelle Millesimali rimossa (integrata in tab-anagrafica) -->
     <div id="tab-unita" class="hidden">
@@ -2931,7 +2912,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261015_v7"></script>
+    <script src="app_v4.js?v=20261015_v8"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

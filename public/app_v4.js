@@ -2876,6 +2876,7 @@ async function handleNewJournalSubmit(e) {
 
 async function loadAudit() {
     const container = document.getElementById('audit-container');
+    if (!container) return;
     container.innerHTML = 'Caricamento...';
     try {
         const res = await fetch('/api/audit-log', { headers: getAuthHeaders() });
