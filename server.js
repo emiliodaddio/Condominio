@@ -568,6 +568,7 @@ const db = require('./db');
 
 function initDatabase() {
     ensurePartialPaymentColumns();
+    ensureAnagraficaAndUnitaColumns();
     if (db.type === 'mysql') {
         console.log('✅ Inizializzazione schema MySQL verificata.');
         return;
@@ -866,6 +867,61 @@ db.run(`CREATE TABLE IF NOT EXISTS assemblies (
 
         ensurePartialPaymentColumns();
         seedInitialData();
+    });
+}
+
+function ensureAnagraficaAndUnitaColumns(callback) {
+    console.log('🔄 Controllo colonne Anagrafica Persone e Unità Immobiliari (MySQL & SQLite)...');
+    const colsToEnsure = [
+        { table: 'anagrafica_persone', col: 'data_nascita', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'anagrafica_persone', col: 'luogo_nascita', defMysql: 'VARCHAR(150)', defSqlite: 'TEXT' },
+        { table: 'anagrafica_persone', col: 'residenza', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'anagrafica_persone', col: 'cellulare', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'anagrafica_persone', col: 'pec', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'unita_immobiliari', col: 'interno', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'unita_immobiliari', col: 'dati_catastali', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'unita_immobiliari', col: 'proprietario_id', defMysql: 'INT', defSqlite: 'INTEGER' },
+        { table: 'unita_immobiliari', col: 'conduttore_id', defMysql: 'INT', defSqlite: 'INTEGER' }
+    ];
+
+    let pending = colsToEnsure.length;
+    const checkDone = () => {
+        pending--;
+        if (pending <= 0 && callback) callback();
+    };
+
+    colsToEnsure.forEach(({ table, col, defMysql, defSqlite }) => {
+        if (db.type === 'mysql') {
+            db.all(`SHOW COLUMNS FROM ${table} LIKE '${col}'`, [], (err, rows) => {
+                if (err) {
+                    db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${defMysql}`, () => checkDone());
+                    return;
+                }
+                if (!rows || rows.length === 0) {
+                    db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${defMysql}`, (aErr) => {
+                        if (!aErr || aErr.code === 'ER_DUP_FIELDNAME') {
+                            console.log(`✅ Colonna ${table}.${col} verificata/aggiunta su MySQL.`);
+                        } else {
+                            console.warn(`⚠️ ALTER TABLE ${table}.${col}:`, aErr.message);
+                        }
+                        checkDone();
+                    });
+                } else {
+                    checkDone();
+                }
+            });
+        } else {
+            db.all(`PRAGMA table_info(${table})`, [], (err, cols) => {
+                if (!err && cols && !cols.some(c => c.name === col)) {
+                    db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${defSqlite}`, () => {
+                        console.log(`✅ Colonna ${table}.${col} aggiunta su SQLite.`);
+                        checkDone();
+                    });
+                } else {
+                    checkDone();
+                }
+            });
+        }
     });
 }
 
@@ -1376,7 +1432,7 @@ app.post('/api/2fa/reset/:userId', authenticateToken, requireCondominio, isAdmin
 // ANAGRAFICA PERSONE (RUBRICA & REGISTRO ANAGRAFE)
 // ==========================================
 
-function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback) {
+function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback, isRetry = false) {
     if (!uData) return callback ? callback(null) : null;
     let ident = (uData.identificativo || '').trim();
     const interno = (uData.interno || '').trim();
@@ -1406,7 +1462,13 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
 
     db.get(`SELECT id FROM unita_immobiliari WHERE condominio_id = ? AND (${queryCond}) LIMIT 1`, 
     searchParams, (err, existing) => {
-        if (err) return callback ? callback(err) : null;
+        if (err) {
+            if (!isRetry && (err.code === 'ER_BAD_FIELD_ERROR' || (err.message && err.message.includes('Unknown column')))) {
+                console.log('🔄 Rilevate colonne unità mancanti in ricerca sync, esecuzione migrazione fail-safe...');
+                return ensureAnagraficaAndUnitaColumns(() => handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback, true));
+            }
+            return callback ? callback(err) : null;
+        }
         
         if (existing) {
             const updateSql = isConduttore
@@ -1424,7 +1486,16 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
                 parseFloat(uData.millesimi_ascensore) || 0, 
                 uData.dati_catastali || '', 
                 existing.id
-            ], callback);
+            ], (uErr) => {
+                if (uErr) {
+                    if (!isRetry && (uErr.code === 'ER_BAD_FIELD_ERROR' || (uErr.message && uErr.message.includes('Unknown column')))) {
+                        console.log('🔄 Rilevate colonne unità mancanti in update sync, esecuzione migrazione fail-safe...');
+                        return ensureAnagraficaAndUnitaColumns(() => handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback, true));
+                    }
+                    return callback ? callback(uErr) : null;
+                }
+                if (callback) callback(null);
+            });
         } else {
             const insertSql = isConduttore
                 ? `INSERT INTO unita_immobiliari (condominio_id, identificativo, tipo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali, conduttore_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -1441,31 +1512,49 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
                 parseFloat(uData.millesimi_ascensore) || 0, 
                 uData.dati_catastali || '', 
                 personaId
-            ], callback);
+            ], (iErr) => {
+                if (iErr) {
+                    if (!isRetry && (iErr.code === 'ER_BAD_FIELD_ERROR' || (iErr.message && iErr.message.includes('Unknown column')))) {
+                        console.log('🔄 Rilevate colonne unità mancanti in insert sync, esecuzione migrazione fail-safe...');
+                        return ensureAnagraficaAndUnitaColumns(() => handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback, true));
+                    }
+                    return callback ? callback(iErr) : null;
+                }
+                if (callback) callback(null);
+            });
         }
     });
 }
 
 app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, res) => {
-    const sql = `
-        SELECT p.*,
-               (SELECT id FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_id,
-               (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_identificativo,
-               (SELECT tipo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_tipo,
-               (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_scala,
-               (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_piano,
-               (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_interno,
-               (SELECT millesimi_proprieta FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_prop,
-               (SELECT millesimi_scale FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_scale,
-               (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_asc,
-               (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_dati_catastali
-        FROM anagrafica_persone p
-        WHERE p.condominio_id = ?
-        ORDER BY p.cognome ASC, p.nome ASC`;
-    db.all(sql, [req.condominio_id], (err, rows) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, data: rows || [] });
-    });
+    const fetchList = (isRetry = false) => {
+        const sql = `
+            SELECT p.*,
+                   (SELECT id FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_id,
+                   (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_identificativo,
+                   (SELECT tipo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_tipo,
+                   (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_scala,
+                   (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_piano,
+                   (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_interno,
+                   (SELECT millesimi_proprieta FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_prop,
+                   (SELECT millesimi_scale FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_scale,
+                   (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_asc,
+                   (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_dati_catastali
+            FROM anagrafica_persone p
+            WHERE p.condominio_id = ?
+            ORDER BY p.cognome ASC, p.nome ASC`;
+        db.all(sql, [req.condominio_id], (err, rows) => {
+            if (err) {
+                if (!isRetry && (err.code === 'ER_BAD_FIELD_ERROR' || (err.message && err.message.includes('Unknown column')))) {
+                    console.log('🔄 Rilevate colonne mancanti in GET anagrafica, esecuzione migrazione fail-safe...');
+                    return ensureAnagraficaAndUnitaColumns(() => fetchList(true));
+                }
+                return res.status(500).json({ success: false, message: err.message });
+            }
+            res.json({ success: true, data: rows || [] });
+        });
+    };
+    fetchList(false);
 });
 
 app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
@@ -1480,28 +1569,37 @@ app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmi
         return res.status(400).json({ success: false, message: 'Nome e Cognome sono obbligatori.' });
     }
 
-    db.run(`INSERT INTO anagrafica_persone (condominio_id, nome, cognome, codice_fiscale, data_nascita, luogo_nascita, residenza, telefono, cellulare, email, pec, ruolo_default, notes) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.condominio_id, nome, cognome, codice_fiscale || null, data_nascita || null, luogo_nascita || null, residenza || null, telefono || null, cellulare || null, email || null, pec || null, ruolo_default || 'Proprietario', notes || null], 
-        function(err) {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            const personaId = this.lastID;
-            handleSyncPersonaUnita(req.condominio_id, personaId, ruolo_default, {
-                unita_id,
-                identificativo: unita_identificativo,
-                tipo: unita_tipo,
-                scala: unita_scala,
-                piano: unita_piano,
-                interno: unita_interno,
-                millesimi_proprieta: unita_mill_prop,
-                millesimi_scale: unita_mill_scale,
-                millesimi_ascensore: unita_mill_asc,
-                dati_catastali: unita_dati_catastali
-            }, (errSync) => {
-                logAudit(req.user.id, req.condominio_id, 'Creata Persona in Anagrafica', 'anagrafica_persone', personaId, null, req.ip);
-                res.json({ success: true, id: personaId });
-            });
-    });
+    const executeInsert = (isRetry = false) => {
+        db.run(`INSERT INTO anagrafica_persone (condominio_id, nome, cognome, codice_fiscale, data_nascita, luogo_nascita, residenza, telefono, cellulare, email, pec, ruolo_default, notes) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.condominio_id, nome, cognome, codice_fiscale || null, data_nascita || null, luogo_nascita || null, residenza || null, telefono || null, cellulare || null, email || null, pec || null, ruolo_default || 'Proprietario', notes || null], 
+            function(err) {
+                if (err) {
+                    if (!isRetry && (err.code === 'ER_BAD_FIELD_ERROR' || (err.message && err.message.includes('Unknown column')))) {
+                        console.log('🔄 Rilevate colonne mancanti in POST anagrafica, esecuzione migrazione fail-safe...');
+                        return ensureAnagraficaAndUnitaColumns(() => executeInsert(true));
+                    }
+                    return res.status(500).json({ success: false, message: err.message });
+                }
+                const personaId = this.lastID;
+                handleSyncPersonaUnita(req.condominio_id, personaId, ruolo_default, {
+                    unita_id,
+                    identificativo: unita_identificativo,
+                    tipo: unita_tipo,
+                    scala: unita_scala,
+                    piano: unita_piano,
+                    interno: unita_interno,
+                    millesimi_proprieta: unita_mill_prop,
+                    millesimi_scale: unita_mill_scale,
+                    millesimi_ascensore: unita_mill_asc,
+                    dati_catastali: unita_dati_catastali
+                }, (errSync) => {
+                    logAudit(req.user.id, req.condominio_id, 'Creata Persona in Anagrafica', 'anagrafica_persone', personaId, null, req.ip);
+                    res.json({ success: true, id: personaId });
+                });
+        });
+    };
+    executeInsert(false);
 });
 
 app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
@@ -1516,28 +1614,37 @@ app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isA
         return res.status(400).json({ success: false, message: 'Nome e Cognome sono obbligatori.' });
     }
 
-    db.run(`UPDATE anagrafica_persone 
-            SET nome = ?, cognome = ?, codice_fiscale = ?, data_nascita = ?, luogo_nascita = ?, residenza = ?, telefono = ?, cellulare = ?, email = ?, pec = ?, ruolo_default = ?, notes = ? 
-            WHERE id = ? AND condominio_id = ?`,
-        [nome, cognome, codice_fiscale || null, data_nascita || null, luogo_nascita || null, residenza || null, telefono || null, cellulare || null, email || null, pec || null, ruolo_default || 'Proprietario', notes || null, req.params.id, req.condominio_id], 
-        function(err) {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            handleSyncPersonaUnita(req.condominio_id, req.params.id, ruolo_default, {
-                unita_id,
-                identificativo: unita_identificativo,
-                tipo: unita_tipo,
-                scala: unita_scala,
-                piano: unita_piano,
-                interno: unita_interno,
-                millesimi_proprieta: unita_mill_prop,
-                millesimi_scale: unita_mill_scale,
-                millesimi_ascensore: unita_mill_asc,
-                dati_catastali: unita_dati_catastali
-            }, (errSync) => {
-                logAudit(req.user.id, req.condominio_id, 'Modificata Persona in Anagrafica', 'anagrafica_persone', req.params.id, null, req.ip);
-                res.json({ success: true });
-            });
-    });
+    const executeUpdate = (isRetry = false) => {
+        db.run(`UPDATE anagrafica_persone 
+                SET nome = ?, cognome = ?, codice_fiscale = ?, data_nascita = ?, luogo_nascita = ?, residenza = ?, telefono = ?, cellulare = ?, email = ?, pec = ?, ruolo_default = ?, notes = ? 
+                WHERE id = ? AND condominio_id = ?`,
+            [nome, cognome, codice_fiscale || null, data_nascita || null, luogo_nascita || null, residenza || null, telefono || null, cellulare || null, email || null, pec || null, ruolo_default || 'Proprietario', notes || null, req.params.id, req.condominio_id], 
+            function(err) {
+                if (err) {
+                    if (!isRetry && (err.code === 'ER_BAD_FIELD_ERROR' || (err.message && err.message.includes('Unknown column')))) {
+                        console.log('🔄 Rilevate colonne mancanti in PUT anagrafica, esecuzione migrazione fail-safe...');
+                        return ensureAnagraficaAndUnitaColumns(() => executeUpdate(true));
+                    }
+                    return res.status(500).json({ success: false, message: err.message });
+                }
+                handleSyncPersonaUnita(req.condominio_id, req.params.id, ruolo_default, {
+                    unita_id,
+                    identificativo: unita_identificativo,
+                    tipo: unita_tipo,
+                    scala: unita_scala,
+                    piano: unita_piano,
+                    interno: unita_interno,
+                    millesimi_proprieta: unita_mill_prop,
+                    millesimi_scale: unita_mill_scale,
+                    millesimi_ascensore: unita_mill_asc,
+                    dati_catastali: unita_dati_catastali
+                }, (errSync) => {
+                    logAudit(req.user.id, req.condominio_id, 'Modificata Persona in Anagrafica', 'anagrafica_persone', req.params.id, null, req.ip);
+                    res.json({ success: true });
+                });
+        });
+    };
+    executeUpdate(false);
 });
 
 app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
