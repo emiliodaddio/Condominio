@@ -1534,15 +1534,9 @@
              ==================================================================== -->
         <section id="tab-communications" class="tab-pane hidden space-y-8">
             <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-                <div class="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Circolari e Comunicazioni</h1>
-                        <p class="text-sm text-slate-500 mt-1">Invia comunicazioni a testo libero in PDF ai condòmini. L'invio verrà tracciato nello storico.</p>
-                    </div>
-                    <button onclick="switchTab('storico-comunicazioni')" class="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-2 transition-colors self-start sm:self-auto">
-                        <i class="fa-solid fa-box-archive"></i>
-                        <span>Vai a Storico Comunicazioni Inviate</span>
-                    </button>
+                <div class="mb-6">
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Circolari e Comunicazioni</h1>
+                    <p class="text-sm text-slate-500 mt-1">Invia comunicazioni a testo libero in PDF ai condòmini. L'invio verrà tracciato nello storico.</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -1574,26 +1568,7 @@
                         <h3 class="text-blue-800 font-bold mb-3 flex items-center"><i class="fa-solid fa-circle-info mr-2"></i> Come Funziona</h3>
                         <p class="text-sm text-blue-700 mb-3">La piattaforma prenderà il testo che scrivi qui a lato e lo impaginerà automaticamente all'interno di un <b>documento PDF ufficiale</b> del Condominio.</p>
                         <p class="text-sm text-blue-700 mb-3">Il documento conterrà l'intestazione, i dati del destinatario, l'oggetto e la tua firma.</p>
-                        <p class="text-sm text-blue-700">Tutti gli invii verranno registrati per tua sicurezza nello <b>Storico Comunicazioni Inviate</b>, dove potrai ricercarli per nominativo e ristamparli.</p>
-                    </div>
-                </div>
-
-                <!-- STORICO COMUNICAZIONI INVIATE -->
-                <div class="mt-8 border-t border-slate-200 pt-8">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                        <div>
-                            <h2 class="text-base font-bold text-slate-900 flex items-center">
-                                <i class="fa-solid fa-box-archive text-indigo-600 mr-2"></i> Storico Comunicazioni Inviate
-                            </h2>
-                            <p class="text-xs text-slate-500 mt-0.5">Registro di tutte le comunicazioni (Convocazioni, Circolari, Solleciti, Ricevute) inviate dalla piattaforma.</p>
-                        </div>
-                        <button onclick="switchTab('storico-comunicazioni')" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-colors self-start sm:self-auto">
-                            <i class="fa-solid fa-magnifying-glass"></i>
-                            <span>Ricerca Avanzata per Nominativo</span>
-                        </button>
-                    </div>
-                    <div id="communications-log-container" class="space-y-3 mb-8">
-                        <div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Caricamento storico...</div>
+                        <p class="text-sm text-blue-700">Tutti gli invii verranno registrati per tua sicurezza nella scheda dedicata <b>Storico Comunicazioni Inviate</b>, dove potrai ricercarli per nominativo e ristamparli.</p>
                     </div>
                 </div>
             </div>
