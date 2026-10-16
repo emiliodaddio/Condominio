@@ -1798,6 +1798,23 @@ function formatDate(dateString) {
     return isNaN(d.getTime()) ? dateString : d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function formatItalianDateNumeric(dateString) {
+    if (!dateString) return '';
+    const clean = String(dateString).trim().split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+        return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+    }
+    const d = new Date(dateString);
+    if (!isNaN(d.getTime())) {
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+    }
+    return dateString;
+}
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -4771,7 +4788,7 @@ function renderRubricaTable() {
         if (p.luogo_nascita || p.data_nascita) {
             let nStr = 'Nato ';
             if (p.luogo_nascita) nStr += `a ${p.luogo_nascita} `;
-            if (p.data_nascita) nStr += `il ${p.data_nascita}`;
+            if (p.data_nascita) nStr += `il ${formatItalianDateNumeric(p.data_nascita)}`;
             extraBio.push(`<span title="Nascita"><i class="fa-solid fa-cake-candles text-slate-400 mr-1"></i>${nStr.trim()}</span>`);
         }
         const extraBioHtml = extraBio.length > 0 
