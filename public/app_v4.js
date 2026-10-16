@@ -6492,6 +6492,251 @@ window.printMillesimiDistribution = function() {
 };
 
 // ============================================================================
+// GESTIONE DINAMICA TABELLE MILLESIMALI & CALCOLO ART. 1124 C.C. (CLIENT-SIDE)
+// ============================================================================
+state.dynamicMillesimiTables = [];
+state.currentSelectedTableDetail = null;
+
+window.openManageMillesimiTablesModal = async function() {
+    const modal = document.getElementById('modal-manage-millesimi-tables');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    await loadMillesimiTablesList();
+};
+
+window.closeManageMillesimiTablesModal = function() {
+    const modal = document.getElementById('modal-manage-millesimi-tables');
+    if (modal) modal.classList.add('hidden');
+    const formBox = document.getElementById('form-new-millesimi-table-box');
+    if (formBox) formBox.classList.add('hidden');
+    const detailBox = document.getElementById('millesimi-table-detail-box');
+    if (detailBox) detailBox.classList.add('hidden');
+};
+
+window.toggleNewMillesimiTableForm = function() {
+    const formBox = document.getElementById('form-new-millesimi-table-box');
+    if (!formBox) return;
+    formBox.classList.toggle('hidden');
+
+    if (!formBox.classList.contains('hidden')) {
+        // Popola select clonazione da tabelle esistenti
+        const cloneSel = document.getElementById('new-tab-clone-from');
+        if (cloneSel) {
+            cloneSel.innerHTML = '<option value="">-- Nessuna (Usa Proprietà) --</option>' +
+                state.dynamicMillesimiTables.map(t => `<option value="${t.id}">${t.codice} - ${t.descrizione}</option>`).join('');
+        }
+    }
+};
+
+async function loadMillesimiTablesList() {
+    const tbody = document.getElementById('millesimi-tables-list-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Caricamento tabelle millesimali...</td></tr>';
+
+    try {
+        const res = await fetch('/api/millesimi/tabelle', { headers: getAuthHeaders() });
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.data)) {
+            state.dynamicMillesimiTables = data.data;
+
+            // Aggiorna anche il selettore nella modale di calcolo rapido spesa
+            const calcSel = document.getElementById('mill-calc-tabella');
+            if (calcSel) {
+                const currentVal = calcSel.value;
+                calcSel.innerHTML = state.dynamicMillesimiTables.map(t => `<option value="${t.id}">${t.codice} - ${t.descrizione}</option>`).join('');
+                if (currentVal) calcSel.value = currentVal;
+            }
+
+            if (state.dynamicMillesimiTables.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-400">Nessuna tabella configurata. Clicca su "Nuova Tabella Personalizzata".</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.dynamicMillesimiTables.map(tab => {
+                const sumReale = parseFloat(tab.somma_millesimi_reale) || 0;
+                const isQuadrata = Math.abs(sumReale - 1000.0) < 0.05;
+                return `
+                    <tr class="hover:bg-amber-50/40 transition-colors">
+                        <td class="py-3 px-3.5 font-bold font-mono text-slate-900">${tab.codice}</td>
+                        <td class="py-3 px-3.5">
+                            <span class="font-extrabold text-slate-800">${tab.descrizione}</span>
+                            <span class="block text-[10px] text-slate-400">${tab.categoria}</span>
+                        </td>
+                        <td class="py-3 px-3.5 text-center">
+                            ${tab.scala_filtro ? `<span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">Scala ${tab.scala_filtro}</span>` : '<span class="text-slate-400 text-[11px]">Tutte</span>'}
+                        </td>
+                        <td class="py-3 px-3.5 text-center font-bold text-slate-700">${tab.unita_assegnate || 0} unità</td>
+                        <td class="py-3 px-3.5 text-right font-mono font-bold ${isQuadrata ? 'text-emerald-700' : 'text-amber-600'}">
+                            ${sumReale.toFixed(4)} mill.
+                            ${isQuadrata ? '<i class="fa-solid fa-circle-check ml-1 text-emerald-600" title="Tabella perfettamente quadrata a 1000"></i>' : ''}
+                        </td>
+                        <td class="py-3 px-3.5 text-right whitespace-nowrap">
+                            <button type="button" onclick="viewMillesimiTableDetail(${tab.id})" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold transition">
+                                <i class="fa-solid fa-eye mr-1"></i> Visualizza / Modifica Quote
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-rose-500">Errore durante il caricamento delle tabelle.</td></tr>';
+        }
+    } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-rose-500">Errore di connessione al server.</td></tr>';
+    }
+}
+
+window.submitCreateMillesimiTable = async function() {
+    const codice = (document.getElementById('new-tab-codice')?.value || '').trim();
+    const descrizione = (document.getElementById('new-tab-desc')?.value || '').trim();
+    const categoria = document.getElementById('new-tab-categoria')?.value || 'Personalizzata';
+    const scala_filtro = (document.getElementById('new-tab-scala')?.value || '').trim();
+    const clone_from_tab_id = document.getElementById('new-tab-clone-from')?.value || null;
+
+    if (!codice || !descrizione) {
+        showToast('Inserisci Codice e Descrizione della tabella.', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/millesimi/tabelle', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ codice, descrizione, categoria, scala_filtro, clone_from_tab_id })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            showToast(data.message || 'Tabella millesimale creata!', 'success');
+            toggleNewMillesimiTableForm();
+            // Pulisci campi
+            document.getElementById('new-tab-codice').value = '';
+            document.getElementById('new-tab-desc').value = '';
+            document.getElementById('new-tab-scala').value = '';
+            loadMillesimiTablesList();
+        } else {
+            showToast(data.message || 'Errore nella creazione della tabella.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione al server.', 'error');
+    }
+};
+
+window.viewMillesimiTableDetail = async function(tabId) {
+    const detailBox = document.getElementById('millesimi-table-detail-box');
+    const tbody = document.getElementById('millesimi-quotes-detail-body');
+    const titleEl = document.getElementById('millesimi-detail-title');
+    const badgeEl = document.getElementById('millesimi-detail-sum-badge');
+
+    if (!detailBox || !tbody) return;
+
+    detailBox.classList.remove('hidden');
+    tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Caricamento quote...</td></tr>';
+
+    try {
+        const res = await fetch(`/api/millesimi/tabelle/${tabId}/quote`, { headers: getAuthHeaders() });
+        const data = await res.json();
+
+        if (data.success && data.tabella) {
+            state.currentSelectedTableDetail = data;
+            const tab = data.tabella;
+            const quotes = data.data || [];
+
+            const sum = quotes.reduce((acc, q) => acc + (parseFloat(q.valore_millesimale) || 0), 0);
+            if (titleEl) titleEl.textContent = `Quote: ${tab.codice} - ${tab.descrizione}`;
+            if (badgeEl) badgeEl.textContent = `Somma Totale: ${sum.toFixed(4)} mill.`;
+
+            if (quotes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400">Nessuna unità assegnata a questa tabella.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = quotes.map(q => {
+                const condName = (q.cognome || q.nome) ? `${q.cognome || ''} ${q.nome || ''}`.trim() : 'Nessun condòmino collegato';
+                const ubi = [q.scala ? `Sc. ${q.scala}` : '', q.piano ? `P. ${q.piano}` : '', q.interno ? `Int. ${q.interno}` : ''].filter(Boolean).join(' - ') || 'N/D';
+                const val = parseFloat(q.valore_millesimale) || 0;
+
+                return `
+                    <tr class="hover:bg-slate-50">
+                        <td class="py-2.5 px-3 font-bold text-slate-900">${q.identificativo || 'Sub. ' + q.unita_id}</td>
+                        <td class="py-2.5 px-3 font-semibold text-slate-700">${condName}</td>
+                        <td class="py-2.5 px-3 text-center text-slate-500 font-mono text-[11px]">${ubi}</td>
+                        <td class="py-2.5 px-3 text-right">
+                            <input type="number" step="0.0001" id="quota-input-${tab.id}-${q.unita_id}" value="${val.toFixed(4)}" class="w-28 px-2 py-1 text-right font-mono font-bold text-slate-900 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                        </td>
+                        <td class="py-2.5 px-3 text-right">
+                            <button type="button" onclick="saveSingleUnitQuota(${tab.id}, ${q.unita_id})" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-2xs transition">
+                                <i class="fa-solid fa-floppy-disk"></i> Salva
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-rose-500">Errore lettura quote tabella.</td></tr>';
+    }
+};
+
+window.saveSingleUnitQuota = async function(tabId, unitaId) {
+    const input = document.getElementById(`quota-input-${tabId}-${unitaId}`);
+    if (!input) return;
+
+    const val = parseFloat(input.value) || 0;
+    try {
+        const res = await fetch(`/api/millesimi/tabelle/${tabId}/quote/${unitaId}`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ valore_millesimale: val })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Quota millesimale salvata!', 'success');
+            loadMillesimiTablesList();
+            viewMillesimiTableDetail(tabId);
+        } else {
+            showToast(data.message || 'Errore salvataggio quota.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione.', 'error');
+    }
+};
+
+window.executeCalculateArt1124Modal = async function() {
+    const tabB = state.dynamicMillesimiTables.find(t => t.codice === 'TAB_B' || t.categoria === 'Scale_Ascensore_1124');
+    if (!tabB) {
+        showToast('Tabella B (Scale e Ascensore) non trovata.', 'warning');
+        return;
+    }
+
+    if (!confirm(`Vuoi eseguire il calcolo automatico della Tabella B (Art. 1124 c.c.) per ${tabB.descrizione}?\n\nLa formula combinerà il 50% del valore dei millesimi di proprietà (Tabella A) e il 50% dell'altezza del piano, con quadratura a 1000 millesimi.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/millesimi/tabelle/calcola-art1124', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ tabella_destinazione_id: tabB.id })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            showToast(data.message || 'Tabella B calcolata con successo!', 'success');
+            await loadMillesimiTablesList();
+            viewMillesimiTableDetail(tabB.id);
+        } else {
+            showToast(data.message || 'Errore durante il calcolo.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione al server.', 'error');
+    }
+};
+
+// ============================================================================
 // DOCUMENTI & ALLEGATI BIDIREZIONALI (AMMINISTRATORE <-> CONDÒMINI)
 // ============================================================================
 state.condoDocuments = [];

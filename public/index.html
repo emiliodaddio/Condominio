@@ -2212,6 +2212,10 @@
                         <p class="text-xs text-slate-500">Registro anagrafe condominiale completo: condòmini, unità immobiliari e millesimi</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" onclick="openManageMillesimiTablesModal()" class="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5" title="Gestisci tabelle millesimali personalizzate e calcolo Art. 1124">
+                            <i class="fa-solid fa-table-cells"></i>
+                            <span>Gestione Tabelle Millesimali</span>
+                        </button>
                         <button type="button" onclick="openMillesimiCalculatorModal()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5">
                             <i class="fa-solid fa-calculator"></i>
                             <span>Calcola & Ripartisci Spesa per Millesimi</span>
@@ -2413,6 +2417,148 @@
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- MODALE GESTIONE TABELLE MILLESIMALI & CALCOLO ART. 1124 -->
+            <div id="modal-manage-millesimi-tables" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50/70">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center text-lg shadow-xs">
+                                <i class="fa-solid fa-table-cells"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-extrabold text-slate-900 text-base sm:text-lg">Gestione Tabelle Millesimali & Regole di Riparto</h3>
+                                <p class="text-xs text-slate-500">Crea tabelle personalizzate, configura i coefficienti o calcola la Tabella B (Art. 1124 c.c.)</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeManageMillesimiTablesModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl transition-colors">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="overflow-y-auto p-6 space-y-6 flex-1">
+                        <!-- Elenco Tabelle Attive -->
+                        <div>
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-list-check text-amber-600"></i>
+                                    Tabelle Millesimali Registrate nel Condominio
+                                </h4>
+                                <button type="button" onclick="toggleNewMillesimiTableForm()" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition flex items-center gap-1">
+                                    <i class="fa-solid fa-plus"></i> Nuova Tabella Personalizzata
+                                </button>
+                            </div>
+
+                            <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            <th class="py-3 px-3.5">Codice</th>
+                                            <th class="py-3 px-3.5">Descrizione & Tipologia</th>
+                                            <th class="py-3 px-3.5 text-center">Filtro Scala</th>
+                                            <th class="py-3 px-3.5 text-center">Unità Assegnate</th>
+                                            <th class="py-3 px-3.5 text-right">Somma Mill. Reale</th>
+                                            <th class="py-3 px-3.5 text-right">Azioni</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="millesimi-tables-list-body" class="divide-y divide-slate-100">
+                                        <tr><td colspan="6" class="py-6 text-center text-slate-400">Caricamento tabelle...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Form Nuova Tabella Personalizzata (Collassabile) -->
+                        <div id="form-new-millesimi-table-box" class="hidden p-4 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-3">
+                            <h4 class="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                                <i class="fa-solid fa-folder-plus text-amber-600"></i>
+                                Inserimento Nuova Tabella Millesimale
+                            </h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Codice Tabella *</label>
+                                    <input type="text" id="new-tab-codice" placeholder="es. TAB_GIARDINO" class="w-full p-2.5 text-xs font-bold uppercase rounded-xl border border-slate-200 bg-white">
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Descrizione Completa *</label>
+                                    <input type="text" id="new-tab-desc" placeholder="es. Manutenzione e Cura Giardino Condominiale" class="w-full p-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Categoria Spesa</label>
+                                    <select id="new-tab-categoria" class="w-full p-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white">
+                                        <option value="Personalizzata">Personalizzata (Generica)</option>
+                                        <option value="Proprieta_Generale">Proprietà Generale (Tab. A)</option>
+                                        <option value="Scale_Ascensore_1124">Scale & Ascensore (Art. 1124 c.c.)</option>
+                                        <option value="Riscaldamento_Consumi">Riscaldamento / Calorie</option>
+                                        <option value="Tetto_Lastrico_1126">Tetto / Lastrico (Art. 1126 c.c.)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Filtro Multi-Scala (Opzionale)</label>
+                                    <input type="text" id="new-tab-scala" placeholder="es. A oppure B (vuoto = tutte)" class="w-full p-2.5 text-xs font-bold uppercase rounded-xl border border-slate-200 bg-white">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Clona Quote da Tabella Esistente</label>
+                                    <select id="new-tab-clone-from" class="w-full p-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white">
+                                        <option value="">-- Nessuna (Usa Proprietà) --</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex justify-end gap-2 pt-2">
+                                <button type="button" onclick="toggleNewMillesimiTableForm()" class="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl">Annulla</button>
+                                <button type="button" onclick="submitCreateMillesimiTable()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs">
+                                    <i class="fa-solid fa-check mr-1"></i> Crea Tabella
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Card Calcolo Automatico Tabella B (Art. 1124 c.c.) -->
+                        <div class="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-3">
+                            <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                                <div>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white">Codice Civile</span>
+                                    <h4 class="text-xs font-extrabold text-indigo-950 mt-1">
+                                        Calcolo Automatico Tabella B: Scale & Ascensore (Art. 1124 c.c.)
+                                    </h4>
+                                    <p class="text-[11px] text-indigo-700">Applica la formula mista: 50% in base ai millesimi di proprietà e 50% in base all'altezza del piano, con quadratura a 1000.</p>
+                                </div>
+                                <button type="button" onclick="executeCalculateArt1124Modal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                                    <i class="fa-solid fa-calculator"></i>
+                                    <span>Esegui Calcolo Automatico Art. 1124</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Dettaglio Quote della Tabella Selezionata -->
+                        <div id="millesimi-table-detail-box" class="hidden space-y-3">
+                            <div class="flex justify-between items-center">
+                                <h4 id="millesimi-detail-title" class="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                                    Quote della Tabella Selezionata
+                                </h4>
+                                <span id="millesimi-detail-sum-badge" class="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-100 text-slate-700">
+                                    Somma: 1000.0000 mill.
+                                </span>
+                            </div>
+                            <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            <th class="py-2.5 px-3">Unità / Sub</th>
+                                            <th class="py-2.5 px-3">Condòmino Collegato</th>
+                                            <th class="py-2.5 px-3 text-center">Ubicazione (Sc - P - Int)</th>
+                                            <th class="py-2.5 px-3 text-right">Quota Millesimale</th>
+                                            <th class="py-2.5 px-3 text-right">Azione</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="millesimi-quotes-detail-body" class="divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
