@@ -276,6 +276,7 @@ function switchTab(tabId) {
         'accounting': 'Contabilità & Finanze',
         'assemblies': 'Assemblee & Verbali',
         'communications': 'Comunicazioni & Circolari',
+        'storico-comunicazioni': 'Storico Comunicazioni Inviate',
         'tickets': 'Segnalazioni Guasti & Manutenzioni',
         'admin-profile': 'Studio Amministratore',
         'condominio': 'Dati Ufficiali del Condominio',
@@ -315,7 +316,7 @@ function switchTab(tabId) {
     if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); }
     else if (tabId === 'condominio') loadAnagrafica();
     else if (tabId === 'assemblies') loadAssembliesData();
-    else if (tabId === 'communications') loadConvocationsLog();
+    else if (tabId === 'communications' || tabId === 'storico-comunicazioni') loadConvocationsLog();
     else if (tabId === 'tickets') loadTicketsData();
     else if (tabId === 'users' && state.currentUser.role === 'admin') loadUsersList();
     else if (tabId === 'anagrafica' && state.currentUser.role === 'admin') { loadAnagrafica(); loadUsersList(); loadRubrica(); }
@@ -3971,6 +3972,7 @@ async function inviaConvocazioneEmail() {
                 window.open(data.previewUrl, '_blank');
             }
             closeConvocazioneModal();
+            loadConvocationsLog();
         } else {
             showToast('Errore invio email: ' + data.message, 'error');
         }
@@ -3980,7 +3982,283 @@ async function inviaConvocazioneEmail() {
     }
 }
 
+function getCommTypeBadge(tipo) {
+    const t = (tipo || '').toLowerCase();
+    if (t.includes('convocazione')) {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"><i class="fa-solid fa-landmark text-[10px]"></i> ${tipo}</span>`;
+    }
+    if (t.includes('sollecito')) {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200"><i class="fa-solid fa-triangle-exclamation text-[10px]"></i> ${tipo}</span>`;
+    }
+    if (t.includes('ricevuta')) {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-circle-check text-[10px]"></i> ${tipo}</span>`;
+    }
+    return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200"><i class="fa-solid fa-bullhorn text-[10px]"></i> ${tipo || 'Comunicazione / Circolare'}</span>`;
+}
 
+function formatCommDateTime(dateStr) {
+    if (!dateStr) return 'N/D';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ore ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
+function normalizeCommLogItem(log) {
+    let tipo = log.tipo || '';
+    let oggetto = log.oggetto || '';
+    let nominativo = log.nominativo || log.user_nome || '';
+    const rawDest = log.destinatario || '';
+
+    if (!tipo) {
+        if (/^RICEVUTA:/i.test(rawDest)) {
+            tipo = 'Ricevuta di Pagamento';
+            if (!nominativo) nominativo = rawDest.replace(/^RICEVUTA:\s*/i, '').trim();
+            if (!oggetto) oggetto = 'Invio Ricevuta di Pagamento Quota Condominiale';
+        } else if (/^SOLLECITO:/i.test(rawDest)) {
+            tipo = 'Sollecito di Pagamento';
+            if (!nominativo) nominativo = rawDest.replace(/^SOLLECITO:\s*/i, '').trim();
+            if (!oggetto) oggetto = 'Invio Sollecito di Pagamento Scaduto';
+        } else if (/^COMUNICAZIONE:/i.test(rawDest)) {
+            tipo = 'Comunicazione / Circolare';
+            if (!oggetto) oggetto = rawDest.replace(/^COMUNICAZIONE:\s*/i, '').trim();
+            if (!nominativo) {
+                const matchedUser = (state.users || []).find(u => u.id == log.user_id || (u.email && log.email && u.email.toLowerCase() === log.email.toLowerCase()));
+                nominativo = matchedUser ? matchedUser.nome : ('Condòmino (' + (log.email || 'N/D') + ')');
+            }
+        } else {
+            tipo = 'Convocazione Assemblea';
+            if (!nominativo) nominativo = rawDest || 'Condòmino';
+            if (!oggetto) oggetto = 'Convocazione Assemblea Condominiale';
+        }
+    } else {
+        if (!nominativo) nominativo = rawDest || 'Condòmino';
+        if (!oggetto) oggetto = tipo;
+    }
+
+    let unita = log.unita || log.user_unita || '';
+    if (!unita && state.users) {
+        const matchedUser = state.users.find(u => u.id == log.user_id || (u.email && log.email && u.email.toLowerCase() === log.email.toLowerCase()));
+        if (matchedUser && matchedUser.unita) unita = matchedUser.unita;
+    }
+
+    return {
+        ...log,
+        nominativo,
+        unita,
+        tipo,
+        oggetto
+    };
+}
+
+function openArchivedCommDocument(logId) {
+    const logs = state.communicationsLog || [];
+    const item = logs.find(x => x.id == logId);
+    if (!item) return;
+
+    const activeCondoName = state.currentUser && state.currentUser.condomini
+        ? (state.currentUser.condomini.find(c => c.id == state.activeCondominioId)?.nome || 'Condominio')
+        : 'Condominio';
+
+    const docHtml = item.contenuto_html && item.contenuto_html.trim()
+        ? item.contenuto_html
+        : `
+            <div style="font-family: Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 750px; margin: 0 auto;">
+                <div style="text-align: center; border-bottom: 2px solid #1e293b; padding-bottom: 16px; margin-bottom: 30px;">
+                    <h2 style="margin: 0; font-size: 20px;">AMMINISTRAZIONE CONDOMINIO</h2>
+                    <h3 style="margin: 6px 0 0; font-size: 16px; color: #334155;">${activeCondoName}</h3>
+                </div>
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 24px; margin-bottom: 30px;">
+                    <h3 style="margin-top: 0; color: #1e3a8a; font-size: 16px;">ATTESTAZIONE DI ARCHIVIAZIONE COMUNICAZIONE INVIATA</h3>
+                    <p style="margin: 8px 0;"><strong>ID Registro:</strong> #${item.id}</p>
+                    <p style="margin: 8px 0;"><strong>Data e Ora di Invio:</strong> ${formatCommDateTime(item.data_invio)}</p>
+                    <p style="margin: 8px 0;"><strong>Nominativo Destinatario:</strong> ${item.nominativo} ${item.unita ? '(' + item.unita + ')' : ''}</p>
+                    <p style="margin: 8px 0;"><strong>Email Destinatario:</strong> ${item.email || 'N/D'}</p>
+                    <p style="margin: 8px 0;"><strong>Tipologia:</strong> ${item.tipo}</p>
+                    <p style="margin: 8px 0;"><strong>Oggetto / Causale:</strong> ${item.oggetto}</p>
+                </div>
+                <p style="font-size: 12px; color: #64748b; text-align: center;">Documento generato dall'Archivio Storico Comunicazioni Inviate della piattaforma CondoTransparent.</p>
+            </div>
+        `;
+
+    const win = window.open('', '_blank');
+    if (!win) {
+        alert('Abilita i pop-up per visualizzare e stampare il documento archiviato.');
+        return;
+    }
+    win.document.write(`
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+            <meta charset="UTF-8">
+            <title>Archivio Comunicazione #${item.id} - ${item.nominativo}</title>
+            <style>
+                @media print { .no-print-bar { display: none !important; } }
+                body { margin: 0; padding: 0; background: #f1f5f9; }
+                .no-print-bar {
+                    background: #0f172a; color: white; padding: 12px 24px;
+                    display: flex; justify-content: space-between; align-items: center;
+                    font-family: Arial, sans-serif; font-size: 13px; position: sticky; top: 0; z-index: 50;
+                }
+                .btn-print {
+                    background: #2563eb; color: white; border: none; padding: 8px 16px;
+                    border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 12px;
+                }
+                .page-sheet {
+                    background: white; max-width: 820px; margin: 24px auto; padding: 20px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-radius: 8px;
+                }
+                @media print {
+                    body { background: white; }
+                    .page-sheet { box-shadow: none; margin: 0; padding: 0; max-width: 100%; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print-bar">
+                <div>
+                    <strong>Storico Comunicazioni Inviate</strong> — Destinatario: <b>${item.nominativo}</b> (${formatCommDateTime(item.data_invio)})
+                </div>
+                <button class="btn-print" onclick="window.print()">Stampa / Salva PDF</button>
+            </div>
+            <div class="page-sheet">
+                ${docHtml}
+            </div>
+        </body>
+        </html>
+    `);
+    win.document.close();
+}
+
+function populateStoricoNominativiFilter(logs) {
+    const select = document.getElementById('storico-filter-user');
+    if (!select) return;
+    const currentVal = select.value;
+
+    const namesSet = new Set();
+    if (Array.isArray(state.users)) {
+        state.users.forEach(u => {
+            if (u.nome) namesSet.add(u.nome.trim());
+        });
+    }
+    if (Array.isArray(logs)) {
+        logs.forEach(l => {
+            if (l.nominativo) namesSet.add(l.nominativo.trim());
+        });
+    }
+
+    const sortedNames = Array.from(namesSet).sort((a, b) => a.localeCompare(b, 'it'));
+    select.innerHTML = '<option value="">Tutti i Condòmini</option>' +
+        sortedNames.map(name => `<option value="${name.replace(/"/g, '&quot;')}">${name}</option>`).join('');
+
+    if (currentVal && sortedNames.includes(currentVal)) {
+        select.value = currentVal;
+    }
+}
+
+function resetStoricoComunicazioniFilters() {
+    const searchInput = document.getElementById('storico-search-nominativo');
+    const userSelect = document.getElementById('storico-filter-user');
+    const tipoSelect = document.getElementById('storico-filter-tipo');
+    if (searchInput) searchInput.value = '';
+    if (userSelect) userSelect.value = '';
+    if (tipoSelect) tipoSelect.value = '';
+    filterStoricoComunicazioni();
+}
+
+function filterStoricoComunicazioni() {
+    const logs = state.communicationsLog || [];
+    const searchVal = (document.getElementById('storico-search-nominativo')?.value || '').trim().toLowerCase();
+    const userFilter = (document.getElementById('storico-filter-user')?.value || '').trim().toLowerCase();
+    const tipoFilter = (document.getElementById('storico-filter-tipo')?.value || '').trim().toLowerCase();
+
+    const filtered = logs.filter(item => {
+        if (userFilter && (item.nominativo || '').toLowerCase() !== userFilter) {
+            return false;
+        }
+        if (tipoFilter && (item.tipo || '').toLowerCase() !== tipoFilter) {
+            return false;
+        }
+        if (searchVal) {
+            const haystack = [
+                item.nominativo || '',
+                item.email || '',
+                item.unita || '',
+                item.tipo || '',
+                item.oggetto || '',
+                formatCommDateTime(item.data_invio)
+            ].join(' ').toLowerCase();
+            if (!haystack.includes(searchVal)) return false;
+        }
+        return true;
+    });
+
+    const countEl = document.getElementById('storico-filter-results-count');
+    if (countEl) {
+        countEl.textContent = filtered.length === logs.length
+            ? `Visualizzate tutte le ${logs.length} comunicazioni archiviate`
+            : `Trovate ${filtered.length} comunicazioni su ${logs.length} totali`;
+    }
+
+    const tbody = document.getElementById('storico-comunicazioni-tbody');
+    if (!tbody) return;
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="py-10 text-center text-slate-400 italic">
+                    Nessuna comunicazione trovata per i criteri di ricerca selezionati.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(log => {
+        const initials = (log.nominativo || 'C').split(' ').filter(Boolean).slice(0, 2).map(p => p[0].toUpperCase()).join('');
+        return `
+            <tr class="hover:bg-slate-50/80 transition-colors">
+                <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="font-bold text-slate-800">${formatCommDateTime(log.data_invio)}</div>
+                    <div class="text-[10px] text-slate-400 font-mono">Prot. #${log.id}</div>
+                </td>
+                <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center justify-center font-extrabold text-[11px] shrink-0">
+                            ${initials}
+                        </div>
+                        <div>
+                            <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                                <span>${log.nominativo}</span>
+                                ${log.unita ? `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">${log.unita}</span>` : ''}
+                            </div>
+                            <div class="text-[11px] text-slate-500">${log.email || 'N/D'}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="py-3.5 px-4 whitespace-nowrap">
+                    ${getCommTypeBadge(log.tipo)}
+                </td>
+                <td class="py-3.5 px-4">
+                    <div class="font-semibold text-slate-800 max-w-md">${log.oggetto}</div>
+                </td>
+                <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                    <div class="inline-flex items-center justify-end gap-2">
+                        <button onclick="openArchivedCommDocument(${log.id})" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] inline-flex items-center gap-1.5 transition-colors" title="Visualizza e ristampa il documento archiviato">
+                            <i class="fa-solid fa-file-pdf"></i>
+                            <span>Documento</span>
+                        </button>
+                        ${log.preview_url ? `
+                            <a href="${log.preview_url}" target="_blank" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] inline-flex items-center gap-1 transition-colors" title="Apri anteprima email">
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                                <span>Email</span>
+                            </a>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
 
 async function loadConvocationsLog() {
     if (state.currentUser.role !== 'admin') return;
@@ -3995,25 +4273,53 @@ async function loadConvocationsLog() {
         }
         const res = await fetch('/api/assemblies/convocations-log', { headers: getAuthHeaders() });
         const data = await res.json();
-        
-                const htmlContent = (data.success && data.data.length > 0) ? data.data.map(log => `
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex justify-between items-center">
-                    <div>
-                        <div class="font-bold text-slate-900">${log.destinatario}</div>
-                        <div class="text-xs text-slate-500">${log.email}</div>
+
+        const logs = (data.success && Array.isArray(data.data))
+            ? data.data.map(normalizeCommLogItem)
+            : [];
+        state.communicationsLog = logs;
+
+        // Aggiorna contatori KPI nella scheda Storico Comunicazioni Inviate
+        const kpiTot = document.getElementById('storico-kpi-totale');
+        const kpiConv = document.getElementById('storico-kpi-convocazioni');
+        const kpiCirc = document.getElementById('storico-kpi-circolari');
+        const kpiCont = document.getElementById('storico-kpi-contabili');
+        if (kpiTot) kpiTot.textContent = logs.length;
+        if (kpiConv) kpiConv.textContent = logs.filter(l => (l.tipo || '').toLowerCase().includes('convocazione')).length;
+        if (kpiCirc) kpiCirc.textContent = logs.filter(l => (l.tipo || '').toLowerCase().includes('comunicazione') || (l.tipo || '').toLowerCase().includes('circolare')).length;
+        if (kpiCont) kpiCont.textContent = logs.filter(l => (l.tipo || '').toLowerCase().includes('sollecito') || (l.tipo || '').toLowerCase().includes('ricevuta')).length;
+
+        populateStoricoNominativiFilter(logs);
+        filterStoricoComunicazioni();
+
+        const renderCompactCards = (items) => (items && items.length > 0) ? items.slice(0, 10).map(log => `
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:border-indigo-200 transition-colors">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        ${getCommTypeBadge(log.tipo)}
+                        <span class="font-extrabold text-slate-900 text-sm">${log.nominativo}</span>
+                        ${log.unita ? `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">${log.unita}</span>` : ''}
                     </div>
-                    <div class="text-right">
-                        <div class="text-xs font-bold text-slate-700">${formatDate(log.data_invio)}</div>
-                        ${log.preview_url ? `<a href="${log.preview_url}" target="_blank" class="text-[10px] text-blue-600 hover:underline">Vedi Email Inviata</a>` : ''}
+                    <div class="text-xs font-semibold text-slate-700">${log.oggetto}</div>
+                    <div class="text-[11px] text-slate-400">${log.email || ''}</div>
+                </div>
+                <div class="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
+                    <div class="text-xs font-bold text-slate-700">${formatCommDateTime(log.data_invio)}</div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="openArchivedCommDocument(${log.id})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold inline-flex items-center gap-1">
+                            <i class="fa-solid fa-file-pdf"></i> Documento
+                        </button>
+                        ${log.preview_url ? `<a href="${log.preview_url}" target="_blank" class="text-[11px] font-bold text-blue-600 hover:underline">Vedi Email</a>` : ''}
                     </div>
                 </div>
-            `).join('') : `<div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Nessuna email inviata finora.</div>`;
-            
+            </div>
+        `).join('') : `<div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Nessuna comunicazione inviata finora.</div>`;
+
         const container1 = document.getElementById('assemblies-log-container');
-        if (container1) container1.innerHTML = htmlContent;
-        
+        if (container1) container1.innerHTML = renderCompactCards(logs);
+
         const container2 = document.getElementById('communications-log-container');
-        if (container2) container2.innerHTML = htmlContent;
+        if (container2) container2.innerHTML = renderCompactCards(logs);
     } catch (e) {
         console.error("Errore caricamento log", e);
     }
@@ -4037,6 +4343,7 @@ async function sendReceipt(quoteId) {
         const data = await res.json();
         if (data.success) {
             showToast('Ricevuta inviata con successo!', 'success');
+            loadConvocationsLog();
         } else {
             showToast('Errore: ' + data.message, 'error');
         }
@@ -4062,6 +4369,7 @@ async function sendReminder(quoteId) {
         const data = await res.json();
         if (data.success) {
             showToast('Sollecito inviato con successo!', 'success');
+            loadConvocationsLog();
         } else {
             showToast('Errore: ' + data.message, 'error');
         }
@@ -4118,6 +4426,7 @@ async function sendCommunication() {
             showToast('Comunicazione inviata con successo!', 'success');
             document.getElementById('comm-subject').value = '';
             document.getElementById('comm-message').value = '';
+            loadConvocationsLog();
         } else {
             showToast('Errore: ' + data.message, 'error');
         }

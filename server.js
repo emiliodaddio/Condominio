@@ -718,6 +718,9 @@ function initDatabase() {
             user_id INTEGER,
             destinatario TEXT,
             email TEXT,
+            tipo TEXT,
+            oggetto TEXT,
+            contenuto_html TEXT,
             data_invio DATETIME DEFAULT CURRENT_TIMESTAMP,
             preview_url TEXT
         )`);
@@ -881,7 +884,10 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'unita_immobiliari', col: 'interno', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
         { table: 'unita_immobiliari', col: 'dati_catastali', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'unita_immobiliari', col: 'proprietario_id', defMysql: 'INT', defSqlite: 'INTEGER' },
-        { table: 'unita_immobiliari', col: 'conduttore_id', defMysql: 'INT', defSqlite: 'INTEGER' }
+        { table: 'unita_immobiliari', col: 'conduttore_id', defMysql: 'INT', defSqlite: 'INTEGER' },
+        { table: 'convocations_log', col: 'tipo', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
+        { table: 'convocations_log', col: 'oggetto', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'convocations_log', col: 'contenuto_html', defMysql: 'LONGTEXT', defSqlite: 'TEXT' }
     ];
 
     let pending = colsToEnsure.length;
@@ -2728,6 +2734,22 @@ app.get('/api/security-logs', authenticateToken, requireCondominio, isAdmin, (re
 });
 
 
+function logCommunicationSent({ condominio_id, user_id, destinatario, email, tipo, oggetto, contenuto_html, preview_url }) {
+    db.run(
+        'INSERT INTO convocations_log (condominio_id, user_id, destinatario, email, tipo, oggetto, contenuto_html, preview_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [condominio_id, user_id || null, destinatario || '', email || '', tipo || 'Comunicazione', oggetto || '', contenuto_html || '', preview_url || ''],
+        function(err) {
+            if (err) {
+                console.warn('Fallback insert convocations_log:', err.message);
+                db.run(
+                    'INSERT INTO convocations_log (condominio_id, user_id, destinatario, email, preview_url) VALUES (?, ?, ?, ?, ?)',
+                    [condominio_id, user_id || null, destinatario || '', email || '', preview_url || '']
+                );
+            }
+        }
+    );
+}
+
 app.post('/api/assemblies/send-convocation', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const { userId, email, nome, htmlContent, activeCondoName } = req.body;
     
@@ -2768,13 +2790,17 @@ app.post('/api/assemblies/send-convocation', authenticateToken, requireCondomini
         const previewUrl = nodemailer.getTestMessageUrl(info) || '';
         console.log("o Email Inviata! Anteprima disponibile su: " + previewUrl);
         
-        // Log into database
-        db.run('INSERT INTO convocations_log (condominio_id, user_id, destinatario, email, preview_url) VALUES (?, ?, ?, ?, ?)', 
-            [req.condominio_id, userId, nome, email, previewUrl], 
-            function(err) {
-                if (err) console.error("Errore salvataggio log:", err);
-            }
-        );
+        // Log into database with complete archive details
+        logCommunicationSent({
+            condominio_id: req.condominio_id,
+            user_id: userId,
+            destinatario: nome,
+            email: email,
+            tipo: 'Convocazione Assemblea',
+            oggetto: 'Convocazione Assemblea Condominiale',
+            contenuto_html: htmlContent,
+            preview_url: previewUrl
+        });
         
         res.json({ 
             success: true, 
@@ -2789,23 +2815,61 @@ app.post('/api/assemblies/send-convocation', authenticateToken, requireCondomini
 });
 
 app.get('/api/assemblies/convocations-log', authenticateToken, requireCondominio, isAdmin, (req, res) => {
-    db.all('SELECT * FROM convocations_log WHERE condominio_id = ? ORDER BY data_invio DESC', [req.condominio_id], (err, rows) => {
-        if (err) return res.status(500).json({ success: false, error: err.message });
-        res.json({ success: true, data: rows || [] });
+    const sql = `
+        SELECT cl.*, u.nome AS user_nome, uc.unita AS user_unita
+        FROM convocations_log cl
+        LEFT JOIN users u ON cl.user_id = u.id
+        LEFT JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = cl.condominio_id
+        WHERE cl.condominio_id = ?
+        ORDER BY cl.data_invio DESC
+    `;
+    db.all(sql, [req.condominio_id], (err, rows) => {
+        if (err) {
+            return db.all('SELECT * FROM convocations_log WHERE condominio_id = ? ORDER BY data_invio DESC', [req.condominio_id], (err2, rows2) => {
+                if (err2) return res.status(500).json({ success: false, error: err2.message });
+                res.json({ success: true, data: rows2 || [] });
+            });
+        }
+        const enriched = (rows || []).map(r => {
+            let tipo = r.tipo || '';
+            let oggetto = r.oggetto || '';
+            let nominativo = r.user_nome || '';
+            const rawDest = r.destinatario || '';
+
+            if (!tipo) {
+                if (/^RICEVUTA:/i.test(rawDest)) {
+                    tipo = 'Ricevuta di Pagamento';
+                    if (!nominativo) nominativo = rawDest.replace(/^RICEVUTA:\s*/i, '').trim();
+                    if (!oggetto) oggetto = 'Invio Ricevuta di Pagamento Quota Condominiale';
+                } else if (/^SOLLECITO:/i.test(rawDest)) {
+                    tipo = 'Sollecito di Pagamento';
+                    if (!nominativo) nominativo = rawDest.replace(/^SOLLECITO:\s*/i, '').trim();
+                    if (!oggetto) oggetto = 'Invio Sollecito di Pagamento Scaduto';
+                } else if (/^COMUNICAZIONE:/i.test(rawDest)) {
+                    tipo = 'Comunicazione / Circolare';
+                    if (!oggetto) oggetto = rawDest.replace(/^COMUNICAZIONE:\s*/i, '').trim();
+                    if (!nominativo) nominativo = 'Condòmino (' + (r.email || 'N/D') + ')';
+                } else {
+                    tipo = 'Convocazione Assemblea';
+                    if (!nominativo) nominativo = rawDest || 'Condòmino';
+                    if (!oggetto) oggetto = 'Convocazione Assemblea Condominiale';
+                }
+            } else {
+                if (!nominativo) nominativo = rawDest || 'Condòmino';
+                if (!oggetto) oggetto = tipo;
+            }
+
+            return {
+                ...r,
+                nominativo,
+                unita: r.user_unita || '',
+                tipo,
+                oggetto
+            };
+        });
+        res.json({ success: true, data: enriched });
     });
 });
-
-
-
-// ---------------------------------------------------------
-// INVIO RICEVUTA PAGAMENTO
-// ---------------------------------------------------------
-
-
-// ---------------------------------------------------------
-// INVIO RICEVUTA PAGAMENTO
-// ---------------------------------------------------------
-
 
 // ---------------------------------------------------------
 // INVIO RICEVUTA PAGAMENTO
@@ -2832,8 +2896,8 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
                         <h2 style="text-align:center; border-bottom: 2px solid #333; padding-bottom:10px;">AMMINISTRAZIONE CONDOMINIO<br>${activeCondoName}</h2>
                         <h1 style="text-align:center; color: #16a34a; margin-top:40px;">RICEVUTA DI PAGAMENTO</h1>
                         <p style="text-align:right; margin-bottom:40px;">Data: ${new Date().toLocaleDateString('it-IT')}</p>
-                        <p>Si attesta di aver ricevuto dal Sig./Sig.ra <b>${quote.nome}</b> (Unit: ${quote.unita || 'N/D'})</p>
-                        <p>La somma di: <b style="font-size:24px;"> ${quote.amount.toFixed(2)}</b></p>
+                        <p>Si attesta di aver ricevuto dal Sig./Sig.ra <b>${quote.nome}</b> (Unità: ${quote.unita || 'N/D'})</p>
+                        <p>La somma di: <b style="font-size:24px;">€ ${quote.amount.toFixed(2)}</b></p>
                         <p>A titolo di saldo per la seguente causale:</p>
                         <div style="background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
                             <strong>${quote.title}</strong><br>
@@ -2859,8 +2923,16 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
 
                 const previewUrl = nodemailer.getTestMessageUrl(info) || '';
                 
-                db.run('INSERT INTO convocations_log (condominio_id, user_id, destinatario, email, preview_url) VALUES (?, ?, ?, ?, ?)', 
-                    [req.condominio_id, quote.user_id, 'RICEVUTA: ' + quote.nome, quote.email, previewUrl]);
+                logCommunicationSent({
+                    condominio_id: req.condominio_id,
+                    user_id: quote.user_id,
+                    destinatario: quote.nome,
+                    email: quote.email,
+                    tipo: 'Ricevuta di Pagamento',
+                    oggetto: `Ricevuta quota: ${quote.title} (€ ${Number(quote.amount).toFixed(2)})`,
+                    contenuto_html: htmlContent,
+                    preview_url: previewUrl
+                });
                 
                 res.json({ success: true, message: 'Ricevuta inviata con successo!', previewUrl });
             } catch (e) {
@@ -2903,20 +2975,20 @@ app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, 
                         <div style="text-align:right; margin-bottom: 30px;">
                             Spett.le<br>
                             <b>${quote.nome}</b><br>
-                            Unit�: ${quote.unita || 'N/D'}
+                            Unità: ${quote.unita || 'N/D'}
                         </div>
                         
-                        <p>Gentile Cond�mino,</p>
+                        <p>Gentile Condòmino,</p>
                         <p>Dalla verifica contabile ad oggi effettuata, non ci risulta pervenuto il pagamento relativo alla seguente quota condominiale, ormai <b>scaduta</b>:</p>
                         
                         <div style="background: #fef2f2; padding: 20px; border: 1px solid #fecaca; border-radius: 8px; margin: 20px 0;">
                             <strong>${quote.title}</strong><br>
-                            Importo da saldare: <b style="color:#dc2626; font-size:18px;">� ${quote.amount.toFixed(2)}</b><br>
+                            Importo da saldare: <b style="color:#dc2626; font-size:18px;">€ ${quote.amount.toFixed(2)}</b><br>
                             Scaduta il: ${new Date(quote.due_date).toLocaleDateString('it-IT')}
                         </div>
                         
-                        <p>La invitiamo a provvedere al saldo nel pi� breve tempo possibile, per consentire la corretta e serena gestione del Condominio.</p>
-                        <p>Qualora avesse gi� provveduto al pagamento, La preghiamo di non tenere conto della presente comunicazione.</p>
+                        <p>La invitiamo a provvedere al saldo nel più breve tempo possibile, per consentire la corretta e serena gestione del Condominio.</p>
+                        <p>Qualora avesse già provveduto al pagamento, La preghiamo di non tenere conto della presente comunicazione.</p>
                         
                         <p style="margin-top:50px; text-align:right;">Distinti saluti,<br>L'Amministratore<br>___________________</p>
                     </body>
@@ -2937,8 +3009,16 @@ app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, 
 
                 const previewUrl = nodemailer.getTestMessageUrl(info) || '';
                 
-                db.run('INSERT INTO convocations_log (condominio_id, user_id, destinatario, email, preview_url) VALUES (?, ?, ?, ?, ?)', 
-                    [req.condominio_id, quote.user_id, 'SOLLECITO: ' + quote.nome, quote.email, previewUrl]);
+                logCommunicationSent({
+                    condominio_id: req.condominio_id,
+                    user_id: quote.user_id,
+                    destinatario: quote.nome,
+                    email: quote.email,
+                    tipo: 'Sollecito di Pagamento',
+                    oggetto: `Sollecito quota: ${quote.title} (€ ${Number(quote.amount).toFixed(2)})`,
+                    contenuto_html: htmlContent,
+                    preview_url: previewUrl
+                });
                 
                 res.json({ success: true, message: 'Sollecito inviato con successo!', previewUrl });
             } catch (e) {
@@ -2984,7 +3064,7 @@ app.post('/api/communications/send', authenticateToken, requireCondominio, isAdm
                 browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
                 
                 // Formatta il messaggio con br per l'HTML
-                const formattedMessage = message.replace(/\\n/g, '<br>');
+                const formattedMessage = message.replace(/\n/g, '<br>');
                 
                 for (const u of validUsers) {
                     const page = await browser.newPage();
@@ -2997,7 +3077,7 @@ app.post('/api/communications/send', authenticateToken, requireCondominio, isAdm
                             <div style="text-align:right; margin-bottom: 30px;">
                                 Spett.le<br>
                                 <b>${u.nome}</b><br>
-                                Unit�: ${u.unita || 'N/D'}
+                                Unità: ${u.unita || 'N/D'}
                             </div>
                             
                             <h3 style="margin-bottom: 30px; border-bottom: 1px solid #ccc; padding-bottom:5px;">Oggetto: ${subject}</h3>
@@ -3025,12 +3105,20 @@ app.post('/api/communications/send', authenticateToken, requireCondominio, isAdm
 
                     const previewUrl = nodemailer.getTestMessageUrl(info) || '';
                     
-                    db.run('INSERT INTO convocations_log (condominio_id, user_id, destinatario, email, preview_url) VALUES (?, ?, ?, ?, ?)', 
-                        [req.condominio_id, u.id, 'COMUNICAZIONE: ' + subject.substring(0, 20), u.email, previewUrl]);
+                    logCommunicationSent({
+                        condominio_id: req.condominio_id,
+                        user_id: u.id,
+                        destinatario: u.nome,
+                        email: u.email,
+                        tipo: 'Comunicazione / Circolare',
+                        oggetto: subject,
+                        contenuto_html: htmlContent,
+                        preview_url: previewUrl
+                    });
                 }
                 
                 await browser.close();
-                res.json({ success: true, message: 'Comunicazioni inviate con successo a ' + validUsers.length + ' cond�mini!' });
+                res.json({ success: true, message: 'Comunicazioni inviate con successo a ' + validUsers.length + ' condòmini!' });
                 
             } catch (e) {
                 if(browser) await browser.close();

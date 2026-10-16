@@ -1081,6 +1081,21 @@
                     </div>
                 </div>
 
+                <!-- Card: Storico Comunicazioni Inviate (Admin) -->
+                <div onclick="switchTab('storico-comunicazioni')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-300">
+                    <div>
+                        <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+                            <i class="fa-solid fa-box-archive"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Storico Comunicazioni Inviate</h3>
+                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Archivio certificato di convocazioni, circolari, solleciti e ricevute con ricerca per nominativo.</p>
+                    </div>
+                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
+                        <span>Cerca per nominativo</span>
+                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                    </div>
+                </div>
+
                 <!-- Card: Segnalazioni Guasti (con supporto lampeggio per guasti aperti) -->
                 <div id="dash-card-tickets" onclick="switchTab('tickets')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-rose-300 relative overflow-hidden transition-all">
                     <div>
@@ -1442,12 +1457,21 @@
             </div>
 
             
-            <!-- Storico Convocazioni (Admin) -->
-            <div class="admin-only hidden">
-                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <i class="fa-solid fa-clock-rotate-left text-slate-500"></i> Storico Convocazioni Inviate
-                </h2>
-                <div id="assemblies-log-container" class="space-y-3 mb-8">
+            <!-- Storico Comunicazioni Inviate (Admin) -->
+            <div class="admin-only hidden bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-box-archive text-indigo-600"></i> Storico Comunicazioni Inviate
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Archivio recente delle convocazioni e comunicazioni inviate ai condòmini.</p>
+                    </div>
+                    <button onclick="switchTab('storico-comunicazioni')" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-colors self-start sm:self-auto">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <span>Cerca per Nominativo nell'Archivio</span>
+                    </button>
+                </div>
+                <div id="assemblies-log-container" class="space-y-3">
                     <div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Caricamento storico...</div>
                 </div>
             </div>
@@ -1466,9 +1490,15 @@
              ==================================================================== -->
         <section id="tab-communications" class="tab-pane hidden space-y-8">
             <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-                <div class="mb-6">
-                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Circolari e Comunicazioni</h1>
-                    <p class="text-sm text-slate-500 mt-1">Invia comunicazioni a testo libero in PDF ai condòmini. L'invio verrà tracciato nello storico.</p>
+                <div class="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Circolari e Comunicazioni</h1>
+                        <p class="text-sm text-slate-500 mt-1">Invia comunicazioni a testo libero in PDF ai condòmini. L'invio verrà tracciato nello storico.</p>
+                    </div>
+                    <button onclick="switchTab('storico-comunicazioni')" class="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-2 transition-colors self-start sm:self-auto">
+                        <i class="fa-solid fa-box-archive"></i>
+                        <span>Vai a Storico Comunicazioni Inviate</span>
+                    </button>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -1500,19 +1530,161 @@
                         <h3 class="text-blue-800 font-bold mb-3 flex items-center"><i class="fa-solid fa-circle-info mr-2"></i> Come Funziona</h3>
                         <p class="text-sm text-blue-700 mb-3">La piattaforma prenderà il testo che scrivi qui a lato e lo impaginerà automaticamente all'interno di un <b>documento PDF ufficiale</b> del Condominio.</p>
                         <p class="text-sm text-blue-700 mb-3">Il documento conterrà l'intestazione, i dati del destinatario, l'oggetto e la tua firma.</p>
-                        <p class="text-sm text-blue-700">Tutti gli invii verranno registrati per tua sicurezza nello <b>Storico Convocazioni e Comunicazioni</b> (nella scheda Area Assemblee).</p>
+                        <p class="text-sm text-blue-700">Tutti gli invii verranno registrati per tua sicurezza nello <b>Storico Comunicazioni Inviate</b>, dove potrai ricercarli per nominativo e ristamparli.</p>
                     </div>
                 </div>
 
-                <!-- STORICO COMUNICAZIONI -->
+                <!-- STORICO COMUNICAZIONI INVIATE -->
                 <div class="mt-8 border-t border-slate-200 pt-8">
-                    <h2 class="text-base font-bold text-slate-900 mb-4 flex items-center">
-                        <i class="fa-solid fa-clock-rotate-left text-slate-500 mr-2"></i> Storico Globale Email Inviate
-                    </h2>
-                    <p class="text-xs text-slate-500 mb-4">Registro di tutte le email (Solleciti, Ricevute, Circolari, Convocazioni) inviate dalla piattaforma.</p>
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                        <div>
+                            <h2 class="text-base font-bold text-slate-900 flex items-center">
+                                <i class="fa-solid fa-box-archive text-indigo-600 mr-2"></i> Storico Comunicazioni Inviate
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-0.5">Registro di tutte le comunicazioni (Convocazioni, Circolari, Solleciti, Ricevute) inviate dalla piattaforma.</p>
+                        </div>
+                        <button onclick="switchTab('storico-comunicazioni')" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-colors self-start sm:self-auto">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <span>Ricerca Avanzata per Nominativo</span>
+                        </button>
+                    </div>
                     <div id="communications-log-container" class="space-y-3 mb-8">
                         <div class="py-4 text-center text-slate-400 bg-white rounded-2xl border text-sm italic">Caricamento storico...</div>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             NEW TAB: STORICO COMUNICAZIONI INVIATE (RICERCA PER NOMINATIVO)
+             ==================================================================== -->
+        <section id="tab-storico-comunicazioni" class="tab-pane hidden space-y-6">
+            <!-- Header & Azioni -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-box-archive"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Storico Comunicazioni Inviate</h1>
+                        <p class="text-sm text-slate-500 mt-0.5">Archivio certificato di convocazioni, circolari, solleciti e ricevute inviate ai condòmini con ricerca rapida per nominativo.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    <button onclick="loadConvocationsLog()" class="px-3.5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors">
+                        <i class="fa-solid fa-rotate-right text-slate-400"></i>
+                        <span>Aggiorna</span>
+                    </button>
+                    <button onclick="switchTab('communications')" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-colors">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Nuova Comunicazione</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPI Riepilogo Archivio -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-envelope-circle-check"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Totale Archiviate</span>
+                        <span id="storico-kpi-totale" class="text-xl font-black text-slate-900">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-landmark"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Convocazioni</span>
+                        <span id="storico-kpi-convocazioni" class="text-xl font-black text-indigo-600">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-bullhorn"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Circolari & Avvisi</span>
+                        <span id="storico-kpi-circolari" class="text-xl font-black text-sky-600">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Ricevute & Solleciti</span>
+                        <span id="storico-kpi-contabili" class="text-xl font-black text-emerald-600">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra di Ricerca per Nominativo & Filtri -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                    <div class="md:col-span-5">
+                        <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                            <i class="fa-solid fa-magnifying-glass text-indigo-600 mr-1"></i> Cerca per Nominativo, Email, Unità o Oggetto
+                        </label>
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-xs"></i>
+                            <input type="text" id="storico-search-nominativo" oninput="filterStoricoComunicazioni()" placeholder="Digita il nome del condòmino (es. Rossi), interno o oggetto..." class="w-full pl-9 pr-4 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-colors">
+                        </div>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                            <i class="fa-solid fa-user text-indigo-600 mr-1"></i> Filtra Nominativo
+                        </label>
+                        <select id="storico-filter-user" onchange="filterStoricoComunicazioni()" class="w-full py-2.5 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none">
+                            <option value="">Tutti i Condòmini</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                            <i class="fa-solid fa-filter text-indigo-600 mr-1"></i> Tipologia Comunicazione
+                        </label>
+                        <select id="storico-filter-tipo" onchange="filterStoricoComunicazioni()" class="w-full py-2.5 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none">
+                            <option value="">Tutte le tipologie</option>
+                            <option value="Convocazione Assemblea">Convocazione Assemblea</option>
+                            <option value="Comunicazione / Circolare">Comunicazione / Circolare</option>
+                            <option value="Sollecito di Pagamento">Sollecito di Pagamento</option>
+                            <option value="Ricevuta di Pagamento">Ricevuta di Pagamento</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-1">
+                        <button onclick="resetStoricoComunicazioniFilters()" class="w-full py-2.5 px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 font-bold text-xs transition-colors flex items-center justify-center gap-1" title="Azzera tutti i filtri">
+                            <i class="fa-solid fa-filter-circle-xmark"></i>
+                            <span class="md:hidden">Azzera Filtri</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <span id="storico-filter-results-count" class="font-semibold">Caricamento comunicazioni archiviate...</span>
+                </div>
+            </div>
+
+            <!-- Tabella Archivio Comunicazioni -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead class="bg-slate-50 text-slate-600 uppercase tracking-wider border-b border-slate-200 font-bold">
+                            <tr>
+                                <th class="py-3.5 px-4">Data & Ora Invio</th>
+                                <th class="py-3.5 px-4">Nominativo Destinatario</th>
+                                <th class="py-3.5 px-4">Tipologia</th>
+                                <th class="py-3.5 px-4">Oggetto / Causale</th>
+                                <th class="py-3.5 px-4 text-right">Documento & Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="storico-comunicazioni-tbody" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="5" class="py-8 text-center text-slate-400 italic">Caricamento archivio comunicazioni...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>
@@ -2899,7 +3071,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261016_v1"></script>
+    <script src="app_v4.js?v=20261016_v2"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
