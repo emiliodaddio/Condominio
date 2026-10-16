@@ -277,6 +277,7 @@ function switchTab(tabId) {
         'assemblies': 'Assemblee & Verbali',
         'communications': 'Comunicazioni & Circolari',
         'storico-comunicazioni': 'Storico Comunicazioni Inviate',
+        'documenti': 'Documenti & Allegati Condominiali',
         'tickets': 'Segnalazioni Guasti & Manutenzioni',
         'admin-profile': 'Studio Amministratore',
         'condominio': 'Dati Ufficiali del Condominio',
@@ -313,10 +314,11 @@ function switchTab(tabId) {
     }
 
     if (tabId === 'accounting') loadAccountingData();
-    if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); }
+    if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); if (typeof loadCondoDocumentsBadge === 'function') loadCondoDocumentsBadge(); }
     else if (tabId === 'condominio') loadAnagrafica();
     else if (tabId === 'assemblies') loadAssembliesData();
     else if (tabId === 'communications' || tabId === 'storico-comunicazioni') loadConvocationsLog();
+    else if (tabId === 'documenti') loadCondoDocuments();
     else if (tabId === 'tickets') loadTicketsData();
     else if (tabId === 'users' && state.currentUser.role === 'admin') loadUsersList();
     else if (tabId === 'anagrafica' && state.currentUser.role === 'admin') { loadAnagrafica(); loadUsersList(); loadRubrica(); }
@@ -6448,6 +6450,639 @@ window.printMillesimiDistribution = function() {
     `);
     w.document.close();
 };
+
+// ============================================================================
+// DOCUMENTI & ALLEGATI BIDIREZIONALI (AMMINISTRATORE <-> CONDÒMINI)
+// ============================================================================
+state.condoDocuments = [];
+state.docDirectionFilter = 'all';
+state.pendingUploadFile = null;
+
+function formatFileSizeHuman(bytes) {
+    const b = parseInt(bytes, 10) || 0;
+    if (b <= 0) return 'PDF / Allegato';
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function getDocFileIcon(fileName, mime) {
+    const ext = String(fileName || '').split('.').pop().toLowerCase();
+    const m = String(mime || '').toLowerCase();
+    if (ext === 'pdf' || m.includes('pdf')) {
+        return '<i class="fa-solid fa-file-pdf text-rose-600 text-base"></i>';
+    }
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) || m.includes('image')) {
+        return '<i class="fa-solid fa-file-image text-sky-600 text-base"></i>';
+    }
+    if (['xls', 'xlsx', 'csv'].includes(ext) || m.includes('spreadsheet') || m.includes('excel')) {
+        return '<i class="fa-solid fa-file-excel text-emerald-600 text-base"></i>';
+    }
+    if (['doc', 'docx'].includes(ext) || m.includes('word')) {
+        return '<i class="fa-solid fa-file-word text-blue-600 text-base"></i>';
+    }
+    return '<i class="fa-solid fa-file-lines text-slate-600 text-base"></i>';
+}
+
+function updateDocumentsDashboardBadge(docs) {
+    const list = Array.isArray(docs) ? docs : (state.condoDocuments || []);
+    const pendingCount = list.filter(d => d.status === 'Da visionare').length;
+    const badge = document.getElementById('dash-doc-alert-badge');
+    const countText = document.getElementById('dash-doc-count-text');
+
+    if (badge) {
+        if (pendingCount > 0) {
+            badge.classList.remove('hidden');
+            badge.classList.add('inline-flex');
+            if (countText) {
+                countText.textContent = pendingCount === 1 ? '1 DA VISIONARE' : `${pendingCount} DA VISIONARE`;
+            }
+        } else {
+            badge.classList.add('hidden');
+            badge.classList.remove('inline-flex');
+        }
+    }
+}
+
+async function loadCondoDocumentsBadge() {
+    try {
+        const res = await fetch('/api/documents', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+            state.condoDocuments = data.data;
+            updateDocumentsDashboardBadge(data.data);
+        }
+    } catch (_) {}
+}
+
+async function loadCondoDocuments() {
+    try {
+        const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+
+        // Personalizza etichette UI in base al ruolo (Amministratore vs Condòmino)
+        const btnLabel = document.getElementById('btn-upload-doc-label');
+        const subTitle = document.getElementById('doc-header-subtitle');
+        const tabToLabel = document.getElementById('doc-tab-to-condomino-label');
+        const tabFromLabel = document.getElementById('doc-tab-from-condomino-label');
+        const personaFilterWrap = document.getElementById('doc-filter-persona-wrapper');
+
+        if (isAdmin) {
+            if (btnLabel) btnLabel.textContent = '+ Carica / Invia Documento';
+            if (subTitle) subTitle.textContent = 'Bacheca documenti ufficiali del condominio e scambio bidirezionale di allegati tra Studio Amministratore e Condòmini.';
+            if (tabToLabel) tabToLabel.textContent = 'Inviati ai Singoli Condòmini';
+            if (tabFromLabel) tabFromLabel.textContent = 'Ricevuti dai Condòmini';
+            if (personaFilterWrap) personaFilterWrap.classList.remove('hidden');
+        } else {
+            if (btnLabel) btnLabel.textContent = '+ Invia Allegato all\'Amministratore';
+            if (subTitle) subTitle.textContent = 'Consulta i documenti ufficiali del condominio e invia ricevute di pagamento o allegati allo Studio Amministratore.';
+            if (tabToLabel) tabToLabel.textContent = 'Ricevuti dallo Studio';
+            if (tabFromLabel) tabFromLabel.textContent = 'Inviati da Me allo Studio';
+            if (personaFilterWrap) personaFilterWrap.classList.add('hidden');
+        }
+
+        // Assicura il caricamento dell'Anagrafica per l'Amministratore
+        if (isAdmin && (!state.persone || state.persone.length === 0)) {
+            try {
+                const [pRes, uRes] = await Promise.all([
+                    fetch('/api/persone', { headers: getAuthHeaders() }),
+                    fetch('/api/unita', { headers: getAuthHeaders() })
+                ]);
+                const pData = await pRes.json();
+                const uData = await uRes.json();
+                if (pData.success) state.persone = pData.data || [];
+                if (uData.success) state.unita = uData.data || [];
+            } catch (_) {}
+        }
+
+        populateDocPersonaSelectors();
+
+        const res = await fetch('/api/documents', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+            state.condoDocuments = data.data;
+        } else {
+            state.condoDocuments = [];
+        }
+
+        // Aggiorna KPI
+        const docs = state.condoDocuments;
+        const kpiTotal = document.getElementById('doc-kpi-total');
+        const kpiBacheca = document.getElementById('doc-kpi-bacheca');
+        const kpiIndiv = document.getElementById('doc-kpi-individuali');
+        const kpiPending = document.getElementById('doc-kpi-pending');
+
+        if (kpiTotal) kpiTotal.textContent = docs.length;
+        if (kpiBacheca) kpiBacheca.textContent = docs.filter(d => d.recipient_type === 'all').length;
+        if (kpiIndiv) kpiIndiv.textContent = docs.filter(d => d.recipient_type !== 'all').length;
+        if (kpiPending) kpiPending.textContent = docs.filter(d => d.status === 'Da visionare').length;
+
+        updateDocumentsDashboardBadge(docs);
+        renderCondoDocumentsTable();
+    } catch (e) {
+        console.error('Errore caricamento documenti:', e);
+    }
+}
+
+function populateDocPersonaSelectors() {
+    const rows = typeof buildMillesimiDistributionRows === 'function' ? buildMillesimiDistributionRows() : [];
+    const filterSel = document.getElementById('doc-filter-persona');
+    const uploadSel = document.getElementById('doc-upload-persona-id');
+
+    if (filterSel) {
+        const currentVal = filterSel.value;
+        filterSel.innerHTML = '<option value="">Tutti i Condòmini</option>' +
+            rows.map(r => `<option value="${r.persona_id}">${r.nominativo} (${r.unitaLabel})</option>`).join('');
+        filterSel.value = currentVal;
+    }
+
+    if (uploadSel) {
+        const currentVal = uploadSel.value;
+        uploadSel.innerHTML = '<option value="">-- Seleziona Condòmino dall\'Anagrafica --</option>' +
+            rows.map(r => `<option value="${r.persona_id}">${r.nominativo} — ${r.unitaLabel}</option>`).join('');
+        uploadSel.value = currentVal;
+    }
+}
+
+window.setDocDirectionFilter = function(mode) {
+    state.docDirectionFilter = mode || 'all';
+    const modes = ['all', 'bacheca', 'to_condomino', 'from_condomino'];
+    modes.forEach(m => {
+        const btn = document.getElementById(`doc-tab-${m}`);
+        if (!btn) return;
+        if (m === state.docDirectionFilter) {
+            btn.className = 'px-3.5 py-2 rounded-xl text-xs font-extrabold bg-orange-600 text-white shadow-2xs transition-all flex items-center gap-1.5';
+        } else {
+            btn.className = 'px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5';
+        }
+    });
+    renderCondoDocumentsTable();
+};
+
+window.resetCondoDocumentsFilters = function() {
+    const s = document.getElementById('doc-search-input');
+    const p = document.getElementById('doc-filter-persona');
+    const c = document.getElementById('doc-filter-category');
+    const st = document.getElementById('doc-filter-status');
+    if (s) s.value = '';
+    if (p) p.value = '';
+    if (c) c.value = '';
+    if (st) st.value = '';
+    setDocDirectionFilter('all');
+};
+
+function getDocDirectionBadgeHtml(doc) {
+    if (doc.recipient_type === 'all') {
+        return `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-extrabold uppercase tracking-wider">
+                <i class="fa-solid fa-bullhorn"></i> Bacheca Condominio
+            </span>
+            <div class="font-bold text-slate-900 text-xs mt-1">Tutti i Condòmini</div>
+            <div class="text-[11px] text-slate-500">Pubblicato da: Studio Amministratore</div>
+        `;
+    }
+    if (doc.sender_role === 'admin' && doc.recipient_type === 'persona') {
+        return `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-extrabold uppercase tracking-wider">
+                <i class="fa-solid fa-share-from-square"></i> Studio &rarr; Condòmino
+            </span>
+            <div class="font-extrabold text-slate-900 text-xs mt-1">${doc.recipient_name || 'Condòmino'}</div>
+            ${doc.unita_label ? `<div class="text-[11px] text-slate-500 font-semibold">${doc.unita_label}</div>` : ''}
+        `;
+    }
+    return `
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase tracking-wider">
+            <i class="fa-solid fa-inbox"></i> Condòmino &rarr; Studio
+        </span>
+        <div class="font-extrabold text-slate-900 text-xs mt-1">${doc.sender_name || 'Condòmino'}</div>
+        ${doc.unita_label ? `<div class="text-[11px] text-slate-500 font-semibold">${doc.unita_label}</div>` : '<div class="text-[11px] text-slate-500">Destinatario: Studio Amministratore</div>'}
+    `;
+}
+
+function getDocStatusBadgeHtml(doc, isAdmin) {
+    const st = doc.status || 'Pubblicato';
+    const colors = {
+        'Da visionare': 'bg-amber-50 text-amber-700 border-amber-300',
+        'Visionato': 'bg-blue-50 text-blue-700 border-blue-200',
+        'Archiviato': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        'Pubblicato': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        'Inviato': 'bg-sky-50 text-sky-700 border-sky-200'
+    };
+    const cls = colors[st] || 'bg-slate-100 text-slate-700 border-slate-200';
+
+    if (isAdmin && doc.sender_role === 'condomino') {
+        return `
+            <select onchange="updateCondoDocumentStatus(${doc.id}, this.value)" class="px-2.5 py-1 rounded-lg border text-[11px] font-extrabold outline-none cursor-pointer ${cls}">
+                <option value="Da visionare" ${st === 'Da visionare' ? 'selected' : ''}>Da visionare</option>
+                <option value="Visionato" ${st === 'Visionato' ? 'selected' : ''}>Visionato</option>
+                <option value="Archiviato" ${st === 'Archiviato' ? 'selected' : ''}>Archiviato / OK</option>
+            </select>
+        `;
+    }
+    return `<span class="inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] font-extrabold uppercase tracking-wider ${cls}">${st}</span>`;
+}
+
+window.renderCondoDocumentsTable = function() {
+    const tbody = document.getElementById('doc-table-body');
+    const countLabel = document.getElementById('doc-filter-count-label');
+    if (!tbody) return;
+
+    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+    const searchVal = (document.getElementById('doc-search-input')?.value || '').trim().toLowerCase();
+    const personaFilter = document.getElementById('doc-filter-persona')?.value || '';
+    const categoryFilter = document.getElementById('doc-filter-category')?.value || '';
+    const statusFilter = document.getElementById('doc-filter-status')?.value || '';
+    const dirFilter = state.docDirectionFilter || 'all';
+
+    const filtered = (state.condoDocuments || []).filter(doc => {
+        if (dirFilter === 'bacheca' && doc.recipient_type !== 'all') return false;
+        if (dirFilter === 'to_condomino' && !(doc.sender_role === 'admin' && doc.recipient_type === 'persona')) return false;
+        if (dirFilter === 'from_condomino' && doc.sender_role !== 'condomino') return false;
+
+        if (personaFilter) {
+            const pId = Number(personaFilter);
+            const matchRec = doc.recipient_persona_id && Number(doc.recipient_persona_id) === pId;
+            const matchSend = doc.sender_persona_id && Number(doc.sender_persona_id) === pId;
+            if (!matchRec && !matchSend) return false;
+        }
+
+        if (categoryFilter && doc.category !== categoryFilter) return false;
+        if (statusFilter && doc.status !== statusFilter) return false;
+
+        if (searchVal) {
+            const haystack = [
+                doc.title,
+                doc.file_name,
+                doc.notes,
+                doc.category,
+                doc.sender_name,
+                doc.recipient_name,
+                doc.unita_label
+            ].filter(Boolean).join(' ').toLowerCase();
+            if (!haystack.includes(searchVal)) return false;
+        }
+        return true;
+    });
+
+    if (countLabel) {
+        countLabel.textContent = filtered.length === 1
+            ? '1 documento trovato nell\'archivio'
+            : `${filtered.length} documenti trovati nell'archivio`;
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="py-10 text-center text-slate-400">
+                    <i class="fa-solid fa-folder-open text-3xl mb-2 block text-slate-300"></i>
+                    <span class="text-xs font-semibold">Nessun documento o allegato corrisponde ai filtri selezionati.</span>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(doc => {
+        const dtStr = typeof formatCommDateTime === 'function' ? formatCommDateTime(doc.created_at) : (doc.created_at || '');
+        const canDelete = isAdmin || (state.currentUser && Number(doc.sender_user_id) === Number(state.currentUser.id) && doc.status === 'Da visionare');
+        return `
+            <tr class="hover:bg-orange-50/30 transition-colors">
+                <td class="py-3.5 px-4 whitespace-nowrap font-bold text-slate-700">${dtStr}</td>
+                <td class="py-3.5 px-4">${getDocDirectionBadgeHtml(doc)}</td>
+                <td class="py-3.5 px-4">
+                    <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold text-[11px] inline-block">${doc.category || 'Documento'}</span>
+                </td>
+                <td class="py-3.5 px-4">
+                    <div class="font-extrabold text-slate-900 text-xs sm:text-sm">${doc.title}</div>
+                    <div class="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                        ${getDocFileIcon(doc.file_name, doc.file_mime)}
+                        <span class="font-mono font-semibold text-slate-700">${doc.file_name}</span>
+                        <span class="text-slate-400">&bull; ${formatFileSizeHuman(doc.file_size)}</span>
+                    </div>
+                    ${doc.notes ? `<p class="text-[11px] text-slate-500 italic mt-1">${doc.notes}</p>` : ''}
+                </td>
+                <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                    ${getDocStatusBadgeHtml(doc, isAdmin)}
+                </td>
+                <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                    <div class="inline-flex items-center gap-1.5">
+                        <button type="button" onclick="previewCondoDocument(${doc.id})" class="px-2.5 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-bold text-[11px] inline-flex items-center gap-1 transition-colors" title="Visualizza Anteprima">
+                            <i class="fa-solid fa-eye"></i>
+                            <span>Vedi</span>
+                        </button>
+                        <button type="button" onclick="downloadCondoDocument(${doc.id})" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] inline-flex items-center gap-1 transition-colors" title="Scarica Allegato">
+                            <i class="fa-solid fa-download"></i>
+                            <span>Scarica</span>
+                        </button>
+                        ${canDelete ? `
+                            <button type="button" onclick="deleteCondoDocument(${doc.id})" class="p-1.5 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors" title="Elimina Documento">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+};
+
+window.openUploadDocumentModal = function() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast('Condominio in Sola Lettura: caricamento documenti bloccato.', 'warning');
+        return;
+    }
+
+    const modal = document.getElementById('modal-upload-document');
+    if (!modal) return;
+
+    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+    const adminRecSection = document.getElementById('doc-admin-recipient-section');
+    const condoBanner = document.getElementById('doc-condomino-recipient-banner');
+    const modalTitle = document.getElementById('modal-upload-doc-title');
+    const modalSub = document.getElementById('modal-upload-doc-subtitle');
+    const catSelect = document.getElementById('doc-upload-category');
+
+    populateDocPersonaSelectors();
+
+    // Reset form
+    state.pendingUploadFile = null;
+    const form = document.getElementById('form-upload-document');
+    if (form) form.reset();
+    const fileLabel = document.getElementById('doc-upload-file-label');
+    const fileSub = document.getElementById('doc-upload-file-sub');
+    if (fileLabel) fileLabel.textContent = 'Clicca qui per selezionare un file dal tuo dispositivo';
+    if (fileSub) fileSub.textContent = 'Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx';
+
+    if (isAdmin) {
+        if (adminRecSection) adminRecSection.classList.remove('hidden');
+        if (condoBanner) condoBanner.classList.add('hidden');
+        if (modalTitle) modalTitle.textContent = 'Carica e Invia Documento / Allegato';
+        if (modalSub) modalSub.textContent = 'Pubblica in Bacheca Condominiale o invia un documento a un singolo condòmino';
+        if (catSelect) catSelect.value = 'Regolamento & Polizze';
+        onChangeDocDirectionMode();
+    } else {
+        if (adminRecSection) adminRecSection.classList.add('hidden');
+        if (condoBanner) condoBanner.classList.remove('hidden');
+        if (modalTitle) modalTitle.textContent = 'Invia Documento / Allegato all\'Amministratore';
+        if (modalSub) modalSub.textContent = 'Carica ricevute di bonifico, deleghe o documentazione per lo Studio Amministrativo';
+        if (catSelect) catSelect.value = 'Ricevuta Bonifico / Pagamento';
+    }
+
+    modal.classList.remove('hidden');
+};
+
+window.closeUploadDocumentModal = function() {
+    const modal = document.getElementById('modal-upload-document');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.onChangeDocDirectionMode = function() {
+    const selectedRadio = document.querySelector('input[name="doc_direction_mode"]:checked');
+    const mode = selectedRadio ? selectedRadio.value : 'all';
+    const wrapper = document.getElementById('doc-persona-select-wrapper');
+    const label = document.getElementById('doc-persona-select-label');
+    const catSelect = document.getElementById('doc-upload-category');
+
+    if (!wrapper) return;
+    if (mode === 'all') {
+        wrapper.classList.add('hidden');
+        if (catSelect) catSelect.value = 'Regolamento & Polizze';
+    } else if (mode === 'persona') {
+        wrapper.classList.remove('hidden');
+        if (label) label.textContent = 'Seleziona Condòmino Destinatario (dall\'Anagrafica) *';
+        if (catSelect) catSelect.value = 'Comunicazione Individuale';
+    } else if (mode === 'from_condomino') {
+        wrapper.classList.remove('hidden');
+        if (label) label.textContent = 'Seleziona Condòmino Mittente (dall\'Anagrafica) *';
+        if (catSelect) catSelect.value = 'Ricevuta Bonifico / Pagamento';
+    }
+};
+
+window.onSelectDocumentFile = function(input) {
+    const file = input && input.files && input.files[0];
+    const fileLabel = document.getElementById('doc-upload-file-label');
+    const fileSub = document.getElementById('doc-upload-file-sub');
+    const titleInput = document.getElementById('doc-upload-title');
+
+    if (!file) {
+        state.pendingUploadFile = null;
+        return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('Il file supera la dimensione massima di 10 MB.', 'error');
+        input.value = '';
+        state.pendingUploadFile = null;
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        state.pendingUploadFile = {
+            file_name: file.name,
+            file_mime: file.type || 'application/octet-stream',
+            file_size: file.size,
+            file_data: evt.target.result
+        };
+        if (fileLabel) fileLabel.innerHTML = `<span class="text-emerald-700 font-extrabold"><i class="fa-solid fa-circle-check mr-1"></i> File pronto: ${file.name}</span>`;
+        if (fileSub) fileSub.textContent = `Dimensione: ${formatFileSizeHuman(file.size)}`;
+        if (titleInput && !titleInput.value.trim()) {
+            titleInput.value = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+        }
+    };
+    reader.readAsDataURL(file);
+};
+
+window.submitUploadDocument = async function(e) {
+    if (e) e.preventDefault();
+
+    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+    const title = document.getElementById('doc-upload-title')?.value.trim();
+    const category = document.getElementById('doc-upload-category')?.value || 'Altra Documentazione';
+    const notes = document.getElementById('doc-upload-notes')?.value.trim() || '';
+
+    if (!title) {
+        showToast('Inserisci il titolo del documento.', 'warning');
+        return;
+    }
+    if (!state.pendingUploadFile || !state.pendingUploadFile.file_data) {
+        showToast('Seleziona un file da caricare dal tuo dispositivo.', 'warning');
+        return;
+    }
+
+    const payload = {
+        category,
+        title,
+        notes,
+        file_name: state.pendingUploadFile.file_name,
+        file_mime: state.pendingUploadFile.file_mime,
+        file_size: state.pendingUploadFile.file_size,
+        file_data: state.pendingUploadFile.file_data
+    };
+
+    if (isAdmin) {
+        const selectedRadio = document.querySelector('input[name="doc_direction_mode"]:checked');
+        const mode = selectedRadio ? selectedRadio.value : 'all';
+        const personaId = document.getElementById('doc-upload-persona-id')?.value;
+
+        if (mode === 'all') {
+            payload.recipient_type = 'all';
+        } else if (mode === 'persona') {
+            if (!personaId) {
+                showToast('Seleziona il condòmino destinatario dall\'elenco.', 'warning');
+                return;
+            }
+            payload.recipient_type = 'persona';
+            payload.recipient_persona_id = personaId;
+        } else if (mode === 'from_condomino') {
+            if (!personaId) {
+                showToast('Seleziona il condòmino mittente dall\'elenco.', 'warning');
+                return;
+            }
+            payload.direction = 'from_condomino';
+            payload.sender_persona_id = personaId;
+        }
+    }
+
+    try {
+        const btn = document.getElementById('btn-submit-upload-doc');
+        if (btn) btn.disabled = true;
+
+        const res = await fetch('/api/documents', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (btn) btn.disabled = false;
+
+        if (data.success) {
+            showToast(data.message || 'Documento caricato con successo!', 'success');
+            closeUploadDocumentModal();
+            loadCondoDocuments();
+        } else {
+            showToast(data.message || 'Errore durante il caricamento.', 'error');
+        }
+    } catch (err) {
+        const btn = document.getElementById('btn-submit-upload-doc');
+        if (btn) btn.disabled = false;
+        showToast('Errore di connessione durante il caricamento.', 'error');
+    }
+};
+
+window.previewCondoDocument = async function(docId) {
+    try {
+        const res = await fetch(`/api/documents/${docId}/file`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!data.success || !data.data) {
+            showToast(data.message || 'Impossibile aprire il documento.', 'error');
+            return;
+        }
+        const doc = data.data;
+        const modal = document.getElementById('modal-preview-document');
+        const titleEl = document.getElementById('preview-doc-title');
+        const fileEl = document.getElementById('preview-doc-filename');
+        const dlBtn = document.getElementById('preview-doc-download-btn');
+        const bodyEl = document.getElementById('preview-doc-body');
+
+        if (titleEl) titleEl.textContent = doc.title || 'Documento';
+        if (fileEl) fileEl.textContent = `${doc.file_name} (${formatFileSizeHuman(doc.file_size)})`;
+        if (dlBtn) {
+            dlBtn.href = doc.file_data || '#';
+            dlBtn.download = doc.file_name || 'documento.pdf';
+        }
+
+        const mime = String(doc.file_mime || '').toLowerCase();
+        const ext = String(doc.file_name || '').split('.').pop().toLowerCase();
+
+        if (bodyEl) {
+            if (mime.includes('pdf') || ext === 'pdf') {
+                bodyEl.innerHTML = `<iframe src="${doc.file_data}" class="w-full h-full rounded-xl border border-slate-300 bg-white"></iframe>`;
+            } else if (mime.includes('image') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                bodyEl.innerHTML = `<img src="${doc.file_data}" alt="${doc.file_name}" class="max-w-full max-h-full object-contain rounded-xl shadow-md">`;
+            } else {
+                bodyEl.innerHTML = `
+                    <div class="bg-white p-8 rounded-2xl border border-slate-200 text-center max-w-md space-y-4">
+                        <div class="text-4xl">${getDocFileIcon(doc.file_name, doc.file_mime)}</div>
+                        <h4 class="font-bold text-slate-900 text-sm">${doc.file_name}</h4>
+                        <p class="text-xs text-slate-500">Questo formato file può essere scaricato e aperto direttamente sul tuo dispositivo.</p>
+                        <a href="${doc.file_data}" download="${doc.file_name}" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs">
+                            <i class="fa-solid fa-download"></i> Scarica sul Dispositivo
+                        </a>
+                    </div>
+                `;
+            }
+        }
+
+        if (modal) modal.classList.remove('hidden');
+    } catch (e) {
+        showToast('Errore apertura anteprima documento.', 'error');
+    }
+};
+
+window.closePreviewDocumentModal = function() {
+    const modal = document.getElementById('modal-preview-document');
+    const bodyEl = document.getElementById('preview-doc-body');
+    if (bodyEl) bodyEl.innerHTML = '';
+    if (modal) modal.classList.add('hidden');
+};
+
+window.downloadCondoDocument = async function(docId) {
+    try {
+        const res = await fetch(`/api/documents/${docId}/file`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!data.success || !data.data || !data.data.file_data) {
+            showToast(data.message || 'Errore durante il download.', 'error');
+            return;
+        }
+        const a = document.createElement('a');
+        a.href = data.data.file_data;
+        a.download = data.data.file_name || 'documento.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } catch (e) {
+        showToast('Errore durante il download del file.', 'error');
+    }
+};
+
+window.updateCondoDocumentStatus = async function(docId, newStatus) {
+    try {
+        const res = await fetch(`/api/documents/${docId}/status`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ status: newStatus })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'Stato aggiornato!', 'success');
+            loadCondoDocuments();
+        } else {
+            showToast(data.message || 'Errore aggiornamento stato.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione.', 'error');
+    }
+};
+
+window.deleteCondoDocument = async function(docId) {
+    if (!confirm('Sei sicuro di voler eliminare definitivamente questo documento?')) return;
+    try {
+        const res = await fetch(`/api/documents/${docId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Documento eliminato.', 'success');
+            loadCondoDocuments();
+        } else {
+            showToast(data.message || 'Errore eliminazione documento.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione.', 'error');
+    }
+};
+
 
 
 

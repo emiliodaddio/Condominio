@@ -524,7 +524,8 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = 'chiave_segreta_condominio_sicura_123!';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Disabilita completamente il caching dei file statici e delle risposte per evitare problemi di cache del browser
 app.use((req, res, next) => {
@@ -569,6 +570,7 @@ const db = require('./db');
 function initDatabase() {
     ensurePartialPaymentColumns();
     ensureAnagraficaAndUnitaColumns();
+    ensureCondoDocumentsTable();
     if (db.type === 'mysql') {
         console.log('✅ Inizializzazione schema MySQL verificata.');
         return;
@@ -3746,6 +3748,485 @@ app.get('/api/superuser/audit-logs', authenticateToken, requireSuperAdmin, (req,
     `, [], (err, rows) => {
         if (err) return res.status(500).json({ success: false, message: 'Database error audit' });
         res.json({ success: true, data: rows || [] });
+    });
+});
+
+// ============================================================================
+// DOCUMENTI & ALLEGATI BIDIREZIONALI (AMMINISTRATORE <-> CONDÒMINI)
+// ============================================================================
+function buildMinimalPdfDataUri(titleText, subtitleText, bodyText) {
+    const clean = (s) => String(s || '')
+        .replace(/[()\\]/g, '')
+        .replace(/[^\x20-\x7E]/g, ' ');
+    const t1 = clean(titleText).slice(0, 75);
+    const t2 = clean(subtitleText).slice(0, 85);
+    const t3 = clean(bodyText).slice(0, 95);
+    const streamContent = [
+        'BT',
+        '/F1 16 Tf',
+        '50 760 Td',
+        `(${t1}) Tj`,
+        '/F1 11 Tf',
+        '0 -28 Td',
+        `(${t2}) Tj`,
+        '0 -24 Td',
+        `(${t3}) Tj`,
+        'ET'
+    ].join('\n');
+    const pdf = `%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length ${streamContent.length} >> stream
+${streamContent}
+endstream endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000340 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+410
+%%EOF`;
+    return 'data:application/pdf;base64,' + Buffer.from(pdf, 'utf8').toString('base64');
+}
+
+function ensureCondoDocumentsTable() {
+    const createSql = db.type === 'mysql'
+        ? `CREATE TABLE IF NOT EXISTS condo_documents (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            condominio_id INT NOT NULL,
+            sender_user_id INT NULL,
+            sender_role VARCHAR(30) NOT NULL DEFAULT 'admin',
+            sender_name VARCHAR(255) NOT NULL,
+            sender_persona_id INT NULL,
+            recipient_type VARCHAR(30) NOT NULL DEFAULT 'all',
+            recipient_persona_id INT NULL,
+            recipient_user_id INT NULL,
+            recipient_name VARCHAR(255) NULL,
+            unita_label VARCHAR(150) NULL,
+            category VARCHAR(120) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            notes TEXT NULL,
+            file_name VARCHAR(255) NOT NULL,
+            file_mime VARCHAR(120) NOT NULL DEFAULT 'application/pdf',
+            file_size INT DEFAULT 0,
+            file_data LONGTEXT NULL,
+            status VARCHAR(50) DEFAULT 'Pubblicato',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`
+        : `CREATE TABLE IF NOT EXISTS condo_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            condominio_id INTEGER NOT NULL,
+            sender_user_id INTEGER,
+            sender_role TEXT NOT NULL DEFAULT 'admin',
+            sender_name TEXT NOT NULL,
+            sender_persona_id INTEGER,
+            recipient_type TEXT NOT NULL DEFAULT 'all',
+            recipient_persona_id INTEGER,
+            recipient_user_id INTEGER,
+            recipient_name TEXT,
+            unita_label TEXT,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            notes TEXT,
+            file_name TEXT NOT NULL,
+            file_mime TEXT NOT NULL DEFAULT 'application/pdf',
+            file_size INTEGER DEFAULT 0,
+            file_data TEXT,
+            status TEXT DEFAULT 'Pubblicato',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`;
+
+    db.run(createSql, [], (err) => {
+        if (err) {
+            console.warn('⚠️ Creazione tabella condo_documents:', err.message);
+            return;
+        }
+        console.log('✅ Tabella condo_documents verificata.');
+        // Popola documenti iniziali dimostrativi allineati all'Anagrafica se la tabella è vuota
+        db.all('SELECT id, nome FROM condominios', [], (errC, conds) => {
+            if (errC || !Array.isArray(conds)) return;
+            conds.forEach(c => {
+                db.get('SELECT COUNT(*) as cnt FROM condo_documents WHERE condominio_id = ?', [c.id], (errCnt, rowCnt) => {
+                    if (!errCnt && rowCnt && Number(rowCnt.cnt) === 0) {
+                        db.all(`
+                            SELECT p.id, p.nome, p.cognome, p.email, u.scala, u.piano, u.interno, u.identificativo
+                            FROM anagrafica_persone p
+                            LEFT JOIN unita_immobiliari u ON (u.proprietario_id = p.id OR u.conduttore_id = p.id) AND u.condominio_id = p.condominio_id
+                            WHERE p.condominio_id = ?
+                            ORDER BY p.cognome ASC, p.nome ASC
+                        `, [c.id], (errP, persone) => {
+                            const p1 = (persone && persone[0]) ? persone[0] : null;
+                            const p2 = (persone && persone[1]) ? persone[1] : p1;
+                            const p1Name = p1 ? `${p1.cognome} ${p1.nome}`.trim() : 'Condòmino';
+                            const p1Unita = p1 ? [p1.scala ? `Sc. ${p1.scala}` : '', p1.piano ? `P. ${p1.piano}` : '', p1.interno ? `Int. ${p1.interno}` : ''].filter(Boolean).join(' - ') : '';
+                            const p2Name = p2 ? `${p2.cognome} ${p2.nome}`.trim() : 'Condòmino';
+                            const p2Unita = p2 ? [p2.scala ? `Sc. ${p2.scala}` : '', p2.piano ? `P. ${p2.piano}` : '', p2.interno ? `Int. ${p2.interno}` : ''].filter(Boolean).join(' - ') : '';
+
+                            const pdf1 = buildMinimalPdfDataUri(
+                                `${c.nome} - Regolamento e Polizza Fabbricato`,
+                                `Documento pubblico per tutti i condomini`,
+                                `Consultabile e scaricabile dalla Bacheca Documentale Condominiale.`
+                            );
+                            db.run(`
+                                INSERT INTO condo_documents
+                                (condominio_id, sender_role, sender_name, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                                VALUES (?, 'admin', 'Studio Amministratore', 'all', 'Tutti i Condòmini (Bacheca Pubblica)', 'Intero Fabbricato', 'Regolamento & Polizze', 'Regolamento Condominiale & Estratto Polizza Fabbricato 2026', 'Documento ufficiale sempre disponibile in bacheca per tutti i condòmini.', 'Regolamento_e_Polizza_Condominio_2026.pdf', 'application/pdf', 14200, ?, 'Pubblicato')
+                            `, [c.id, pdf1], () => {});
+
+                            if (p1) {
+                                const pdf2 = buildMinimalPdfDataUri(
+                                    `${c.nome} - Prospetto Individuale Quote`,
+                                    `Destinatario: ${p1Name} (${p1Unita})`,
+                                    `Riepilogo situazione contabile e riparto millesimale individuale.`
+                                );
+                                db.run(`
+                                    INSERT INTO condo_documents
+                                    (condominio_id, sender_role, sender_name, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                                    VALUES (?, 'admin', 'Studio Amministratore', 'persona', ?, ?, ?, 'Comunicazione Individuale', ?, 'Documento riservato inviato dallo Studio Amministrativo al singolo condòmino.', 'Prospetto_Contabile_Individuale.pdf', 'application/pdf', 12800, ?, 'Inviato')
+                                `, [c.id, p1.id, p1Name, p1Unita, `Prospetto Contabile Individuale - ${p1Name}`, pdf2], () => {});
+                            }
+
+                            if (p2) {
+                                const pdf3 = buildMinimalPdfDataUri(
+                                    `Distinta Bonifico Bancario Quota Condominiale`,
+                                    `Mittente: ${p2Name} (${p2Unita})`,
+                                    `Allegato caricato dal condomino per verifica e registrazione incasso.`
+                                );
+                                db.run(`
+                                    INSERT INTO condo_documents
+                                    (condominio_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                                    VALUES (?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, 'Ricevuta Bonifico / Pagamento', ?, 'Allego contabile bonifico bancario relativo al versamento della quota condominiale.', 'Contabile_Bonifico_Quota.pdf', 'application/pdf', 11500, ?, 'Da visionare')
+                                `, [c.id, p2Name, p2.id, p2Unita, `Contabile Bonifico Quota - ${p2Name}`, pdf3], () => {});
+                            }
+                        });
+                    }
+                });
+            });
+        });
+    });
+}
+
+// Avvia controllo tabella anche a runtime per MySQL
+setTimeout(() => {
+    try { ensureCondoDocumentsTable(); } catch (_) {}
+}, 1200);
+
+// Lista Documenti e Allegati (con filtro RBAC automatico per Admin vs Condòmino)
+app.get('/api/documents', authenticateToken, requireCondominio, (req, res) => {
+    const condoId = req.condominio_id;
+    const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
+
+    const selectCols = `
+        id, condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id,
+        recipient_type, recipient_persona_id, recipient_user_id, recipient_name, unita_label,
+        category, title, notes, file_name, file_mime, file_size, status, created_at
+    `;
+
+    if (isAdminUser) {
+        db.all(`SELECT ${selectCols} FROM condo_documents WHERE condominio_id = ? ORDER BY created_at DESC, id DESC`, [condoId], (err, rows) => {
+            if (err) return res.status(500).json({ success: false, message: 'Errore caricamento documenti: ' + err.message });
+            return res.json({ success: true, data: rows || [] });
+        });
+    } else {
+        // Risolve l'eventuale persona_id associato all'utente condòmino loggato
+        db.get('SELECT id, nome, email FROM users WHERE id = ?', [req.user.id], (errU, userRow) => {
+            const userEmail = (userRow && userRow.email) ? userRow.email.trim().toLowerCase() : '';
+            const userName = (userRow && userRow.nome) ? userRow.nome.trim().toLowerCase() : '';
+
+            db.all('SELECT id, nome, cognome, email FROM anagrafica_persone WHERE condominio_id = ?', [condoId], (errP, persone) => {
+                const matchedPersonaIds = [];
+                if (!errP && Array.isArray(persone)) {
+                    persone.forEach(p => {
+                        const pEmail = (p.email || '').trim().toLowerCase();
+                        const full1 = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                        const full2 = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                        if ((userEmail && pEmail && userEmail === pEmail) || (userName && (userName === full1 || userName === full2))) {
+                            matchedPersonaIds.push(p.id);
+                        }
+                    });
+                }
+
+                db.all(`SELECT ${selectCols} FROM condo_documents WHERE condominio_id = ? ORDER BY created_at DESC, id DESC`, [condoId], (errD, allDocs) => {
+                    if (errD) return res.status(500).json({ success: false, message: 'Errore caricamento documenti: ' + errD.message });
+                    const visibleDocs = (allDocs || []).filter(doc => {
+                        if (doc.recipient_type === 'all') return true;
+                        if (doc.sender_user_id && Number(doc.sender_user_id) === Number(req.user.id)) return true;
+                        if (doc.sender_persona_id && matchedPersonaIds.includes(Number(doc.sender_persona_id))) return true;
+                        if (doc.recipient_type === 'persona') {
+                            if (doc.recipient_user_id && Number(doc.recipient_user_id) === Number(req.user.id)) return true;
+                            if (doc.recipient_persona_id && matchedPersonaIds.includes(Number(doc.recipient_persona_id))) return true;
+                        }
+                        return false;
+                    });
+                    return res.json({ success: true, data: visibleDocs });
+                });
+            });
+        });
+    }
+});
+
+// Scarica / Visualizza il contenuto di un singolo Documento (con controllo permessi RBAC)
+app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, res) => {
+    const docId = parseInt(req.params.id, 10);
+    const condoId = req.condominio_id;
+    const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
+
+    db.get('SELECT * FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], (err, doc) => {
+        if (err || !doc) {
+            return res.status(404).json({ success: false, message: 'Documento non trovato.' });
+        }
+        if (isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id)) {
+            return res.json({
+                success: true,
+                data: {
+                    id: doc.id,
+                    title: doc.title,
+                    file_name: doc.file_name,
+                    file_mime: doc.file_mime,
+                    file_size: doc.file_size,
+                    file_data: doc.file_data
+                }
+            });
+        }
+        // Verifica corrispondenza tramite anagrafica_persone per i condòmini
+        db.get('SELECT id, nome, email FROM users WHERE id = ?', [req.user.id], (errU, userRow) => {
+            const userEmail = (userRow && userRow.email) ? userRow.email.trim().toLowerCase() : '';
+            const userName = (userRow && userRow.nome) ? userRow.nome.trim().toLowerCase() : '';
+            db.all('SELECT id, nome, cognome, email FROM anagrafica_persone WHERE condominio_id = ?', [condoId], (errP, persone) => {
+                const matchedPersonaIds = (persone || []).filter(p => {
+                    const pEmail = (p.email || '').trim().toLowerCase();
+                    const full1 = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                    const full2 = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                    return (userEmail && pEmail && userEmail === pEmail) || (userName && (userName === full1 || userName === full2));
+                }).map(p => Number(p.id));
+
+                if (
+                    (doc.recipient_persona_id && matchedPersonaIds.includes(Number(doc.recipient_persona_id))) ||
+                    (doc.sender_persona_id && matchedPersonaIds.includes(Number(doc.sender_persona_id)))
+                ) {
+                    return res.json({
+                        success: true,
+                        data: {
+                            id: doc.id,
+                            title: doc.title,
+                            file_name: doc.file_name,
+                            file_mime: doc.file_mime,
+                            file_size: doc.file_size,
+                            file_data: doc.file_data
+                        }
+                    });
+                }
+                return res.status(403).json({ success: false, message: 'Non sei autorizzato a visualizzare questo documento riservato.' });
+            });
+        });
+    });
+});
+
+// Carica e Invia un nuovo Documento / Allegato (Bidirezionale: Admin -> Tutti/Singolo Condòmino, oppure Condòmino -> Admin)
+app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
+    const condoId = req.condominio_id;
+    const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
+    const {
+        recipient_type,
+        recipient_persona_id,
+        sender_persona_id,
+        category,
+        title,
+        notes,
+        file_name,
+        file_mime,
+        file_size,
+        file_data
+    } = req.body || {};
+
+    if (!title || !String(title).trim()) {
+        return res.status(400).json({ success: false, message: 'Inserisci il titolo o oggetto del documento.' });
+    }
+    if (!file_name || !file_data) {
+        return res.status(400).json({ success: false, message: 'Seleziona un file da allegare.' });
+    }
+
+    const cleanCategory = (category && String(category).trim()) ? String(category).trim() : 'Altra Documentazione';
+    const cleanTitle = String(title).trim();
+    const cleanNotes = notes ? String(notes).trim() : '';
+    const cleanFileName = String(file_name).trim();
+    const cleanFileMime = file_mime ? String(file_mime).trim() : 'application/octet-stream';
+    const cleanFileSize = parseInt(file_size, 10) || 0;
+
+    // Caso 1: Caricamento da parte dell'Amministratore (o quando l'Admin registra un allegato ricevuto da un condòmino)
+    const effectiveDirection = (isAdminUser && req.body.direction === 'from_condomino') ? 'condomino_to_admin' : (isAdminUser ? 'admin_to_condomini' : 'condomino_to_admin');
+
+    if (effectiveDirection === 'admin_to_condomini') {
+        const recType = (recipient_type === 'persona') ? 'persona' : 'all';
+
+        if (recType === 'all') {
+            db.run(`
+                INSERT INTO condo_documents
+                (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                VALUES (?, ?, 'admin', 'Studio Amministratore', 'all', 'Tutti i Condòmini (Bacheca Pubblica)', 'Intero Fabbricato', ?, ?, ?, ?, ?, ?, ?, 'Pubblicato')
+            `, [condoId, req.user.id, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                if (errIns) return res.status(500).json({ success: false, message: 'Errore salvataggio documento: ' + errIns.message });
+                const newDocId = this.lastID;
+                logAudit(req.user.id, condoId, `Pubblica Documento in Bacheca: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
+                return res.json({
+                    success: true,
+                    message: 'Documento pubblicato in Bacheca Condominiale per tutti i condòmini!',
+                    data: { id: newDocId }
+                });
+            });
+        } else {
+            const pId = parseInt(recipient_persona_id, 10);
+            if (!pId) {
+                return res.status(400).json({ success: false, message: 'Seleziona il condòmino destinatario dall\'Anagrafica.' });
+            }
+            db.get(`
+                SELECT p.id, p.nome, p.cognome, p.email, u.scala, u.piano, u.interno, u.identificativo
+                FROM anagrafica_persone p
+                LEFT JOIN unita_immobiliari u ON (u.proprietario_id = p.id OR u.conduttore_id = p.id) AND u.condominio_id = p.condominio_id
+                WHERE p.id = ? AND p.condominio_id = ?
+            `, [pId, condoId], (errP, persona) => {
+                if (errP || !persona) {
+                    return res.status(404).json({ success: false, message: 'Condòmino non trovato in Anagrafica.' });
+                }
+                const recName = `${persona.cognome || ''} ${persona.nome || ''}`.trim();
+                const unitaParts = [];
+                if (persona.scala) unitaParts.push(`Sc. ${persona.scala}`);
+                if (persona.piano) unitaParts.push(`P. ${persona.piano}`);
+                if (persona.interno) unitaParts.push(`Int. ${persona.interno}`);
+                const unitaLabel = unitaParts.length > 0 ? unitaParts.join(' - ') : (persona.identificativo || '');
+
+                db.run(`
+                    INSERT INTO condo_documents
+                    (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                    VALUES (?, ?, 'admin', 'Studio Amministratore', 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
+                `, [condoId, req.user.id, persona.id, recName, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                    if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
+                    const newDocId = this.lastID;
+                    logAudit(req.user.id, condoId, `Invia Documento a ${recName}: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
+                    return res.json({
+                        success: true,
+                        message: `Documento inviato con successo a ${recName}!`,
+                        data: { id: newDocId }
+                    });
+                });
+            });
+        }
+    } else {
+        // Caso 2: Invio da Condòmino -> Studio Amministratore
+        const lookupPersonaId = isAdminUser && sender_persona_id ? parseInt(sender_persona_id, 10) : null;
+        if (lookupPersonaId) {
+            db.get(`
+                SELECT p.id, p.nome, p.cognome, u.scala, u.piano, u.interno, u.identificativo
+                FROM anagrafica_persone p
+                LEFT JOIN unita_immobiliari u ON (u.proprietario_id = p.id OR u.conduttore_id = p.id) AND u.condominio_id = p.condominio_id
+                WHERE p.id = ? AND p.condominio_id = ?
+            `, [lookupPersonaId, condoId], (errP, persona) => {
+                const sName = persona ? `${persona.cognome || ''} ${persona.nome || ''}`.trim() : 'Condòmino';
+                const unitaParts = [];
+                if (persona && persona.scala) unitaParts.push(`Sc. ${persona.scala}`);
+                if (persona && persona.piano) unitaParts.push(`P. ${persona.piano}`);
+                if (persona && persona.interno) unitaParts.push(`Int. ${persona.interno}`);
+                const unitaLabel = unitaParts.length > 0 ? unitaParts.join(' - ') : (persona ? (persona.identificativo || '') : '');
+
+                db.run(`
+                    INSERT INTO condo_documents
+                    (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                    VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                `, [condoId, req.user.id, sName, persona ? persona.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                    if (errIns) return res.status(500).json({ success: false, message: 'Errore caricamento documento: ' + errIns.message });
+                    return res.json({
+                        success: true,
+                        message: `Documento di ${sName} caricato e trasmesso allo Studio Amministratore!`,
+                        data: { id: this.lastID }
+                    });
+                });
+            });
+        } else {
+            // Risolve automaticamente i dati del condòmino loggato
+            db.get('SELECT u.id, u.nome, u.email, uc.unita FROM users u LEFT JOIN user_condominios uc ON uc.user_id = u.id AND uc.condominio_id = ? WHERE u.id = ?', [condoId, req.user.id], (errU, uRow) => {
+                const userEmail = (uRow && uRow.email) ? uRow.email.trim().toLowerCase() : '';
+                const userName = (uRow && uRow.nome) ? uRow.nome.trim() : 'Condòmino';
+
+                db.all(`
+                    SELECT p.id, p.nome, p.cognome, p.email, u.scala, u.piano, u.interno, u.identificativo
+                    FROM anagrafica_persone p
+                    LEFT JOIN unita_immobiliari u ON (u.proprietario_id = p.id OR u.conduttore_id = p.id) AND u.condominio_id = p.condominio_id
+                    WHERE p.condominio_id = ?
+                `, [condoId], (errP, persone) => {
+                    let matchedP = null;
+                    if (!errP && Array.isArray(persone)) {
+                        matchedP = persone.find(p => {
+                            const pEmail = (p.email || '').trim().toLowerCase();
+                            const full1 = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                            const full2 = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                            const uLower = userName.toLowerCase();
+                            return (userEmail && pEmail && userEmail === pEmail) || (uLower && (uLower === full1 || uLower === full2));
+                        });
+                    }
+                    const sName = matchedP ? `${matchedP.cognome || ''} ${matchedP.nome || ''}`.trim() : userName;
+                    const unitaParts = [];
+                    if (matchedP && matchedP.scala) unitaParts.push(`Sc. ${matchedP.scala}`);
+                    if (matchedP && matchedP.piano) unitaParts.push(`P. ${matchedP.piano}`);
+                    if (matchedP && matchedP.interno) unitaParts.push(`Int. ${matchedP.interno}`);
+                    const unitaLabel = unitaParts.length > 0 ? unitaParts.join(' - ') : ((uRow && uRow.unita) || '');
+
+                    db.run(`
+                        INSERT INTO condo_documents
+                        (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                        VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                    `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                        if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
+                        const newDocId = this.lastID;
+                        logAudit(req.user.id, condoId, `Condòmino ${sName} invia documento: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
+                        return res.json({
+                            success: true,
+                            message: 'Allegato inviato con successo allo Studio Amministratore!',
+                            data: { id: newDocId }
+                        });
+                    });
+                });
+            });
+        }
+    }
+});
+
+// Aggiorna stato di lavorazione documento (Solo Amministratore: Da visionare -> Visionato -> Archiviato)
+app.patch('/api/documents/:id/status', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const docId = parseInt(req.params.id, 10);
+    const { status } = req.body || {};
+    const validStatuses = ['Pubblicato', 'Inviato', 'Da visionare', 'Visionato', 'Archiviato'];
+    if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ success: false, message: 'Stato non valido.' });
+    }
+    db.run('UPDATE condo_documents SET status = ? WHERE id = ? AND condominio_id = ?', [status, docId, req.condominio_id], function(err) {
+        if (err) return res.status(500).json({ success: false, message: 'Errore aggiornamento stato: ' + err.message });
+        return res.json({ success: true, message: `Stato aggiornato a "${status}"!` });
+    });
+});
+
+// Elimina un Documento (Admin oppure Condòmino proprietario se ancora "Da visionare")
+app.delete('/api/documents/:id', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
+    const docId = parseInt(req.params.id, 10);
+    const condoId = req.condominio_id;
+    const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
+
+    db.get('SELECT id, title, sender_user_id, status FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], (err, doc) => {
+        if (err || !doc) return res.status(404).json({ success: false, message: 'Documento non trovato.' });
+        if (!isAdminUser && (Number(doc.sender_user_id) !== Number(req.user.id) || doc.status !== 'Da visionare')) {
+            return res.status(403).json({ success: false, message: 'Non hai i permessi per eliminare questo documento.' });
+        }
+        db.run('DELETE FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], function(errDel) {
+            if (errDel) return res.status(500).json({ success: false, message: 'Errore eliminazione documento: ' + errDel.message });
+            logAudit(req.user.id, condoId, `Elimina Documento: "${doc.title}"`, 'condo_documents', docId, null, req.ip);
+            return res.json({ success: true, message: 'Documento eliminato con successo.' });
+        });
     });
 });
 

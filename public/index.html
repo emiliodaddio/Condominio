@@ -1190,6 +1190,27 @@
                                 <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                             </div>
                         </div>
+
+                        <!-- 9. Card: Documenti & Allegati (Bidirezionale Admin <-> Condòmini) -->
+                        <div id="dash-card-documenti" onclick="switchTab('documenti')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-orange-300 relative overflow-hidden transition-all">
+                            <div>
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="w-13 h-13 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-2xl group-hover:bg-orange-600 group-hover:text-white transition-all shadow-xs">
+                                        <i class="fa-solid fa-folder-open"></i>
+                                    </div>
+                                    <div id="dash-doc-alert-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-600 text-white shadow-sm">
+                                        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                                        <span id="dash-doc-count-text">1 DA VISIONARE</span>
+                                    </div>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-orange-600 transition-colors">Documenti & Allegati</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Bacheca documenti condominiali e invio bidirezionale di allegati tra Studio e Condòmini.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-orange-600">
+                                <span id="dash-doc-action-text">Scambio e bacheca file</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1704,6 +1725,320 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ====================================================================
+             NEW TAB: DOCUMENTI & ALLEGATI (SCAMBIO BIDIREZIONALE ADMIN <-> CONDÒMINI)
+             ==================================================================== -->
+        <section id="tab-documenti" class="tab-pane hidden space-y-6">
+            <!-- Header & Azioni -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 border border-orange-100 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Documenti & Allegati Condominiali</h1>
+                        <p id="doc-header-subtitle" class="text-sm text-slate-500 mt-0.5">Bacheca documenti ufficiali del condominio e scambio bidirezionale di allegati tra Studio Amministratore e Condòmini.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    <button type="button" onclick="loadCondoDocuments()" class="px-3.5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors">
+                        <i class="fa-solid fa-rotate-right text-slate-400"></i>
+                        <span>Aggiorna</span>
+                    </button>
+                    <button type="button" onclick="openUploadDocumentModal()" class="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-colors">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span id="btn-upload-doc-label">+ Carica / Invia Documento</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPI Riepilogo Documentale -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-folder-tree"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Totale Documenti</span>
+                        <span id="doc-kpi-total" class="text-xl font-black text-slate-900">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-building-shield"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bacheca Condominio</span>
+                        <span id="doc-kpi-bacheca" class="text-xl font-black text-indigo-600">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-right-left"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Scambio Individuale</span>
+                        <span id="doc-kpi-individuali" class="text-xl font-black text-sky-600">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center text-base shrink-0">
+                        <i class="fa-solid fa-bell"></i>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Da Visionare</span>
+                        <span id="doc-kpi-pending" class="text-xl font-black text-orange-600">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs di Vista Rapida (Flusso Bidirezionale) & Barra Filtri -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <!-- Pill Tabs Direzione -->
+                <div class="flex flex-wrap items-center gap-2 pb-3 border-b border-slate-100">
+                    <button type="button" id="doc-tab-all" onclick="setDocDirectionFilter('all')" class="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-orange-600 text-white shadow-2xs transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <span>Tutti i Documenti</span>
+                    </button>
+                    <button type="button" id="doc-tab-bacheca" onclick="setDocDirectionFilter('bacheca')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-bullhorn text-indigo-600"></i>
+                        <span>Bacheca Pubblica Condominio</span>
+                    </button>
+                    <button type="button" id="doc-tab-to_condomino" onclick="setDocDirectionFilter('to_condomino')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-share-from-square text-sky-600"></i>
+                        <span id="doc-tab-to-condomino-label">Inviati dallo Studio ai Condòmini</span>
+                    </button>
+                    <button type="button" id="doc-tab-from_condomino" onclick="setDocDirectionFilter('from_condomino')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-inbox text-emerald-600"></i>
+                        <span id="doc-tab-from-condomino-label">Inviati dai Condòmini allo Studio</span>
+                    </button>
+                </div>
+
+                <!-- Filtri Ricerca -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end">
+                    <div class="md:col-span-4">
+                        <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                            <i class="fa-solid fa-magnifying-glass text-orange-600 mr-1"></i> Cerca per Titolo, Nome File o Note
+                        </label>
+                        <input type="text" id="doc-search-input" oninput="renderCondoDocumentsTable()" placeholder="Digita titolo, nome file, bonifico, polizza..." class="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-colors">
+                    </div>
+                    <div class="md:col-span-3" id="doc-filter-persona-wrapper">
+                        <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                            <i class="fa-solid fa-user text-orange-600 mr-1"></i> Filtra per Condòmino
+                        </label>
+                        <select id="doc-filter-persona" onchange="renderCondoDocumentsTable()" class="w-full py-2.5 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none">
+                            <option value="">Tutti i Condòmini</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                            <i class="fa-solid fa-tag text-orange-600 mr-1"></i> Categoria Documento
+                        </label>
+                        <select id="doc-filter-category" onchange="renderCondoDocumentsTable()" class="w-full py-2.5 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none">
+                            <option value="">Tutte le categorie</option>
+                            <option value="Regolamento & Polizze">Regolamento & Polizze</option>
+                            <option value="Bilanci & Riparti">Bilanci & Riparti</option>
+                            <option value="Verbali & Assemblee">Verbali & Assemblee</option>
+                            <option value="Contratti & Fornitori">Contratti & Fornitori</option>
+                            <option value="Comunicazione Individuale">Comunicazione Individuale</option>
+                            <option value="Ricevuta Bonifico / Pagamento">Ricevuta Bonifico / Pagamento</option>
+                            <option value="Delega Assembleare Firmata">Delega Assembleare Firmata</option>
+                            <option value="Modulo Anagrafe / Dati Catastali">Modulo Anagrafe / Dati Catastali</option>
+                            <option value="Foto / Documentazione Guasto">Foto / Documentazione Guasto</option>
+                            <option value="Altra Documentazione">Altra Documentazione</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 flex gap-2">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5">Stato</label>
+                            <select id="doc-filter-status" onchange="renderCondoDocumentsTable()" class="w-full py-2.5 px-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none">
+                                <option value="">Tutti</option>
+                                <option value="Da visionare">Da visionare</option>
+                                <option value="Visionato">Visionato</option>
+                                <option value="Archiviato">Archiviato</option>
+                                <option value="Pubblicato">Pubblicato</option>
+                                <option value="Inviato">Inviato</option>
+                            </select>
+                        </div>
+                        <button type="button" onclick="resetCondoDocumentsFilters()" class="self-end py-2.5 px-3 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 font-bold text-xs transition-colors" title="Azzera filtri">
+                            <i class="fa-solid fa-filter-circle-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <span id="doc-filter-count-label" class="font-semibold">Caricamento documenti...</span>
+                </div>
+            </div>
+
+            <!-- Tabella Documenti & Allegati -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead class="bg-slate-50 text-slate-600 uppercase tracking-wider border-b border-slate-200 font-bold">
+                            <tr>
+                                <th class="py-3.5 px-4">Data & Ora</th>
+                                <th class="py-3.5 px-4">Direzione & Nominativo</th>
+                                <th class="py-3.5 px-4">Categoria</th>
+                                <th class="py-3.5 px-4">Titolo & Allegato</th>
+                                <th class="py-3.5 px-4 text-center">Stato</th>
+                                <th class="py-3.5 px-4 text-right">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="doc-table-body" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="6" class="py-8 text-center text-slate-400 italic">Caricamento archivio documentale...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Modale Caricamento / Invio Bidirezionale Documento -->
+            <div id="modal-upload-document" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-orange-50 to-amber-50/60">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center text-lg shadow-xs">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-extrabold text-slate-900 text-base sm:text-lg" id="modal-upload-doc-title">Carica e Invia Documento / Allegato</h3>
+                                <p class="text-xs text-slate-500" id="modal-upload-doc-subtitle">Condividi documenti in bacheca o invia un allegato a un condòmino</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeUploadDocumentModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl transition-colors">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <form id="form-upload-document" onsubmit="submitUploadDocument(event)" class="overflow-y-auto p-6 space-y-5 flex-1">
+                        <!-- Scelta Direzione / Destinatario (Visibile all'Amministratore) -->
+                        <div id="doc-admin-recipient-section" class="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                            <label class="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                                <i class="fa-solid fa-paper-plane text-orange-600 mr-1"></i> 1. Direzione & Destinatario del Documento *
+                            </label>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
+                                    <input type="radio" name="doc_direction_mode" value="all" checked onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
+                                    <div>
+                                        <span class="block text-xs font-bold text-slate-900">Bacheca Condominio</span>
+                                        <span class="block text-[11px] text-slate-500">Visibile a tutti i condòmini</span>
+                                    </div>
+                                </label>
+                                <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
+                                    <input type="radio" name="doc_direction_mode" value="persona" onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
+                                    <div>
+                                        <span class="block text-xs font-bold text-slate-900">Singolo Condòmino</span>
+                                        <span class="block text-[11px] text-slate-500">Invio riservato individuale</span>
+                                    </div>
+                                </label>
+                                <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
+                                    <input type="radio" name="doc_direction_mode" value="from_condomino" onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
+                                    <div>
+                                        <span class="block text-xs font-bold text-slate-900">Ricevuto da Condòmino</span>
+                                        <span class="block text-[11px] text-slate-500">Protocolla allegato condòmino</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- Selettore Condòmino (dall'Anagrafica) -->
+                            <div id="doc-persona-select-wrapper" class="hidden pt-2">
+                                <label id="doc-persona-select-label" class="block text-xs font-bold text-slate-700 mb-1">Seleziona Condòmino dall'Anagrafica *</label>
+                                <select id="doc-upload-persona-id" class="w-full p-2.5 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none">
+                                    <option value="">-- Seleziona Condòmino --</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Banner Informativo per il Condòmino -->
+                        <div id="doc-condomino-recipient-banner" class="hidden p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                            <div class="text-xs text-emerald-900">
+                                <span class="font-extrabold block">Invio Riservato allo Studio Amministratore</span>
+                                <span>Il file allegato sarà visibile esclusivamente a te e all'Amministratore del Condominio.</span>
+                            </div>
+                        </div>
+
+                        <!-- Categoria e Titolo -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Categoria Documento *</label>
+                                <select id="doc-upload-category" required class="w-full p-2.5 text-xs font-semibold border border-slate-200 rounded-xl bg-white focus:border-orange-500 outline-none">
+                                    <option value="Regolamento & Polizze">Regolamento & Polizze</option>
+                                    <option value="Bilanci & Riparti">Bilanci & Riparti</option>
+                                    <option value="Verbali & Assemblee">Verbali & Assemblee</option>
+                                    <option value="Contratti & Fornitori">Contratti & Fornitori</option>
+                                    <option value="Comunicazione Individuale">Comunicazione Individuale</option>
+                                    <option value="Ricevuta Bonifico / Pagamento">Ricevuta Bonifico / Pagamento</option>
+                                    <option value="Delega Assembleare Firmata">Delega Assembleare Firmata</option>
+                                    <option value="Modulo Anagrafe / Dati Catastali">Modulo Anagrafe / Dati Catastali</option>
+                                    <option value="Foto / Documentazione Guasto">Foto / Documentazione Guasto</option>
+                                    <option value="Altra Documentazione">Altra Documentazione</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Titolo / Oggetto del Documento *</label>
+                                <input type="text" id="doc-upload-title" required placeholder="es. Contabile Bonifico Rata / Polizza Fabbricato" class="w-full p-2.5 text-xs font-semibold border border-slate-200 rounded-xl focus:border-orange-500 outline-none">
+                            </div>
+                        </div>
+
+                        <!-- Area Drag & Drop / Selezione File -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5">File Allegato (PDF, JPG, PNG, Word, Excel - Max 10 MB) *</label>
+                            <label for="doc-upload-file-input" class="flex flex-col items-center justify-center border-2 border-dashed border-orange-300 hover:border-orange-500 bg-orange-50/40 hover:bg-orange-50/80 rounded-2xl p-6 cursor-pointer transition-all text-center">
+                                <i class="fa-solid fa-file-arrow-up text-3xl text-orange-500 mb-2"></i>
+                                <span id="doc-upload-file-label" class="text-xs font-bold text-slate-800">Clicca qui per selezionare un file dal tuo dispositivo</span>
+                                <span id="doc-upload-file-sub" class="text-[11px] text-slate-500 mt-1">Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx</span>
+                                <input type="file" id="doc-upload-file-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt" onchange="onSelectDocumentFile(this)" class="hidden">
+                            </label>
+                        </div>
+
+                        <!-- Note di accompagnamento -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Note di accompagnamento (opzionale)</label>
+                            <textarea id="doc-upload-notes" rows="2" placeholder="Inserisci eventuali dettagli utili (es. numero CRO bonifico, periodo di riferimento, note tecniche)..." class="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:border-orange-500 outline-none"></textarea>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 flex justify-end gap-3">
+                            <button type="button" onclick="closeUploadDocumentModal()" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors">
+                                Annulla
+                            </button>
+                            <button type="submit" id="btn-submit-upload-doc" class="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all">
+                                <i class="fa-solid fa-paper-plane"></i>
+                                <span>Carica e Invia Documento</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modale Anteprima Documento (PDF / Immagine) -->
+            <div id="modal-preview-document" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                        <div class="min-w-0 pr-4">
+                            <h3 id="preview-doc-title" class="font-extrabold text-slate-900 text-sm sm:text-base truncate">Anteprima Documento</h3>
+                            <p id="preview-doc-filename" class="text-xs text-slate-500 truncate"></p>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <a id="preview-doc-download-btn" href="#" download class="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                                <i class="fa-solid fa-download"></i>
+                                <span>Scarica File</span>
+                            </a>
+                            <button type="button" onclick="closePreviewDocumentModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="preview-doc-body" class="flex-1 bg-slate-100 overflow-auto flex items-center justify-center p-4">
+                        <!-- Popolato dinamicamente via JS -->
+                    </div>
                 </div>
             </div>
         </section>
