@@ -6058,6 +6058,7 @@ function buildMillesimiDistributionRows(tabella = 'proprieta') {
     }
 
     millesimiDistributionRows = rows;
+    return rows;
 }
 
 window.openMillesimiCalculatorModal = async function() {
@@ -6583,22 +6584,39 @@ async function loadCondoDocuments() {
     }
 }
 
-function populateDocPersonaSelectors() {
-    const rows = typeof buildMillesimiDistributionRows === 'function' ? buildMillesimiDistributionRows() : [];
+async function populateDocPersonaSelectors() {
+    try {
+        if ((!state.anagraficaPersone || state.anagraficaPersone.length === 0) && typeof ensureMillesimiDataLoaded === 'function') {
+            await ensureMillesimiDataLoaded();
+        }
+    } catch (_) {}
+
+    let rows = [];
+    try {
+        if (typeof buildMillesimiDistributionRows === 'function') {
+            rows = buildMillesimiDistributionRows() || [];
+        }
+    } catch (_) {}
+
+    if (!Array.isArray(rows) && typeof millesimiDistributionRows !== 'undefined' && Array.isArray(millesimiDistributionRows)) {
+        rows = millesimiDistributionRows;
+    }
+    if (!Array.isArray(rows)) rows = [];
+
     const filterSel = document.getElementById('doc-filter-persona');
     const uploadSel = document.getElementById('doc-upload-persona-id');
 
     if (filterSel) {
         const currentVal = filterSel.value;
         filterSel.innerHTML = '<option value="">Tutti i Condòmini</option>' +
-            rows.map(r => `<option value="${r.persona_id}">${r.nominativo} (${r.unitaLabel})</option>`).join('');
+            rows.map(r => `<option value="${r.persona_id}">${r.nominativo || 'Condòmino'} (${r.unita_label || r.unitaLabel || 'Unità'})</option>`).join('');
         filterSel.value = currentVal;
     }
 
     if (uploadSel) {
         const currentVal = uploadSel.value;
         uploadSel.innerHTML = '<option value="">-- Seleziona Condòmino dall\'Anagrafica --</option>' +
-            rows.map(r => `<option value="${r.persona_id}">${r.nominativo} — ${r.unitaLabel}</option>`).join('');
+            rows.map(r => `<option value="${r.persona_id}">${r.nominativo || 'Condòmino'} — ${r.unita_label || r.unitaLabel || 'Unità'}</option>`).join('');
         uploadSel.value = currentVal;
     }
 }
@@ -6785,49 +6803,61 @@ window.renderCondoDocumentsTable = function() {
     }).join('');
 };
 
-window.openUploadDocumentModal = function() {
-    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
-        showToast('Condominio in Sola Lettura: caricamento documenti bloccato.', 'warning');
-        return;
+window.openUploadDocumentModal = async function() {
+    try {
+        if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+            showToast('Condominio in Sola Lettura: caricamento documenti bloccato.', 'warning');
+            return;
+        }
+
+        const modal = document.getElementById('modal-upload-document');
+        if (!modal) {
+            console.error('Elemento #modal-upload-document non trovato');
+            return;
+        }
+
+        const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+        const adminRecSection = document.getElementById('doc-admin-recipient-section');
+        const condoBanner = document.getElementById('doc-condomino-recipient-banner');
+        const modalTitle = document.getElementById('modal-upload-doc-title');
+        const modalSub = document.getElementById('modal-upload-doc-subtitle');
+        const catSelect = document.getElementById('doc-upload-category');
+
+        // Reset form
+        state.pendingUploadFile = null;
+        try {
+            const form = document.getElementById('form-upload-document');
+            if (form) form.reset();
+            const fileLabel = document.getElementById('doc-upload-file-label');
+            const fileSub = document.getElementById('doc-upload-file-sub');
+            if (fileLabel) fileLabel.textContent = 'Clicca qui per selezionare un file dal tuo dispositivo';
+            if (fileSub) fileSub.textContent = 'Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx';
+        } catch (_) {}
+
+        if (isAdmin) {
+            if (adminRecSection) adminRecSection.classList.remove('hidden');
+            if (condoBanner) condoBanner.classList.add('hidden');
+            if (modalTitle) modalTitle.textContent = 'Carica e Invia Documento / Allegato';
+            if (modalSub) modalSub.textContent = 'Pubblica in Bacheca Condominiale o invia un documento a un singolo condòmino';
+            if (catSelect) catSelect.value = 'Regolamento & Polizze';
+            if (typeof onChangeDocDirectionMode === 'function') onChangeDocDirectionMode();
+        } else {
+            if (adminRecSection) adminRecSection.classList.add('hidden');
+            if (condoBanner) condoBanner.classList.remove('hidden');
+            if (modalTitle) modalTitle.textContent = 'Invia Documento / Allegato all\'Amministratore';
+            if (modalSub) modalSub.textContent = 'Carica ricevute di bonifico, deleghe o documentazione per lo Studio Amministrativo';
+            if (catSelect) catSelect.value = 'Ricevuta Bonifico / Pagamento';
+        }
+
+        modal.classList.remove('hidden');
+
+        // Popola la lista in background
+        populateDocPersonaSelectors().catch(() => {});
+    } catch (err) {
+        console.error('Errore openUploadDocumentModal:', err);
+        const modal = document.getElementById('modal-upload-document');
+        if (modal) modal.classList.remove('hidden');
     }
-
-    const modal = document.getElementById('modal-upload-document');
-    if (!modal) return;
-
-    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
-    const adminRecSection = document.getElementById('doc-admin-recipient-section');
-    const condoBanner = document.getElementById('doc-condomino-recipient-banner');
-    const modalTitle = document.getElementById('modal-upload-doc-title');
-    const modalSub = document.getElementById('modal-upload-doc-subtitle');
-    const catSelect = document.getElementById('doc-upload-category');
-
-    populateDocPersonaSelectors();
-
-    // Reset form
-    state.pendingUploadFile = null;
-    const form = document.getElementById('form-upload-document');
-    if (form) form.reset();
-    const fileLabel = document.getElementById('doc-upload-file-label');
-    const fileSub = document.getElementById('doc-upload-file-sub');
-    if (fileLabel) fileLabel.textContent = 'Clicca qui per selezionare un file dal tuo dispositivo';
-    if (fileSub) fileSub.textContent = 'Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx';
-
-    if (isAdmin) {
-        if (adminRecSection) adminRecSection.classList.remove('hidden');
-        if (condoBanner) condoBanner.classList.add('hidden');
-        if (modalTitle) modalTitle.textContent = 'Carica e Invia Documento / Allegato';
-        if (modalSub) modalSub.textContent = 'Pubblica in Bacheca Condominiale o invia un documento a un singolo condòmino';
-        if (catSelect) catSelect.value = 'Regolamento & Polizze';
-        onChangeDocDirectionMode();
-    } else {
-        if (adminRecSection) adminRecSection.classList.add('hidden');
-        if (condoBanner) condoBanner.classList.remove('hidden');
-        if (modalTitle) modalTitle.textContent = 'Invia Documento / Allegato all\'Amministratore';
-        if (modalSub) modalSub.textContent = 'Carica ricevute di bonifico, deleghe o documentazione per lo Studio Amministrativo';
-        if (catSelect) catSelect.value = 'Ricevuta Bonifico / Pagamento';
-    }
-
-    modal.classList.remove('hidden');
 };
 
 window.closeUploadDocumentModal = function() {

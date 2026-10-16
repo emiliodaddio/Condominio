@@ -1896,151 +1896,6 @@
                     </table>
                 </div>
             </div>
-
-            <!-- Modale Caricamento / Invio Bidirezionale Documento -->
-            <div id="modal-upload-document" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
-                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-orange-50 to-amber-50/60">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center text-lg shadow-xs">
-                                <i class="fa-solid fa-cloud-arrow-up"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-extrabold text-slate-900 text-base sm:text-lg" id="modal-upload-doc-title">Carica e Invia Documento / Allegato</h3>
-                                <p class="text-xs text-slate-500" id="modal-upload-doc-subtitle">Condividi documenti in bacheca o invia un allegato a un condòmino</p>
-                            </div>
-                        </div>
-                        <button type="button" onclick="closeUploadDocumentModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl transition-colors">
-                            <i class="fa-solid fa-xmark text-xl"></i>
-                        </button>
-                    </div>
-
-                    <form id="form-upload-document" onsubmit="submitUploadDocument(event)" class="overflow-y-auto p-6 space-y-5 flex-1">
-                        <!-- Scelta Direzione / Destinatario (Visibile all'Amministratore) -->
-                        <div id="doc-admin-recipient-section" class="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                            <label class="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                                <i class="fa-solid fa-paper-plane text-orange-600 mr-1"></i> 1. Direzione & Destinatario del Documento *
-                            </label>
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                                <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
-                                    <input type="radio" name="doc_direction_mode" value="all" checked onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
-                                    <div>
-                                        <span class="block text-xs font-bold text-slate-900">Bacheca Condominio</span>
-                                        <span class="block text-[11px] text-slate-500">Visibile a tutti i condòmini</span>
-                                    </div>
-                                </label>
-                                <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
-                                    <input type="radio" name="doc_direction_mode" value="persona" onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
-                                    <div>
-                                        <span class="block text-xs font-bold text-slate-900">Singolo Condòmino</span>
-                                        <span class="block text-[11px] text-slate-500">Invio riservato individuale</span>
-                                    </div>
-                                </label>
-                                <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
-                                    <input type="radio" name="doc_direction_mode" value="from_condomino" onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
-                                    <div>
-                                        <span class="block text-xs font-bold text-slate-900">Ricevuto da Condòmino</span>
-                                        <span class="block text-[11px] text-slate-500">Protocolla allegato condòmino</span>
-                                    </div>
-                                </label>
-                            </div>
-
-                            <!-- Selettore Condòmino (dall'Anagrafica) -->
-                            <div id="doc-persona-select-wrapper" class="hidden pt-2">
-                                <label id="doc-persona-select-label" class="block text-xs font-bold text-slate-700 mb-1">Seleziona Condòmino dall'Anagrafica *</label>
-                                <select id="doc-upload-persona-id" class="w-full p-2.5 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none">
-                                    <option value="">-- Seleziona Condòmino --</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Banner Informativo per il Condòmino -->
-                        <div id="doc-condomino-recipient-banner" class="hidden p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
-                            <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                                <i class="fa-solid fa-shield-halved"></i>
-                            </div>
-                            <div class="text-xs text-emerald-900">
-                                <span class="font-extrabold block">Invio Riservato allo Studio Amministratore</span>
-                                <span>Il file allegato sarà visibile esclusivamente a te e all'Amministratore del Condominio.</span>
-                            </div>
-                        </div>
-
-                        <!-- Categoria e Titolo -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Categoria Documento *</label>
-                                <select id="doc-upload-category" required class="w-full p-2.5 text-xs font-semibold border border-slate-200 rounded-xl bg-white focus:border-orange-500 outline-none">
-                                    <option value="Regolamento & Polizze">Regolamento & Polizze</option>
-                                    <option value="Bilanci & Riparti">Bilanci & Riparti</option>
-                                    <option value="Verbali & Assemblee">Verbali & Assemblee</option>
-                                    <option value="Contratti & Fornitori">Contratti & Fornitori</option>
-                                    <option value="Comunicazione Individuale">Comunicazione Individuale</option>
-                                    <option value="Ricevuta Bonifico / Pagamento">Ricevuta Bonifico / Pagamento</option>
-                                    <option value="Delega Assembleare Firmata">Delega Assembleare Firmata</option>
-                                    <option value="Modulo Anagrafe / Dati Catastali">Modulo Anagrafe / Dati Catastali</option>
-                                    <option value="Foto / Documentazione Guasto">Foto / Documentazione Guasto</option>
-                                    <option value="Altra Documentazione">Altra Documentazione</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Titolo / Oggetto del Documento *</label>
-                                <input type="text" id="doc-upload-title" required placeholder="es. Contabile Bonifico Rata / Polizza Fabbricato" class="w-full p-2.5 text-xs font-semibold border border-slate-200 rounded-xl focus:border-orange-500 outline-none">
-                            </div>
-                        </div>
-
-                        <!-- Area Drag & Drop / Selezione File -->
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1.5">File Allegato (PDF, JPG, PNG, Word, Excel - Max 10 MB) *</label>
-                            <label for="doc-upload-file-input" class="flex flex-col items-center justify-center border-2 border-dashed border-orange-300 hover:border-orange-500 bg-orange-50/40 hover:bg-orange-50/80 rounded-2xl p-6 cursor-pointer transition-all text-center">
-                                <i class="fa-solid fa-file-arrow-up text-3xl text-orange-500 mb-2"></i>
-                                <span id="doc-upload-file-label" class="text-xs font-bold text-slate-800">Clicca qui per selezionare un file dal tuo dispositivo</span>
-                                <span id="doc-upload-file-sub" class="text-[11px] text-slate-500 mt-1">Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx</span>
-                                <input type="file" id="doc-upload-file-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt" onchange="onSelectDocumentFile(this)" class="hidden">
-                            </label>
-                        </div>
-
-                        <!-- Note di accompagnamento -->
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Note di accompagnamento (opzionale)</label>
-                            <textarea id="doc-upload-notes" rows="2" placeholder="Inserisci eventuali dettagli utili (es. numero CRO bonifico, periodo di riferimento, note tecniche)..." class="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:border-orange-500 outline-none"></textarea>
-                        </div>
-
-                        <div class="pt-3 border-t border-slate-100 flex justify-end gap-3">
-                            <button type="button" onclick="closeUploadDocumentModal()" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors">
-                                Annulla
-                            </button>
-                            <button type="submit" id="btn-submit-upload-doc" class="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all">
-                                <i class="fa-solid fa-paper-plane"></i>
-                                <span>Carica e Invia Documento</span>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Modale Anteprima Documento (PDF / Immagine) -->
-            <div id="modal-preview-document" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
-                    <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                        <div class="min-w-0 pr-4">
-                            <h3 id="preview-doc-title" class="font-extrabold text-slate-900 text-sm sm:text-base truncate">Anteprima Documento</h3>
-                            <p id="preview-doc-filename" class="text-xs text-slate-500 truncate"></p>
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            <a id="preview-doc-download-btn" href="#" download class="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs">
-                                <i class="fa-solid fa-download"></i>
-                                <span>Scarica File</span>
-                            </a>
-                            <button type="button" onclick="closePreviewDocumentModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl">
-                                <i class="fa-solid fa-xmark text-xl"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div id="preview-doc-body" class="flex-1 bg-slate-100 overflow-auto flex items-center justify-center p-4">
-                        <!-- Popolato dinamicamente via JS -->
-                    </div>
-                </div>
-            </div>
         </section>
 
         <!-- ====================================================================
@@ -3715,6 +3570,151 @@
                         <button onclick="verifyAndEnable2FA()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-colors">Conferma</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Caricamento / Invio Bidirezionale Documento (Globale) -->
+    <div id="modal-upload-document" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-orange-50 to-amber-50/60">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center text-lg shadow-xs">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-slate-900 text-base sm:text-lg" id="modal-upload-doc-title">Carica e Invia Documento / Allegato</h3>
+                        <p class="text-xs text-slate-500" id="modal-upload-doc-subtitle">Condividi documenti in bacheca o invia un allegato a un condòmino</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeUploadDocumentModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="form-upload-document" onsubmit="submitUploadDocument(event)" class="overflow-y-auto p-6 space-y-5 flex-1">
+                <!-- Scelta Direzione / Destinatario (Visibile all'Amministratore) -->
+                <div id="doc-admin-recipient-section" class="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <label class="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                        <i class="fa-solid fa-paper-plane text-orange-600 mr-1"></i> 1. Direzione & Destinatario del Documento *
+                    </label>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
+                            <input type="radio" name="doc_direction_mode" value="all" checked onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
+                            <div>
+                                <span class="block text-xs font-bold text-slate-900">Bacheca Condominio</span>
+                                <span class="block text-[11px] text-slate-500">Visibile a tutti i condòmini</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
+                            <input type="radio" name="doc_direction_mode" value="persona" onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
+                            <div>
+                                <span class="block text-xs font-bold text-slate-900">Singolo Condòmino</span>
+                                <span class="block text-[11px] text-slate-500">Invio riservato individuale</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white cursor-pointer hover:border-orange-400 transition-colors">
+                            <input type="radio" name="doc_direction_mode" value="from_condomino" onchange="onChangeDocDirectionMode()" class="mt-0.5 accent-orange-600">
+                            <div>
+                                <span class="block text-xs font-bold text-slate-900">Ricevuto da Condòmino</span>
+                                <span class="block text-[11px] text-slate-500">Protocolla allegato condòmino</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Selettore Condòmino (dall'Anagrafica) -->
+                    <div id="doc-persona-select-wrapper" class="hidden pt-2">
+                        <label id="doc-persona-select-label" class="block text-xs font-bold text-slate-700 mb-1">Seleziona Condòmino dall'Anagrafica *</label>
+                        <select id="doc-upload-persona-id" class="w-full p-2.5 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none">
+                            <option value="">-- Seleziona Condòmino --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Banner Informativo per il Condòmino -->
+                <div id="doc-condomino-recipient-banner" class="hidden p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div class="text-xs text-emerald-900">
+                        <span class="font-extrabold block">Invio Riservato allo Studio Amministratore</span>
+                        <span>Il file allegato sarà visibile esclusivamente a te e all'Amministratore del Condominio.</span>
+                    </div>
+                </div>
+
+                <!-- Categoria e Titolo -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Categoria Documento *</label>
+                        <select id="doc-upload-category" required class="w-full p-2.5 text-xs font-semibold border border-slate-200 rounded-xl bg-white focus:border-orange-500 outline-none">
+                            <option value="Regolamento & Polizze">Regolamento & Polizze</option>
+                            <option value="Bilanci & Riparti">Bilanci & Riparti</option>
+                            <option value="Verbali & Assemblee">Verbali & Assemblee</option>
+                            <option value="Contratti & Fornitori">Contratti & Fornitori</option>
+                            <option value="Comunicazione Individuale">Comunicazione Individuale</option>
+                            <option value="Ricevuta Bonifico / Pagamento">Ricevuta Bonifico / Pagamento</option>
+                            <option value="Delega Assembleare Firmata">Delega Assembleare Firmata</option>
+                            <option value="Modulo Anagrafe / Dati Catastali">Modulo Anagrafe / Dati Catastali</option>
+                            <option value="Foto / Documentazione Guasto">Foto / Documentazione Guasto</option>
+                            <option value="Altra Documentazione">Altra Documentazione</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Titolo / Oggetto del Documento *</label>
+                        <input type="text" id="doc-upload-title" required placeholder="es. Contabile Bonifico Rata / Polizza Fabbricato" class="w-full p-2.5 text-xs font-semibold border border-slate-200 rounded-xl focus:border-orange-500 outline-none">
+                    </div>
+                </div>
+
+                <!-- Area Drag & Drop / Selezione File -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5">File Allegato (PDF, JPG, PNG, Word, Excel - Max 10 MB) *</label>
+                    <label for="doc-upload-file-input" class="flex flex-col items-center justify-center border-2 border-dashed border-orange-300 hover:border-orange-500 bg-orange-50/40 hover:bg-orange-50/80 rounded-2xl p-6 cursor-pointer transition-all text-center">
+                        <i class="fa-solid fa-file-arrow-up text-3xl text-orange-500 mb-2"></i>
+                        <span id="doc-upload-file-label" class="text-xs font-bold text-slate-800">Clicca qui per selezionare un file dal tuo dispositivo</span>
+                        <span id="doc-upload-file-sub" class="text-[11px] text-slate-500 mt-1">Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx</span>
+                        <input type="file" id="doc-upload-file-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt" onchange="onSelectDocumentFile(this)" class="hidden">
+                    </label>
+                </div>
+
+                <!-- Note di accompagnamento -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Note di accompagnamento (opzionale)</label>
+                    <textarea id="doc-upload-notes" rows="2" placeholder="Inserisci eventuali dettagli utili (es. numero CRO bonifico, periodo di riferimento, note tecniche)..." class="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:border-orange-500 outline-none"></textarea>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100 flex justify-end gap-3">
+                    <button type="button" onclick="closeUploadDocumentModal()" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors">
+                        Annulla
+                    </button>
+                    <button type="submit" id="btn-submit-upload-doc" class="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Carica e Invia Documento</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modale Anteprima Documento (PDF / Immagine) (Globale) -->
+    <div id="modal-preview-document" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                <div class="min-w-0 pr-4">
+                    <h3 id="preview-doc-title" class="font-extrabold text-slate-900 text-sm sm:text-base truncate">Anteprima Documento</h3>
+                    <p id="preview-doc-filename" class="text-xs text-slate-500 truncate"></p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <a id="preview-doc-download-btn" href="#" download class="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                        <i class="fa-solid fa-download"></i>
+                        <span>Scarica File</span>
+                    </a>
+                    <button type="button" onclick="closePreviewDocumentModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="preview-doc-body" class="flex-1 bg-slate-100 overflow-auto flex items-center justify-center p-4">
+                <!-- Popolato dinamicamente via JS -->
             </div>
         </div>
     </div>
