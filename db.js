@@ -53,8 +53,12 @@ if (DB_TYPE === 'sqlite') {
             password: process.env.MYSQL_PASSWORD || '',
             database: process.env.MYSQL_DATABASE || 'condominio_db',
             waitForConnections: true,
-            connectionLimit: 20,
+            connectionLimit: 25,
+            maxIdle: 10,
+            idleTimeout: 60000,
             queueLimit: 0,
+            enableKeepAlive: true,
+            keepAliveInitialDelay: 10000,
             dateStrings: true,
             ssl: (process.env.MYSQL_SSL === 'true' || process.env.MYSQL_SSL === '1') ? {
                 minVersion: 'TLSv1.2',
@@ -62,6 +66,11 @@ if (DB_TYPE === 'sqlite') {
             } : undefined
         });
     }
+
+    // Intercetta errori a livello di pool per prevenire crash del processo
+    pool.on('error', (err) => {
+        console.error('⚠️ [DB Pool] Errore imprevisto su connessione MySQL:', err.code || err.errno, err.message);
+    });
 
     pool.getConnection((err, conn) => {
         if (err) {
@@ -72,6 +81,15 @@ if (DB_TYPE === 'sqlite') {
             conn.release();
         }
     });
+
+    // Keep-alive heartbeat periodico (ogni 45 secondi) per evitare timeout di inattività dei cloud provider
+    setInterval(() => {
+        try {
+            pool.query('SELECT 1', (err) => {
+                if (err) console.warn('⚠️ [DB Keep-Alive] Ping fallito:', err.code || err.message);
+            });
+        } catch (_) {}
+    }, 45000);
 
     function adaptSqlForMysql(sql) {
         let clean = sql;
@@ -85,6 +103,28 @@ if (DB_TYPE === 'sqlite') {
         return clean;
     }
 
+    // Esegue query con retry automatico (1 tentativo extra) in caso di connessione persa o riavvio del server DB
+    function executeWithRetry(queryFn, callback) {
+        queryFn((err, results) => {
+            const isTransientError = err && [
+                'PROTOCOL_CONNECTION_LOST',
+                'ECONNRESET',
+                'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+                'ETIMEDOUT',
+                'EPIPE'
+            ].includes(err.code);
+
+            if (isTransientError) {
+                console.warn(`🔄 [DB Retry] Errore transitorio ${err.code}, ripeto l'operazione tra 250ms...`);
+                setTimeout(() => {
+                    queryFn(callback);
+                }, 250);
+            } else {
+                if (callback) callback(err, results);
+            }
+        });
+    }
+
     db = {
         type: 'mysql',
         pool,
@@ -94,9 +134,11 @@ if (DB_TYPE === 'sqlite') {
                 params = [];
             }
             const cleanSql = adaptSqlForMysql(sql);
-            pool.query(cleanSql, params, (err, rows) => {
-                if (callback) callback(err, rows || []);
-            });
+            executeWithRetry((done) => {
+                pool.query(cleanSql, params, (err, rows) => {
+                    done(err, rows || []);
+                });
+            }, callback);
         },
         get(sql, params, callback) {
             if (typeof params === 'function') {
@@ -104,9 +146,11 @@ if (DB_TYPE === 'sqlite') {
                 params = [];
             }
             const cleanSql = adaptSqlForMysql(sql);
-            pool.query(cleanSql, params, (err, rows) => {
-                if (callback) callback(err, rows && rows.length > 0 ? rows[0] : undefined);
-            });
+            executeWithRetry((done) => {
+                pool.query(cleanSql, params, (err, rows) => {
+                    done(err, rows && rows.length > 0 ? rows[0] : undefined);
+                });
+            }, callback);
         },
         run(sql, params, callback) {
             if (typeof params === 'function') {
@@ -120,7 +164,11 @@ if (DB_TYPE === 'sqlite') {
             }
             cleanSql = adaptSqlForMysql(cleanSql);
 
-            pool.query(cleanSql, params, (err, results) => {
+            executeWithRetry((done) => {
+                pool.query(cleanSql, params, (err, results) => {
+                    done(err, results);
+                });
+            }, (err, results) => {
                 if (callback) {
                     const ctx = {
                         lastID: results ? results.insertId : null,

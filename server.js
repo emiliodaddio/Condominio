@@ -20,6 +20,18 @@ if (fs.existsSync(envPath)) {
     } catch (_) {}
 }
 
+// ============================================================================
+// STABILITÀ & PARACADUTE GLOBALE NODE.JS (ZERO-CRASH / AUTO-HEALING)
+// ============================================================================
+process.on('uncaughtException', (err) => {
+    console.error('🚨 [FATAL ERROR INTERCETTATO - uncaughtException]:', err && (err.stack || err.message || err));
+    // Non lascia morire il processo: preserva la disponibilità del server per tutti gli utenti
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ [PROMISE REJECTION NON GESTITA]:', reason && (reason.stack || reason.message || reason));
+});
+
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -4265,7 +4277,23 @@ app.use('/api', (req, res) => {
 });
 
 // Fallback Frontend SPA
-app.use((req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+        return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
+    next();
+});
+
+// Gestore globale errori Express (Cattura eccezioni di route e payload)
+app.use((err, req, res, next) => {
+    console.error('⚠️ [EXPRESS GLOBAL ERROR HANDLER]:', err && (err.message || err));
+    if (res.headersSent) return next(err);
+    const status = err.status || err.statusCode || 500;
+    res.status(status).json({
+        success: false,
+        message: err.message || 'Si è verificato un errore interno del server.'
+    });
+});
 
 
 

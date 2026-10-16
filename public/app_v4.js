@@ -26,6 +26,22 @@ const state = {
 };
 
 // ============================================================================
+// STABILITÀ FRONTEND: CRASH-PROOF & ERROR SHIELD
+// ============================================================================
+window.addEventListener('error', (event) => {
+    console.error('🛡️ [FRONTEND SHIELD - Errore JS non bloccante]:', event.message, event.filename, event.lineno);
+    // Previene la propagazione all'infinito e non blocca la UI dell'utente
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.warn('🛡️ [FRONTEND SHIELD - Promise Rejection intercettata]:', event.reason);
+    if (event.reason && (event.reason.status === 401 || (event.reason.message && event.reason.message.includes('Token non valido')))) {
+        showToast('Sessione scaduta. Reindirizzamento al login...', 'warning');
+        setTimeout(() => logout(), 1200);
+    }
+});
+
+// ============================================================================
 // 1. VERIFICA AUTENTICAZIONE ALL'AVVIO
 // ============================================================================
 
@@ -88,6 +104,29 @@ function getAuthHeaders() {
     return headers;
 }
 
+/**
+ * Intercetta le risposte globali fetch: se la sessione scade (401), notifica l'utente con toast chiaro
+ */
+const _originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    try {
+        const response = await _originalFetch.apply(this, args);
+        if (response && (response.status === 401 || response.status === 403)) {
+            // Controlla se la richiesta riguarda un endpoint autenticato interno
+            const url = (args[0] && typeof args[0] === 'string') ? args[0] : (args[0]?.url || '');
+            if (url.startsWith('/api') && !url.includes('/api/auth/login') && !url.includes('/api/2fa')) {
+                if (response.status === 401) {
+                    showToast('Sessione di lavoro scaduta. Verrai reindirizzato al login.', 'warning');
+                    setTimeout(() => logout(), 1500);
+                }
+            }
+        }
+        return response;
+    } catch (networkErr) {
+        console.warn('⚠️ [Network Fault Intercettato]:', networkErr.message || networkErr);
+        throw networkErr;
+    }
+};
 
 /**
  * Disconnette l'utente cancellando la sessione e reindirizzando al login
