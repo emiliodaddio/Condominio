@@ -978,34 +978,115 @@ function ensureAnagraficaAndUnitaColumns(callback) {
 function realignDatabaseToAnagrafica(condominioId = null, callback = null) {
     try {
         const condoFilterQuotes = condominioId ? `AND condominio_id = ${parseInt(condominioId, 10)}` : '';
-        const condoFilterUnita = condominioId ? `AND condominio_id = ${parseInt(condominioId, 10)}` : '';
+        const condoFilterUnita = condominioId ? `WHERE u.condominio_id = ${parseInt(condominioId, 10)}` : '';
 
         // 1. Elimina le quote orfane non associate a una persona presente in Anagrafica Condominio & Tabelle Millesimali
         db.run(`DELETE FROM quotes WHERE (persona_id IS NULL OR persona_id NOT IN (SELECT id FROM anagrafica_persone)) ${condoFilterQuotes}`, () => {
-            // 2. Elimina le unità immobiliari orfane (di test/seed) non collegate a nessuna persona in Anagrafica
-            db.run(`DELETE FROM unita_immobiliari WHERE (proprietario_id IS NULL OR proprietario_id NOT IN (SELECT id FROM anagrafica_persone)) AND (conduttore_id IS NULL OR conduttore_id NOT IN (SELECT id FROM anagrafica_persone)) ${condoFilterUnita}`, () => {
-                // 3. Deduplica eventuali quote identiche create per errore durante i test (stesso condominio, persona, titolo, scadenza, importo)
-                db.all(`SELECT id, condominio_id, persona_id, title, due_date, amount, paid_amount FROM quotes WHERE 1=1 ${condoFilterQuotes} ORDER BY paid_amount DESC, id ASC`, [], (errQ, qRows) => {
-                    if (!errQ && Array.isArray(qRows)) {
-                        const seenQuotes = new Set();
-                        const dupIds = [];
-                        qRows.forEach(q => {
-                            const key = `${q.condominio_id}|${q.persona_id}|${(q.title || '').trim().toLowerCase()}|${q.due_date}|${parseFloat(q.amount) || 0}`;
-                            if (seenQuotes.has(key)) {
-                                dupIds.push(q.id);
-                            } else {
-                                seenQuotes.add(key);
-                            }
-                        });
-                        if (dupIds.length > 0) {
-                            db.run(`DELETE FROM quotes WHERE id IN (${dupIds.join(',')})`, () => {
-                                if (callback) callback();
-                            });
-                            return;
-                        }
-                    }
+            // 2. Analisi approfondita di tutte le unità per rilevare orfane e duplicati
+            db.all(`
+                SELECT u.id, u.condominio_id, u.identificativo, u.scala, u.piano, u.interno, 
+                       u.millesimi_proprieta, u.proprietario_id, u.conduttore_id,
+                       p1.id as p1_id, p2.id as p2_id
+                FROM unita_immobiliari u
+                LEFT JOIN anagrafica_persone p1 ON u.proprietario_id = p1.id
+                LEFT JOIN anagrafica_persone p2 ON u.conduttore_id = p2.id
+                ${condoFilterUnita}
+                ORDER BY u.id ASC
+            `, [], (errU, allUnits) => {
+                if (errU || !Array.isArray(allUnits)) {
                     if (callback) callback();
+                    return;
+                }
+
+                const unitsToDelete = new Set();
+                const seenKeys = new Map();
+
+                allUnits.forEach(u => {
+                    const hasValidPersona = (u.p1_id !== null && u.p1_id !== undefined) || (u.p2_id !== null && u.p2_id !== undefined);
+                    
+                    // Se non collegata ad alcuna persona censita nell'anagrafica del condominio -> orfana di test/seed
+                    if (!hasValidPersona) {
+                        unitsToDelete.add(u.id);
+                        return;
+                    }
+
+                    // Chiave per duplicati: identificativo normalizzato oppure locazione (scala + piano + interno)
+                    const cleanIdent = String(u.identificativo || '').trim().toLowerCase();
+                    const cleanScala = String(u.scala || '').trim().toLowerCase();
+                    const cleanPiano = String(u.piano || '').trim().toLowerCase();
+                    const cleanInterno = String(u.interno || '').trim().toLowerCase();
+
+                    const keyIdent = cleanIdent ? `${u.condominio_id}|ident:${cleanIdent}` : null;
+                    const keyLoc = (cleanScala || cleanPiano || cleanInterno)
+                        ? `${u.condominio_id}|loc:${cleanScala}|${cleanPiano}|${cleanInterno}`
+                        : null;
+
+                    let existingMatchId = null;
+                    if (keyIdent && seenKeys.has(keyIdent)) {
+                        existingMatchId = seenKeys.get(keyIdent);
+                    } else if (keyLoc && seenKeys.has(keyLoc)) {
+                        existingMatchId = seenKeys.get(keyLoc);
+                    }
+
+                    if (existingMatchId) {
+                        // Duplicato rilevato: teniamo quella con millesimi valorizzati > 0 o ID più recente
+                        const prevUnit = allUnits.find(x => x.id === existingMatchId);
+                        const currMill = parseFloat(u.millesimi_proprieta) || 0;
+                        const prevMill = prevUnit ? (parseFloat(prevUnit.millesimi_proprieta) || 0) : 0;
+
+                        if (currMill > 0 && prevMill === 0) {
+                            unitsToDelete.add(existingMatchId);
+                            if (keyIdent) seenKeys.set(keyIdent, u.id);
+                            if (keyLoc) seenKeys.set(keyLoc, u.id);
+                        } else {
+                            unitsToDelete.add(u.id);
+                        }
+                    } else {
+                        if (keyIdent) seenKeys.set(keyIdent, u.id);
+                        if (keyLoc) seenKeys.set(keyLoc, u.id);
+                    }
                 });
+
+                const deleteIds = Array.from(unitsToDelete);
+
+                const afterUnitsPurged = () => {
+                    // Pulizia quote_millesimali orfane (unita non più esistenti)
+                    db.run(`DELETE FROM quote_millesimali WHERE unita_id NOT IN (SELECT id FROM unita_immobiliari)`, () => {
+                        // Deduplica quote contabili identiche
+                        db.all(`SELECT id, condominio_id, persona_id, title, due_date, amount, paid_amount FROM quotes WHERE 1=1 ${condoFilterQuotes} ORDER BY paid_amount DESC, id ASC`, [], (errQ, qRows) => {
+                            if (!errQ && Array.isArray(qRows)) {
+                                const seenQuotes = new Set();
+                                const dupIds = [];
+                                qRows.forEach(q => {
+                                    const key = `${q.condominio_id}|${q.persona_id}|${(q.title || '').trim().toLowerCase()}|${q.due_date}|${parseFloat(q.amount) || 0}`;
+                                    if (seenQuotes.has(key)) {
+                                        dupIds.push(q.id);
+                                    } else {
+                                        seenQuotes.add(key);
+                                    }
+                                });
+                                if (dupIds.length > 0) {
+                                    db.run(`DELETE FROM quotes WHERE id IN (${dupIds.join(',')})`, () => {
+                                        if (callback) callback();
+                                    });
+                                    return;
+                                }
+                            }
+                            if (callback) callback();
+                        });
+                    });
+                };
+
+                if (deleteIds.length > 0) {
+                    console.log(`🧹 [Riallineamento DB] Rimozione di ${deleteIds.length} unità orfane/duplicate: IDs [${deleteIds.join(', ')}]`);
+                    db.run(`DELETE FROM quote_millesimali WHERE unita_id IN (${deleteIds.join(',')})`, () => {
+                        db.run(`DELETE FROM unita_immobiliari WHERE id IN (${deleteIds.join(',')})`, () => {
+                            afterUnitsPurged();
+                        });
+                    });
+                } else {
+                    afterUnitsPurged();
+                }
             });
         });
     } catch (e) {
@@ -4027,7 +4108,12 @@ function seedDefaultMillesimiTables() {
 }
 
 function syncDefaultMillesimiFromUnits(condoId, tabId, codice) {
-    db.all('SELECT id, millesimi_proprieta, millesimi_scale, millesimi_ascensore FROM unita_immobiliari WHERE condominio_id = ?', [condoId], (err, unitaList) => {
+    db.all(`
+        SELECT u.id, u.millesimi_proprieta, u.millesimi_scale, u.millesimi_ascensore 
+        FROM unita_immobiliari u
+        JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+        WHERE u.condominio_id = ?
+    `, [condoId], (err, unitaList) => {
         if (err || !Array.isArray(unitaList)) return;
         unitaList.forEach(u => {
             let val = 0;
@@ -4402,16 +4488,71 @@ app.delete('/api/documents/:id', authenticateToken, requireCondominio, checkCond
 // 1. Elenco Tabelle Millesimali del Condominio
 app.get('/api/millesimi/tabelle', authenticateToken, requireCondominio, (req, res) => {
     const condoId = req.condominio_id;
-    db.all(`
-        SELECT t.*, 
-            (SELECT COUNT(*) FROM quote_millesimali q WHERE q.tabella_id = t.id) as unita_assegnate,
-            (SELECT COALESCE(SUM(valore_millesimale), 0) FROM quote_millesimali q WHERE q.tabella_id = t.id) as somma_millesimi_reale
-        FROM anagrafica_tabelle_millesimali t
-        WHERE t.condominio_id = ?
-        ORDER BY t.id ASC
-    `, [condoId], (err, rows) => {
-        if (err) return res.status(500).json({ success: false, message: 'Errore lettura tabelle millesimali: ' + err.message });
-        return res.json({ success: true, data: rows || [] });
+    realignDatabaseToAnagrafica(condoId, () => {
+        db.all(`
+            SELECT t.*, 
+                (SELECT COUNT(DISTINCT q.unita_id) 
+                 FROM quote_millesimali q 
+                 JOIN unita_immobiliari u ON q.unita_id = u.id 
+                 JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+                 WHERE q.tabella_id = t.id) as unita_assegnate,
+                (SELECT COALESCE(SUM(q.valore_millesimale), 0) 
+                 FROM quote_millesimali q 
+                 JOIN unita_immobiliari u ON q.unita_id = u.id 
+                 JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+                 WHERE q.tabella_id = t.id) as somma_millesimi_reale
+            FROM anagrafica_tabelle_millesimali t
+            WHERE t.condominio_id = ?
+            ORDER BY t.id ASC
+        `, [condoId], (err, rows) => {
+            if (err) return res.status(500).json({ success: false, message: 'Errore lettura tabelle millesimali: ' + err.message });
+            return res.json({ success: true, data: rows || [] });
+        });
+    });
+});
+
+// Riallineamento Esplicito e Pulizia Duplicati Unità Millesimali
+app.post('/api/millesimi/riallinea-unita', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const condoId = req.condominio_id;
+    realignDatabaseToAnagrafica(condoId, () => {
+        db.get(`
+            SELECT COUNT(DISTINCT u.id) as total_units
+            FROM unita_immobiliari u
+            JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+            WHERE u.condominio_id = ?
+        `, [condoId], (err, row) => {
+            const count = row ? row.total_units : 0;
+            // Sincronizza eventuali unità censite mancanti nelle tabelle esistenti
+            db.all('SELECT id, codice FROM anagrafica_tabelle_millesimali WHERE condominio_id = ?', [condoId], (tErr, tabs) => {
+                if (!tErr && Array.isArray(tabs)) {
+                    tabs.forEach(tab => {
+                        db.all(`
+                            SELECT u.id, u.millesimi_proprieta, u.millesimi_scale, u.millesimi_ascensore
+                            FROM unita_immobiliari u
+                            JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+                            WHERE u.condominio_id = ?
+                              AND u.id NOT IN (SELECT unita_id FROM quote_millesimali WHERE tabella_id = ?)
+                        `, [condoId, tab.id], (mErr, missing) => {
+                            if (!mErr && Array.isArray(missing)) {
+                                missing.forEach(mu => {
+                                    let v = 0;
+                                    if (tab.codice === 'TAB_A') v = parseFloat(mu.millesimi_proprieta) || 0;
+                                    else if (tab.codice === 'TAB_B') v = parseFloat(mu.millesimi_scale) || 0;
+                                    else if (tab.codice === 'TAB_C') v = parseFloat(mu.millesimi_ascensore) || 0;
+                                    db.run('INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale) VALUES (?, ?, ?)', [tab.id, mu.id, v]);
+                                });
+                            }
+                        });
+                    });
+                }
+                logAudit(req.user.id, condoId, `Riallineamento e Deduplica Unità Millesimali (${count} unità attive)`, 'quote_millesimali', null, null, req.ip);
+                return res.json({
+                    success: true,
+                    message: `Riallineamento completato con successo: ${count} unità censite attive (nessun duplicato).`,
+                    active_units: count
+                });
+            });
+        });
     });
 });
 
@@ -4448,7 +4589,12 @@ app.post('/api/millesimi/tabelle', authenticateToken, requireCondominio, isAdmin
             } else {
                 // Popola tutte le unità del condominio (eventualmente filtrate per scala)
                 const scalaFilterSql = cleanScala ? `AND u.scala = '${cleanScala}'` : '';
-                db.all(`SELECT u.id, u.millesimi_proprieta FROM unita_immobiliari u WHERE u.condominio_id = ? ${scalaFilterSql}`, [condoId], (uErr, units) => {
+                db.all(`
+                    SELECT u.id, u.millesimi_proprieta 
+                    FROM unita_immobiliari u 
+                    JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+                    WHERE u.condominio_id = ? ${scalaFilterSql}
+                `, [condoId], (uErr, units) => {
                     if (!uErr && Array.isArray(units)) {
                         units.forEach(u => {
                             db.run('INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale) VALUES (?, ?, ?)', [newTabId, u.id, parseFloat(u.millesimi_proprieta) || 0]);
@@ -4477,7 +4623,7 @@ app.get('/api/millesimi/tabelle/:id/quote', authenticateToken, requireCondominio
                    p.id as persona_id, p.nome, p.cognome, p.codice_fiscale
             FROM quote_millesimali q
             JOIN unita_immobiliari u ON q.unita_id = u.id
-            LEFT JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+            JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
             WHERE q.tabella_id = ?
             ORDER BY u.scala ASC, u.piano ASC, u.interno ASC
         `, [tabId], (err, rows) => {
@@ -4524,6 +4670,7 @@ app.post('/api/millesimi/tabelle/calcola-art1124', authenticateToken, requireCon
         SELECT u.id, u.identificativo, u.scala, u.piano, u.millesimi_proprieta,
                COALESCE(u.altezza_piano_metri, NULL) as altezza_metri
         FROM unita_immobiliari u
+        JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
         WHERE u.condominio_id = ? ${scalaSql}
     `, [condoId], (err, units) => {
         if (err || !units || units.length === 0) {

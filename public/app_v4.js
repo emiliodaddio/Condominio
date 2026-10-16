@@ -6589,6 +6589,28 @@ async function loadMillesimiTablesList() {
     }
 }
 
+window.realignMillesimiUnits = async function() {
+    try {
+        showToast('Riallineamento e controllo deduplica unità in corso...', 'info');
+        const res = await fetch('/api/millesimi/riallinea-unita', {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'Riallineamento completato con successo!', 'success');
+            await loadMillesimiTablesList();
+            if (state.currentSelectedTableDetail && state.currentSelectedTableDetail.tabella) {
+                viewMillesimiTableDetail(state.currentSelectedTableDetail.tabella.id);
+            }
+        } else {
+            showToast(data.message || 'Errore durante il riallineamento.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione al server.', 'error');
+    }
+};
+
 window.submitCreateMillesimiTable = async function() {
     const codice = (document.getElementById('new-tab-codice')?.value || '').trim();
     const descrizione = (document.getElementById('new-tab-desc')?.value || '').trim();

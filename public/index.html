@@ -2441,14 +2441,19 @@
                     <div class="overflow-y-auto p-6 space-y-6 flex-1">
                         <!-- Elenco Tabelle Attive -->
                         <div>
-                            <div class="flex justify-between items-center mb-3">
+                            <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
                                 <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                                     <i class="fa-solid fa-list-check text-amber-600"></i>
                                     Tabelle Millesimali Registrate nel Condominio
                                 </h4>
-                                <button type="button" onclick="toggleNewMillesimiTableForm()" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition flex items-center gap-1">
-                                    <i class="fa-solid fa-plus"></i> Nuova Tabella Personalizzata
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="realignMillesimiUnits()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs" title="Riallinea all'Anagrafica, rimuove orfani e deduplica le unità">
+                                        <i class="fa-solid fa-arrows-rotate text-amber-600"></i> Riallinea & Deduplica (25 Unità)
+                                    </button>
+                                    <button type="button" onclick="toggleNewMillesimiTableForm()" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition flex items-center gap-1 shadow-2xs">
+                                        <i class="fa-solid fa-plus"></i> Nuova Tabella Personalizzata
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
