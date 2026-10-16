@@ -4171,26 +4171,54 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
                         });
                     }
                     const sName = matchedP ? `${matchedP.cognome || ''} ${matchedP.nome || ''}`.trim() : userName;
-                    const unitaParts = [];
-                    if (matchedP && matchedP.scala) unitaParts.push(`Sc. ${matchedP.scala}`);
-                    if (matchedP && matchedP.piano) unitaParts.push(`P. ${matchedP.piano}`);
-                    if (matchedP && matchedP.interno) unitaParts.push(`Int. ${matchedP.interno}`);
-                    const unitaLabel = unitaParts.length > 0 ? unitaParts.join(' - ') : ((uRow && uRow.unita) || '');
+                    // Destinatario: può essere lo Studio Amministratore ('admin') o un Altro Condòmino ('persona')
+                    const isToPeer = (recipient_type === 'persona' || recipient_type === 'condomino_peer') && recipient_persona_id;
+                    if (isToPeer) {
+                        const targetPeer = (persone || []).find(p => Number(p.id) === Number(recipient_persona_id));
+                        const recName = targetPeer ? `${targetPeer.cognome || ''} ${targetPeer.nome || ''}`.trim() : 'Altro Condòmino';
+                        const recUnitaParts = [];
+                        if (targetPeer && targetPeer.scala) recUnitaParts.push(`Sc. ${targetPeer.scala}`);
+                        if (targetPeer && targetPeer.piano) recUnitaParts.push(`P. ${targetPeer.piano}`);
+                        if (targetPeer && targetPeer.interno) recUnitaParts.push(`Int. ${targetPeer.interno}`);
+                        const recUnitaLabel = recUnitaParts.length > 0 ? recUnitaParts.join(' - ') : (targetPeer ? (targetPeer.identificativo || '') : '');
 
-                    db.run(`
-                        INSERT INTO condo_documents
-                        (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
-                        VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
-                    `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
-                        if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
-                        const newDocId = this.lastID;
-                        logAudit(req.user.id, condoId, `Condòmino ${sName} invia documento: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
-                        return res.json({
-                            success: true,
-                            message: 'Allegato inviato con successo allo Studio Amministratore!',
-                            data: { id: newDocId }
+                        db.run(`
+                            INSERT INTO condo_documents
+                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                            VALUES (?, ?, 'condomino', ?, ?, 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
+                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, targetPeer ? targetPeer.id : null, recName, recUnitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                            if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento al condòmino: ' + errIns.message });
+                            const newDocId = this.lastID;
+                            logAudit(req.user.id, condoId, `Condòmino ${sName} invia allegato a condòmino ${recName}: "${cleanTitle}"`, 'condo_documents', newDocId, null, req.ip);
+                            return res.json({
+                                success: true,
+                                message: `Allegato inviato con successo a ${recName}!`,
+                                data: { id: newDocId }
+                            });
                         });
-                    });
+                    } else {
+                        // Destinatario: Studio Amministratore
+                        const unitaParts = [];
+                        if (matchedP && matchedP.scala) unitaParts.push(`Sc. ${matchedP.scala}`);
+                        if (matchedP && matchedP.piano) unitaParts.push(`P. ${matchedP.piano}`);
+                        if (matchedP && matchedP.interno) unitaParts.push(`Int. ${matchedP.interno}`);
+                        const unitaLabel = unitaParts.length > 0 ? unitaParts.join(' - ') : ((uRow && uRow.unita) || '');
+
+                        db.run(`
+                            INSERT INTO condo_documents
+                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                            VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                            if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
+                            const newDocId = this.lastID;
+                            logAudit(req.user.id, condoId, `Condòmino ${sName} invia documento allo Studio: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
+                            return res.json({
+                                success: true,
+                                message: 'Allegato inviato con successo allo Studio Amministratore!',
+                                data: { id: newDocId }
+                            });
+                        });
+                    }
                 });
             });
         }

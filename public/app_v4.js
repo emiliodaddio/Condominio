@@ -6667,6 +6667,15 @@ function getDocDirectionBadgeHtml(doc) {
             ${doc.unita_label ? `<div class="text-[11px] text-slate-500 font-semibold">${doc.unita_label}</div>` : ''}
         `;
     }
+    if (doc.sender_role === 'condomino' && (doc.recipient_type === 'persona' || doc.recipient_type === 'condomino_peer')) {
+        return `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-extrabold uppercase tracking-wider">
+                <i class="fa-solid fa-people-arrows"></i> Condòmino &rarr; Condòmino
+            </span>
+            <div class="font-extrabold text-slate-900 text-xs mt-1">Da: ${doc.sender_name || 'Condòmino'}</div>
+            <div class="text-[11px] text-slate-600 font-semibold">A: ${doc.recipient_name || 'Altro Condòmino'} ${doc.unita_label ? `(${doc.unita_label})` : ''}</div>
+        `;
+    }
     return `
         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase tracking-wider">
             <i class="fa-solid fa-inbox"></i> Condòmino &rarr; Studio
@@ -6803,6 +6812,270 @@ window.renderCondoDocumentsTable = function() {
     }).join('');
 };
 
+window.onChangeDocAdminDestMode = function() {
+    const selectedRadio = document.querySelector('input[name="doc_admin_dest_mode"]:checked');
+    const mode = selectedRadio ? selectedRadio.value : 'all';
+    const wrapper = document.getElementById('doc-persona-select-wrapper');
+    const label = document.getElementById('doc-persona-select-label');
+    const catSelect = document.getElementById('doc-upload-category');
+
+    if (!wrapper) return;
+    if (mode === 'all') {
+        wrapper.classList.add('hidden');
+        if (catSelect) catSelect.value = "Verbali d'Assemblea";
+    } else {
+        wrapper.classList.remove('hidden');
+        if (label) label.textContent = "Seleziona Condòmino Destinatario (dall'Anagrafica) *";
+        if (catSelect) catSelect.value = "Avvisi & Comunicazioni Generiche";
+    }
+};
+
+window.onChangeDocCondoDestMode = function() {
+    const selectedRadio = document.querySelector('input[name="doc_condo_dest_mode"]:checked');
+    const mode = selectedRadio ? selectedRadio.value : 'admin';
+    const wrapper = document.getElementById('doc-persona-select-wrapper');
+    const label = document.getElementById('doc-persona-select-label');
+    const catSelect = document.getElementById('doc-upload-category');
+
+    if (!wrapper) return;
+    if (mode === 'admin') {
+        wrapper.classList.add('hidden');
+        if (catSelect) catSelect.value = "Ricevuta Bonifico / Pagamento";
+    } else {
+        wrapper.classList.remove('hidden');
+        if (label) label.textContent = "Seleziona il Condòmino dello Stabile a cui inviare l'allegato *";
+        if (catSelect) catSelect.value = "Moduli Firmati & Deleghe";
+    }
+};
+
+window.onChangeDocDirectionMode = function() {
+    if (state.currentUser && state.currentUser.role === 'admin') {
+        window.onChangeDocAdminDestMode();
+    } else {
+        window.onChangeDocCondoDestMode();
+    }
+};
+
+// ==========================================
+// CANALI DI INPUT: FILE, CAMERA & SCANNER
+// ==========================================
+window.triggerDocFilePicker = function() {
+    const input = document.getElementById('doc-upload-file-input');
+    if (input) input.click();
+};
+
+window.triggerDocCameraAction = function() {
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+    if (isMobile) {
+        const camInput = document.getElementById('doc-upload-camera-input');
+        if (camInput) camInput.click();
+    } else {
+        openCameraCaptureModal();
+    }
+};
+
+window.triggerDocScanAction = function() {
+    const scanInput = document.getElementById('doc-upload-scanner-input');
+    if (scanInput) {
+        scanInput.click();
+    }
+};
+
+window.onSelectScannedDocument = function(input) {
+    if (input && input.files && input.files[0]) {
+        const file = input.files[0];
+        window.onSelectDocumentFile(input, true);
+        showToast(`Documento scansionato acquisito: ${file.name}`, 'success');
+    }
+};
+
+let cameraStream = null;
+
+async function openCameraCaptureModal() {
+    const modal = document.getElementById('modal-camera-capture');
+    const video = document.getElementById('camera-stream-video');
+    const canvas = document.getElementById('camera-stream-canvas');
+    const preview = document.getElementById('camera-snapshot-preview');
+    const guide = document.getElementById('camera-frame-guide');
+    const shutterBtn = document.getElementById('btn-camera-shutter');
+    const retakeBtn = document.getElementById('btn-camera-retake');
+    const confirmBtn = document.getElementById('btn-camera-confirm');
+
+    if (!modal || !video) return;
+
+    if (canvas) canvas.classList.add('hidden');
+    if (preview) {
+        preview.classList.add('hidden');
+        preview.src = '';
+    }
+    if (video) video.classList.remove('hidden');
+    if (guide) guide.classList.remove('hidden');
+    if (shutterBtn) shutterBtn.classList.remove('hidden');
+    if (retakeBtn) retakeBtn.classList.add('hidden');
+    if (confirmBtn) confirmBtn.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+
+    try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('WebRTC non supportato da questo browser.');
+        }
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            },
+            audio: false
+        });
+        video.srcObject = cameraStream;
+        await video.play();
+    } catch (err) {
+        console.warn('Accesso fotocamera fallito, fallback a input file fotocamera:', err);
+        closeCameraCaptureModal();
+        const camInput = document.getElementById('doc-upload-camera-input');
+        if (camInput) {
+            camInput.click();
+        } else {
+            showToast('Impossibile accedere alla fotocamera: ' + (err.message || 'permesso negato'), 'warning');
+        }
+    }
+}
+
+window.closeCameraCaptureModal = function() {
+    const modal = document.getElementById('modal-camera-capture');
+    if (modal) modal.classList.add('hidden');
+    if (cameraStream) {
+        try {
+            cameraStream.getTracks().forEach(track => track.stop());
+        } catch (_) {}
+        cameraStream = null;
+    }
+    const video = document.getElementById('camera-stream-video');
+    if (video) video.srcObject = null;
+};
+
+window.takeCameraSnapshot = function() {
+    const video = document.getElementById('camera-stream-video');
+    const canvas = document.getElementById('camera-stream-canvas');
+    const preview = document.getElementById('camera-snapshot-preview');
+    const guide = document.getElementById('camera-frame-guide');
+    const shutterBtn = document.getElementById('btn-camera-shutter');
+    const retakeBtn = document.getElementById('btn-camera-retake');
+    const confirmBtn = document.getElementById('btn-camera-confirm');
+
+    if (!video || !canvas || !preview) return;
+
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    preview.src = dataUrl;
+
+    video.classList.add('hidden');
+    if (guide) guide.classList.add('hidden');
+    preview.classList.remove('hidden');
+
+    if (shutterBtn) shutterBtn.classList.add('hidden');
+    if (retakeBtn) retakeBtn.classList.remove('hidden');
+    if (confirmBtn) confirmBtn.classList.remove('hidden');
+};
+
+window.retakeCameraSnapshot = function() {
+    const video = document.getElementById('camera-stream-video');
+    const preview = document.getElementById('camera-snapshot-preview');
+    const guide = document.getElementById('camera-frame-guide');
+    const shutterBtn = document.getElementById('btn-camera-shutter');
+    const retakeBtn = document.getElementById('btn-camera-retake');
+    const confirmBtn = document.getElementById('btn-camera-confirm');
+
+    if (preview) {
+        preview.classList.add('hidden');
+        preview.src = '';
+    }
+    if (video) video.classList.remove('hidden');
+    if (guide) guide.classList.remove('hidden');
+
+    if (shutterBtn) shutterBtn.classList.remove('hidden');
+    if (retakeBtn) retakeBtn.classList.add('hidden');
+    if (confirmBtn) confirmBtn.classList.add('hidden');
+};
+
+window.confirmCameraSnapshot = function() {
+    const preview = document.getElementById('camera-snapshot-preview');
+    if (!preview || !preview.src || preview.src.length < 50) {
+        showToast('Nessuna foto acquisita.', 'warning');
+        return;
+    }
+
+    const dataUrl = preview.src;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const fileName = `foto_documento_${timestamp}.jpg`;
+    const approxSize = Math.round((dataUrl.length * 3) / 4);
+
+    state.pendingUploadFile = {
+        file_name: fileName,
+        file_mime: 'image/jpeg',
+        file_size: approxSize,
+        file_data: dataUrl
+    };
+
+    updateSelectedFileBoxUI(fileName, approxSize, 'Foto scattata con la fotocamera');
+
+    const titleInput = document.getElementById('doc-upload-title');
+    if (titleInput && !titleInput.value.trim()) {
+        titleInput.value = `Foto Documento ${new Date().toLocaleDateString('it-IT')}`;
+    }
+
+    window.closeCameraCaptureModal();
+    showToast('Foto acquisita con successo!', 'success');
+};
+
+function updateSelectedFileBoxUI(name, size, note) {
+    const box = document.getElementById('doc-selected-file-box');
+    const nameEl = document.getElementById('doc-selected-file-name');
+    const sizeEl = document.getElementById('doc-selected-file-size');
+    const iconEl = document.getElementById('doc-selected-file-icon');
+
+    if (box) box.classList.remove('hidden');
+    if (nameEl) nameEl.textContent = name;
+    if (sizeEl) sizeEl.textContent = `${formatFileSizeHuman(size)}${note ? ' • ' + note : ' • Pronto per l\'invio'}`;
+    if (iconEl) iconEl.innerHTML = getDocFileIcon(name, state.pendingUploadFile ? state.pendingUploadFile.file_mime : '');
+}
+
+window.removePendingUploadFile = function() {
+    state.pendingUploadFile = null;
+    const box = document.getElementById('doc-selected-file-box');
+    if (box) box.classList.add('hidden');
+
+    ['doc-upload-file-input', 'doc-upload-camera-input', 'doc-upload-scanner-input'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+};
+
+window.previewCurrentPendingFile = function() {
+    if (!state.pendingUploadFile || !state.pendingUploadFile.file_data) {
+        showToast('Nessun file selezionato da visualizzare.', 'warning');
+        return;
+    }
+    const win = window.open();
+    if (win) {
+        if (state.pendingUploadFile.file_mime && state.pendingUploadFile.file_mime.startsWith('image/')) {
+            win.document.write(`<title>${state.pendingUploadFile.file_name}</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${state.pendingUploadFile.file_data}" style="max-width:100%;max-height:100%;object-fit:contain;"></body>`);
+        } else {
+            win.document.write(`<title>${state.pendingUploadFile.file_name}</title><iframe src="${state.pendingUploadFile.file_data}" style="border:none;width:100%;height:100vh;"></iframe>`);
+        }
+    } else {
+        showToast('Finestra popup bloccata dal browser.', 'warning');
+    }
+};
+
 window.openUploadDocumentModal = async function() {
     try {
         if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
@@ -6818,40 +7091,58 @@ window.openUploadDocumentModal = async function() {
 
         const isAdmin = state.currentUser && state.currentUser.role === 'admin';
         const adminRecSection = document.getElementById('doc-admin-recipient-section');
-        const condoBanner = document.getElementById('doc-condomino-recipient-banner');
+        const condoRecSection = document.getElementById('doc-condo-recipient-section');
         const modalTitle = document.getElementById('modal-upload-doc-title');
         const modalSub = document.getElementById('modal-upload-doc-subtitle');
         const catSelect = document.getElementById('doc-upload-category');
 
-        // Reset form
-        state.pendingUploadFile = null;
+        // Reset file pending e form
+        window.removePendingUploadFile();
         try {
             const form = document.getElementById('form-upload-document');
             if (form) form.reset();
-            const fileLabel = document.getElementById('doc-upload-file-label');
-            const fileSub = document.getElementById('doc-upload-file-sub');
-            if (fileLabel) fileLabel.textContent = 'Clicca qui per selezionare un file dal tuo dispositivo';
-            if (fileSub) fileSub.textContent = 'Formati supportati: .pdf, .jpg, .jpeg, .png, .doc, .docx, .xls, .xlsx';
         } catch (_) {}
 
         if (isAdmin) {
             if (adminRecSection) adminRecSection.classList.remove('hidden');
-            if (condoBanner) condoBanner.classList.add('hidden');
+            if (condoRecSection) condoRecSection.classList.add('hidden');
             if (modalTitle) modalTitle.textContent = 'Carica e Invia Documento / Allegato';
-            if (modalSub) modalSub.textContent = 'Pubblica in Bacheca Condominiale o invia un documento a un singolo condòmino';
-            if (catSelect) catSelect.value = 'Regolamento & Polizze';
-            if (typeof onChangeDocDirectionMode === 'function') onChangeDocDirectionMode();
+            if (modalSub) modalSub.textContent = 'Pubblica in bacheca per l\'intero condominio o invia a un singolo condòmino';
+
+            if (catSelect) {
+                catSelect.innerHTML = `
+                    <option value="Verbali d'Assemblea">Verbali d'Assemblea</option>
+                    <option value="Bilanci & Rendiconti">Bilanci & Rendiconti</option>
+                    <option value="Avvisi & Comunicazioni Generiche">Avvisi & Comunicazioni Generiche</option>
+                    <option value="Regolamento & Polizze">Regolamento & Polizze</option>
+                    <option value="Contratti Fornitori & Manutenzioni">Contratti Fornitori & Manutenzioni</option>
+                    <option value="Altra Documentazione">Altra Documentazione</option>
+                `;
+                catSelect.value = "Verbali d'Assemblea";
+            }
+            window.onChangeDocAdminDestMode();
         } else {
             if (adminRecSection) adminRecSection.classList.add('hidden');
-            if (condoBanner) condoBanner.classList.remove('hidden');
-            if (modalTitle) modalTitle.textContent = 'Invia Documento / Allegato all\'Amministratore';
-            if (modalSub) modalSub.textContent = 'Carica ricevute di bonifico, deleghe o documentazione per lo Studio Amministrativo';
-            if (catSelect) catSelect.value = 'Ricevuta Bonifico / Pagamento';
+            if (condoRecSection) condoRecSection.classList.remove('hidden');
+            if (modalTitle) modalTitle.textContent = 'Invia Allegato o Documento';
+            if (modalSub) modalSub.textContent = 'Invia allo Studio Amministratore o a un altro condòmino dello stabile';
+
+            if (catSelect) {
+                catSelect.innerHTML = `
+                    <option value="Ricevuta Bonifico / Pagamento">Ricevuta di Pagamento / Bonifico</option>
+                    <option value="Segnalazione Guasto con Foto">Segnalazione Guasto con Foto</option>
+                    <option value="Moduli Firmati & Deleghe">Moduli Firmati & Deleghe</option>
+                    <option value="Comunicazione Riservata">Comunicazione Riservata</option>
+                    <option value="Altra Documentazione">Altra Documentazione</option>
+                `;
+                catSelect.value = "Ricevuta Bonifico / Pagamento";
+            }
+            window.onChangeDocCondoDestMode();
         }
 
         modal.classList.remove('hidden');
 
-        // Popola la lista in background
+        // Popola l'elenco condòmini in background
         populateDocPersonaSelectors().catch(() => {});
     } catch (err) {
         console.error('Errore openUploadDocumentModal:', err);
@@ -6863,34 +7154,11 @@ window.openUploadDocumentModal = async function() {
 window.closeUploadDocumentModal = function() {
     const modal = document.getElementById('modal-upload-document');
     if (modal) modal.classList.add('hidden');
+    window.closeCameraCaptureModal();
 };
 
-window.onChangeDocDirectionMode = function() {
-    const selectedRadio = document.querySelector('input[name="doc_direction_mode"]:checked');
-    const mode = selectedRadio ? selectedRadio.value : 'all';
-    const wrapper = document.getElementById('doc-persona-select-wrapper');
-    const label = document.getElementById('doc-persona-select-label');
-    const catSelect = document.getElementById('doc-upload-category');
-
-    if (!wrapper) return;
-    if (mode === 'all') {
-        wrapper.classList.add('hidden');
-        if (catSelect) catSelect.value = 'Regolamento & Polizze';
-    } else if (mode === 'persona') {
-        wrapper.classList.remove('hidden');
-        if (label) label.textContent = 'Seleziona Condòmino Destinatario (dall\'Anagrafica) *';
-        if (catSelect) catSelect.value = 'Comunicazione Individuale';
-    } else if (mode === 'from_condomino') {
-        wrapper.classList.remove('hidden');
-        if (label) label.textContent = 'Seleziona Condòmino Mittente (dall\'Anagrafica) *';
-        if (catSelect) catSelect.value = 'Ricevuta Bonifico / Pagamento';
-    }
-};
-
-window.onSelectDocumentFile = function(input) {
+window.onSelectDocumentFile = function(input, isScanned = false) {
     const file = input && input.files && input.files[0];
-    const fileLabel = document.getElementById('doc-upload-file-label');
-    const fileSub = document.getElementById('doc-upload-file-sub');
     const titleInput = document.getElementById('doc-upload-title');
 
     if (!file) {
@@ -6913,8 +7181,7 @@ window.onSelectDocumentFile = function(input) {
             file_size: file.size,
             file_data: evt.target.result
         };
-        if (fileLabel) fileLabel.innerHTML = `<span class="text-emerald-700 font-extrabold"><i class="fa-solid fa-circle-check mr-1"></i> File pronto: ${file.name}</span>`;
-        if (fileSub) fileSub.textContent = `Dimensione: ${formatFileSizeHuman(file.size)}`;
+        updateSelectedFileBoxUI(file.name, file.size, isScanned ? 'Acquisito da Scanner' : 'File pronto');
         if (titleInput && !titleInput.value.trim()) {
             titleInput.value = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
         }
@@ -6935,7 +7202,7 @@ window.submitUploadDocument = async function(e) {
         return;
     }
     if (!state.pendingUploadFile || !state.pendingUploadFile.file_data) {
-        showToast('Seleziona un file da caricare dal tuo dispositivo.', 'warning');
+        showToast('Acquisisci o seleziona un file tramite Scanner, Fotocamera o Sfoglia File.', 'warning');
         return;
     }
 
@@ -6950,26 +7217,34 @@ window.submitUploadDocument = async function(e) {
     };
 
     if (isAdmin) {
-        const selectedRadio = document.querySelector('input[name="doc_direction_mode"]:checked');
+        const selectedRadio = document.querySelector('input[name="doc_admin_dest_mode"]:checked');
         const mode = selectedRadio ? selectedRadio.value : 'all';
         const personaId = document.getElementById('doc-upload-persona-id')?.value;
 
         if (mode === 'all') {
             payload.recipient_type = 'all';
-        } else if (mode === 'persona') {
+        } else {
             if (!personaId) {
                 showToast('Seleziona il condòmino destinatario dall\'elenco.', 'warning');
                 return;
             }
             payload.recipient_type = 'persona';
             payload.recipient_persona_id = personaId;
-        } else if (mode === 'from_condomino') {
+        }
+    } else {
+        const selectedRadio = document.querySelector('input[name="doc_condo_dest_mode"]:checked');
+        const mode = selectedRadio ? selectedRadio.value : 'admin';
+        const personaId = document.getElementById('doc-upload-persona-id')?.value;
+
+        if (mode === 'admin') {
+            payload.recipient_type = 'admin';
+        } else {
             if (!personaId) {
-                showToast('Seleziona il condòmino mittente dall\'elenco.', 'warning');
+                showToast('Seleziona il condòmino destinatario a cui inviare l\'allegato.', 'warning');
                 return;
             }
-            payload.direction = 'from_condomino';
-            payload.sender_persona_id = personaId;
+            payload.recipient_type = 'persona';
+            payload.recipient_persona_id = personaId;
         }
     }
 
@@ -6986,7 +7261,7 @@ window.submitUploadDocument = async function(e) {
         if (btn) btn.disabled = false;
 
         if (data.success) {
-            showToast(data.message || 'Documento caricato con successo!', 'success');
+            showToast(data.message || 'Documento inviato con successo!', 'success');
             closeUploadDocumentModal();
             loadCondoDocuments();
         } else {
