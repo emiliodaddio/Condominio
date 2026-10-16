@@ -1045,178 +1045,208 @@
                 </div>
             </div>
 
-            <!-- Griglia Card Sezioni Rapide -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <!-- Card: Area Contabile -->
-                <div onclick="switchTab('accounting')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-blue-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-file-invoice-dollar"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-blue-600 transition-colors">Area Contabile</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Visualizza il bilancio, le tue spese, le rate e i pagamenti in modo trasparente.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600">
-                        <span>Consulta bilanci</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
+            <!-- Griglia Card Sezioni Rapide Ordinate per Aree Tematiche -->
+            <div class="space-y-8">
 
-                <!-- Card: Assemblee -->
-                <div onclick="switchTab('assemblies')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-landmark"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Assemblee & Verbali</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Consulta i verbali approvati, i documenti ufficiali e partecipa alle assemblee.</p>
+                <!-- 1. ANAGRAFICA, STRUTTURA & ACCESSI -->
+                <div>
+                    <div class="flex items-center gap-2 mb-3.5 px-1">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-500">1. Anagrafica, Condominio & Accessi</h2>
                     </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
-                        <span>Vedi verbali</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
-                <!-- Card: Comunicazioni & Circolari -->
-                <div onclick="switchTab('communications')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-sky-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-sky-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-paper-plane"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-sky-600 transition-colors">Comunicazioni & Circolari</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Invia circolari, avvisi urgenti e comunicazioni ufficiali su carta intestata PDF.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-sky-600">
-                        <span>Invia avviso</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
-                <!-- Card: Storico Comunicazioni Inviate (Admin) -->
-                <div onclick="switchTab('storico-comunicazioni')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-box-archive"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Storico Comunicazioni Inviate</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Archivio certificato di convocazioni, circolari, solleciti e ricevute con ricerca per nominativo.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
-                        <span>Cerca per nominativo</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
-                <!-- Card: Segnalazioni Guasti (con supporto lampeggio per guasti aperti) -->
-                <div id="dash-card-tickets" onclick="switchTab('tickets')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-rose-300 relative overflow-hidden transition-all">
-                    <div>
-                        <div class="flex items-center justify-between mb-4">
-                            <div id="dash-card-tickets-icon" class="w-13 h-13 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-2xl group-hover:bg-rose-600 group-hover:text-white transition-all shadow-xs">
-                                <i class="fa-solid fa-screwdriver-wrench"></i>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        <!-- 1. Card: Studio Amministratore -->
+                        <div onclick="switchTab('admin-profile')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-violet-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-violet-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-id-card-clip"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-violet-600 transition-colors">Studio Amministratore</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Recapiti ufficiali, orari di ricevimento, contatti PEC ed emergenze dello studio.</p>
                             </div>
-                            <!-- Badge lampeggiante per guasti aperti -->
-                            <div id="dash-ticket-alert-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-md shadow-rose-600/30">
-                                <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
-                                <span id="dash-ticket-count-text">1 GUASTO ATTIVO</span>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-violet-600">
+                                <span>Scheda studio</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                             </div>
                         </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-rose-600 transition-colors">Segnalazioni Guasti</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Invia ticket per guasti o manutenzioni e monitora lo stato di avanzamento dei lavori.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-rose-600">
-                        <span id="dash-ticket-action-text">Apri segnalazione</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+
+                        <!-- 2. Card: Dati Condominio (Admin) -->
+                        <div onclick="switchTab('condominio')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-amber-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-city"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-amber-600 transition-colors">Dati Condominio</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Denominazione, indirizzo, codice fiscale, coordinate IBAN e struttura dello stabile.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600">
+                                <span>Dati dello stabile</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 3. Card: Anagrafica Condòmini (Admin) -->
+                        <div onclick="switchTab('anagrafica')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-emerald-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-address-book"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-emerald-600 transition-colors">Anagrafica Condòmini</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registro residenti, proprietari, conduttori, unità e tabelle millesimali.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-600">
+                                <span>Registro condòmini & Millesimi</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 4. Card: Utenti & Credenziali (Admin) -->
+                        <div onclick="switchTab('users')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-400">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-users-gear"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Utenti & Credenziali</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Gestione accessi, invito residenti e abilitazione autenticazione a due fattori.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
+                                <span>Pannello utenti</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Card: Studio Amministratore -->
-                <div onclick="switchTab('admin-profile')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-violet-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-violet-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-id-card-clip"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-violet-600 transition-colors">Studio Amministratore</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Recapiti ufficiali, orari di ricevimento, contatti PEC ed emergenze dello studio.</p>
+                <!-- 2. SEGNALAZIONI, ASSEMBLEE & COMUNICAZIONI -->
+                <div>
+                    <div class="flex items-center gap-2 mb-3.5 px-1">
+                        <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+                        <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-500">2. Segnalazioni, Assemblee & Comunicazioni</h2>
                     </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-violet-600">
-                        <span>Scheda studio</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        <!-- 5. Card: Segnalazioni Guasti (con supporto lampeggio per guasti aperti) -->
+                        <div id="dash-card-tickets" onclick="switchTab('tickets')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-rose-300 relative overflow-hidden transition-all">
+                            <div>
+                                <div class="flex items-center justify-between mb-4">
+                                    <div id="dash-card-tickets-icon" class="w-13 h-13 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-2xl group-hover:bg-rose-600 group-hover:text-white transition-all shadow-xs">
+                                        <i class="fa-solid fa-screwdriver-wrench"></i>
+                                    </div>
+                                    <!-- Badge lampeggiante per guasti aperti -->
+                                    <div id="dash-ticket-alert-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-md shadow-rose-600/30">
+                                        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                                        <span id="dash-ticket-count-text">1 GUASTO ATTIVO</span>
+                                    </div>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-rose-600 transition-colors">Segnalazioni Guasti</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Invia ticket per guasti o manutenzioni e monitora lo stato di avanzamento dei lavori.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-rose-600">
+                                <span id="dash-ticket-action-text">Apri segnalazione</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 6. Card: Assemblee & Verbali -->
+                        <div onclick="switchTab('assemblies')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-landmark"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Assemblee & Verbali</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Consulta i verbali approvati, i documenti ufficiali e partecipa alle assemblee.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
+                                <span>Vedi verbali</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 7. Card: Comunicazioni & Circolari (Admin) -->
+                        <div onclick="switchTab('communications')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-sky-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-sky-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-sky-600 transition-colors">Comunicazioni & Circolari</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Invia circolari, avvisi urgenti e comunicazioni ufficiali su carta intestata PDF.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-sky-600">
+                                <span>Invia avviso</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 8. Card: Storico Comunicazioni Inviate (Admin) -->
+                        <div onclick="switchTab('storico-comunicazioni')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-box-archive"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Storico Comunicazioni Inviate</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Archivio certificato di convocazioni, circolari, solleciti e ricevute con ricerca per nominativo.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
+                                <span>Cerca per nominativo</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Card: Dati Condominio & Fabbricato (Admin) -->
-                <div onclick="switchTab('condominio')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-amber-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-city"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-amber-600 transition-colors">Dati Condominio</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Denominazione, indirizzo, codice fiscale e struttura dello stabile.</p>
+                <!-- 3. CONTABILITÀ, BILANCIO & FINANZA -->
+                <div>
+                    <div class="flex items-center gap-2 mb-3.5 px-1">
+                        <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                        <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-500">3. Contabilità, Bilancio & Finanza</h2>
                     </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600">
-                        <span>Dati dello stabile</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        <!-- 9. Card: Area Contabile -->
+                        <div onclick="switchTab('accounting')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-blue-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-file-invoice-dollar"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-blue-600 transition-colors">Area Contabile</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Visualizza il bilancio, le spese, le rate millesimali e i pagamenti in modo trasparente.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600">
+                                <span>Consulta bilanci</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 10. Card: Libro Giornale (Admin) -->
+                        <div onclick="switchTab('giornale')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-cyan-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-book"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-cyan-600 transition-colors">Libro Giornale</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Visiona tutti i movimenti contabili registrati in ordine cronologico.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-cyan-600">
+                                <span>Consulta giornale</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- 11. Card: Banca & Cassa (Admin) -->
+                        <div onclick="switchTab('banca')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-teal-300">
+                            <div>
+                                <div class="w-13 h-13 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-teal-600 group-hover:text-white transition-all shadow-xs">
+                                    <i class="fa-solid fa-piggy-bank"></i>
+                                </div>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-teal-600 transition-colors">Banca & Cassa</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registra incassi, pagamenti e mantieni allineato l'estratto conto del condominio.</p>
+                            </div>
+                            <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-teal-600">
+                                <span>Gestione cassa</span>
+                                <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Card: Anagrafica Condòmini & Millesimi (Admin) -->
-                <div onclick="switchTab('anagrafica')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-emerald-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-address-book"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-emerald-600 transition-colors">Anagrafica Condòmini</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registro residenti, proprietari, conduttori, unità e millesimi.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-600">
-                        <span>Registro condòmini & Millesimi</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
-                <!-- Card: Banca / Cassa (Admin) -->
-                <div onclick="switchTab('banca')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-teal-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-teal-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-piggy-bank"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-teal-600 transition-colors">Banca & Cassa</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Registra incassi, pagamenti e mantieni allineato l'estratto conto del condominio.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-teal-600">
-                        <span>Gestione cassa</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-
-                <!-- Card: Giornale Contabile (Admin) -->
-                <div onclick="switchTab('giornale')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-cyan-300">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-book"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-cyan-600 transition-colors">Libro Giornale</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Visiona tutti i movimenti contabili registrati in ordine cronologico.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-cyan-600">
-                        <span>Consulta giornale</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
-                <!-- Card: Gestione Utenti (Admin) -->
-                <div onclick="switchTab('users')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-indigo-400">
-                    <div>
-                        <div class="w-13 h-13 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
-                            <i class="fa-solid fa-users-gear"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">Utenti & Credenziali</h3>
-                        <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Gestione accessi, invito residenti e abilitazione autenticazione a due fattori.</p>
-                    </div>
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600">
-                        <span>Pannello utenti</span>
-                        <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
-                    </div>
-                </div>
             </div>
         </section>
 
