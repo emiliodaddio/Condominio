@@ -830,9 +830,6 @@
                     <div>
                         <div class="flex items-center space-x-2">
                             <span class="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors">CondoTransparent</span>
-                            <span id="role-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase bg-blue-100 text-blue-800 border border-blue-200">
-                                RBAC ATTIVO
-                            </span>
                         </div>
                         <p id="header-condo-name" class="text-xs text-slate-500 font-medium">Caricamento dati condominio...</p>
                     </div>
@@ -856,11 +853,6 @@
                             <span id="user-display-unit" class="text-[10px] text-slate-500 block leading-tight"></span>
                         </div>
                     </div>
-                    
-                    <button id="btn-return-dashboard" onclick="returnToAgencyDashboard()" class="hidden no-print px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition-colors flex items-center gap-1.5">
-                        <i class="fa-solid fa-layer-group text-indigo-500"></i>
-                        <span>I Miei Condomìni</span>
-                    </button>
 
                     <button id="btn-superuser-header" onclick="openSuperUserDashboard()" class="hidden no-print px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs" title="Cabina di Regia SuperUser">
                         <i class="fa-solid fa-crown text-amber-300 text-xs"></i>
@@ -875,11 +867,6 @@
                     <button onclick="handleHomeClick()" class="no-print p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5" title="Home (I Miei Condomìni)">
                         <i class="fa-solid fa-house text-slate-400"></i>
                         <span class="hidden sm:inline">Home</span>
-                    </button>
-
-                    <button onclick="window.print()" class="no-print p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5" title="Stampa">
-                        <i class="fa-solid fa-print text-slate-400"></i>
-                        <span class="hidden sm:inline">Stampa</span>
                     </button>
 
                     <button id="btn-nuovo-accesso" onclick="window.open('login.html?new_session=1', '_blank', 'noopener,noreferrer')" class="hidden no-print p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5" title="Nuovo Accesso">
@@ -2912,7 +2899,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261015_v8"></script>
+    <script src="app_v4.js?v=20261016_v1"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

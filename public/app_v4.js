@@ -164,15 +164,17 @@ function setupUIForRole() {
     document.getElementById('user-display-unit').textContent = user.is_superadmin ? 'Proprietario della Piattaforma' : (isAdmin ? 'Amministrazione Condominiale' : (user.unita || 'condomino'));
 
     const roleBadge = document.getElementById('role-badge');
-    if (user.is_superadmin) {
-        roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-900 border border-purple-300 shadow-2xs';
-        roleBadge.innerHTML = '<i class="fa-solid fa-crown text-amber-500 mr-1"></i> SUPERUSER (PROPRIETARIO)';
-    } else if (isAdmin) {
-        roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200';
-        roleBadge.innerHTML = '<i class="fa-solid fa-shield-halved mr-1"></i> AMMINISTRATORE';
-    } else {
-        roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200';
-        roleBadge.innerHTML = '<i class="fa-solid fa-user-check mr-1"></i> condomino';
+    if (roleBadge) {
+        if (user.is_superadmin) {
+            roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-900 border border-purple-300 shadow-2xs';
+            roleBadge.innerHTML = '<i class="fa-solid fa-crown text-amber-500 mr-1"></i> SUPERUSER (PROPRIETARIO)';
+        } else if (isAdmin) {
+            roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200';
+            roleBadge.innerHTML = '<i class="fa-solid fa-shield-halved mr-1"></i> AMMINISTRATORE';
+        } else {
+            roleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200';
+            roleBadge.innerHTML = '<i class="fa-solid fa-user-check mr-1"></i> condomino';
+        }
     }
 
     const btnSuDesk = document.getElementById('btn-superuser-desk');
