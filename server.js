@@ -3925,9 +3925,133 @@ function ensureCondoDocumentsTable() {
     });
 }
 
-// Avvia controllo tabella anche a runtime per MySQL
+// ============================================================================
+// ARCHITETTURA DINAMICA TABELLE MILLESIMALI & RIPARTO SPESE (PropTech Standard)
+// ============================================================================
+function ensureMillesimiArchitectureTables() {
+    const isMysql = db.type === 'mysql';
+
+    const sqlTabelle = isMysql
+        ? `CREATE TABLE IF NOT EXISTS anagrafica_tabelle_millesimali (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            condominio_id INT NOT NULL,
+            codice VARCHAR(50) NOT NULL,
+            descrizione VARCHAR(200) NOT NULL,
+            categoria VARCHAR(50) NOT NULL DEFAULT 'Personalizzata',
+            scala_filtro VARCHAR(20) NULL,
+            totale_millesimi DECIMAL(10, 4) NOT NULL DEFAULT 1000.0000,
+            attiva INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_condo_tab (condominio_id, codice)
+        )`
+        : `CREATE TABLE IF NOT EXISTS anagrafica_tabelle_millesimali (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            condominio_id INTEGER NOT NULL,
+            codice TEXT NOT NULL,
+            descrizione TEXT NOT NULL,
+            categoria TEXT NOT NULL DEFAULT 'Personalizzata',
+            scala_filtro TEXT NULL,
+            totale_millesimi REAL NOT NULL DEFAULT 1000.0,
+            attiva INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (condominio_id, codice)
+        )`;
+
+    const sqlQuote = isMysql
+        ? `CREATE TABLE IF NOT EXISTS quote_millesimali (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            tabella_id INT NOT NULL,
+            unita_id INT NOT NULL,
+            valore_millesimale DECIMAL(10, 4) NOT NULL DEFAULT 0.0000,
+            parametro_ausiliario DECIMAL(12, 4) NULL,
+            note VARCHAR(255) NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_tab_unita (tabella_id, unita_id)
+        )`
+        : `CREATE TABLE IF NOT EXISTS quote_millesimali (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tabella_id INTEGER NOT NULL,
+            unita_id INTEGER NOT NULL,
+            valore_millesimale REAL NOT NULL DEFAULT 0.0,
+            parametro_ausiliario REAL NULL,
+            note TEXT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (tabella_id, unita_id)
+        )`;
+
+    db.run(sqlTabelle, (errT) => {
+        if (errT) console.error('⚠️ [Millesimi Schema] Errore creazione anagrafica_tabelle_millesimali:', errT.message);
+        else {
+            db.run(sqlQuote, (errQ) => {
+                if (errQ) console.error('⚠️ [Millesimi Schema] Errore creazione quote_millesimali:', errQ.message);
+                else {
+                    seedDefaultMillesimiTables();
+                }
+            });
+        }
+    });
+}
+
+function seedDefaultMillesimiTables() {
+    db.all('SELECT id, nome FROM condominios', [], (err, condomini) => {
+        if (err || !Array.isArray(condomini)) return;
+        condomini.forEach(c => {
+            db.all('SELECT id, codice FROM anagrafica_tabelle_millesimali WHERE condominio_id = ?', [c.id], (errT, tabs) => {
+                if (errT) return;
+                const existingCodes = (tabs || []).map(t => t.codice);
+
+                const defaults = [
+                    { codice: 'TAB_A', descrizione: 'Tabella A - Proprietà Generale', categoria: 'Proprieta_Generale', scala: null },
+                    { codice: 'TAB_B', descrizione: 'Tabella B - Scale e Ascensore (Art. 1124 c.c.)', categoria: 'Scale_Ascensore_1124', scala: null },
+                    { codice: 'TAB_C', descrizione: 'Tabella C - Riscaldamento & Climatizzazione', categoria: 'Riscaldamento_Consumi', scala: null }
+                ];
+
+                defaults.forEach(def => {
+                    if (!existingCodes.includes(def.codice)) {
+                        db.run(
+                            `INSERT INTO anagrafica_tabelle_millesimali (condominio_id, codice, descrizione, categoria, scala_filtro, totale_millesimi) VALUES (?, ?, ?, ?, ?, 1000.0000)`,
+                            [c.id, def.codice, def.descrizione, def.categoria, def.scala],
+                            function(errIns) {
+                                if (!errIns) {
+                                    const newTabId = this.lastID;
+                                    // Sincronizza quote dalle unità esistenti
+                                    syncDefaultMillesimiFromUnits(c.id, newTabId, def.codice);
+                                }
+                            }
+                        );
+                    }
+                });
+            });
+        });
+    });
+}
+
+function syncDefaultMillesimiFromUnits(condoId, tabId, codice) {
+    db.all('SELECT id, millesimi_proprieta, millesimi_scale, millesimi_ascensore FROM unita_immobiliari WHERE condominio_id = ?', [condoId], (err, unitaList) => {
+        if (err || !Array.isArray(unitaList)) return;
+        unitaList.forEach(u => {
+            let val = 0;
+            if (codice === 'TAB_A') val = parseFloat(u.millesimi_proprieta) || 0;
+            else if (codice === 'TAB_B') val = parseFloat(u.millesimi_scale) || 0;
+            else if (codice === 'TAB_C') val = parseFloat(u.millesimi_ascensore) || 0;
+
+            if (val >= 0) {
+                db.run(
+                    `INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale) VALUES (?, ?, ?)`,
+                    [tabId, u.id, val],
+                    () => {}
+                );
+            }
+        });
+    });
+}
+
+// Avvia controllo tabelle a runtime
 setTimeout(() => {
-    try { ensureCondoDocumentsTable(); } catch (_) {}
+    try { 
+        ensureCondoDocumentsTable();
+        ensureMillesimiArchitectureTables();
+    } catch (_) {}
 }, 1200);
 
 // Lista Documenti e Allegati (con filtro RBAC automatico per Admin vs Condòmino)
@@ -4270,6 +4394,212 @@ app.delete('/api/documents/:id', authenticateToken, requireCondominio, checkCond
     });
 });
 
+
+// ============================================================================
+// API: GESTIONE DINAMICA TABELLE MILLESIMALI & CALCOLO ART. 1124 C.C.
+// ============================================================================
+
+// 1. Elenco Tabelle Millesimali del Condominio
+app.get('/api/millesimi/tabelle', authenticateToken, requireCondominio, (req, res) => {
+    const condoId = req.condominio_id;
+    db.all(`
+        SELECT t.*, 
+            (SELECT COUNT(*) FROM quote_millesimali q WHERE q.tabella_id = t.id) as unita_assegnate,
+            (SELECT COALESCE(SUM(valore_millesimale), 0) FROM quote_millesimali q WHERE q.tabella_id = t.id) as somma_millesimi_reale
+        FROM anagrafica_tabelle_millesimali t
+        WHERE t.condominio_id = ?
+        ORDER BY t.id ASC
+    `, [condoId], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: 'Errore lettura tabelle millesimali: ' + err.message });
+        return res.json({ success: true, data: rows || [] });
+    });
+});
+
+// 2. Crea Nuova Tabella Millesimale Personalizzata
+app.post('/api/millesimi/tabelle', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const condoId = req.condominio_id;
+    const { codice, descrizione, categoria, scala_filtro, clone_from_tab_id } = req.body || {};
+
+    if (!codice || !descrizione) {
+        return res.status(400).json({ success: false, message: 'Codice e Descrizione della tabella sono obbligatori.' });
+    }
+
+    const cleanCodice = String(codice).trim().toUpperCase().replace(/\s+/g, '_');
+    const cleanDesc = String(descrizione).trim();
+    const cleanCat = categoria || 'Personalizzata';
+    const cleanScala = (scala_filtro && String(scala_filtro).trim()) ? String(scala_filtro).trim().toUpperCase() : null;
+
+    db.run(
+        `INSERT INTO anagrafica_tabelle_millesimali (condominio_id, codice, descrizione, categoria, scala_filtro, totale_millesimi) VALUES (?, ?, ?, ?, ?, 1000.0000)`,
+        [condoId, cleanCodice, cleanDesc, cleanCat, cleanScala],
+        function(err) {
+            if (err) return res.status(500).json({ success: false, message: 'Errore creazione tabella millesimale: ' + err.message });
+            const newTabId = this.lastID;
+
+            // Clona quote da tabella esistente o popola da unità attive
+            if (clone_from_tab_id) {
+                db.all('SELECT unita_id, valore_millesimale FROM quote_millesimali WHERE tabella_id = ?', [clone_from_tab_id], (cErr, cRows) => {
+                    if (!cErr && Array.isArray(cRows)) {
+                        cRows.forEach(cr => {
+                            db.run('INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale) VALUES (?, ?, ?)', [newTabId, cr.unita_id, cr.valore_millesimale]);
+                        });
+                    }
+                });
+            } else {
+                // Popola tutte le unità del condominio (eventualmente filtrate per scala)
+                const scalaFilterSql = cleanScala ? `AND u.scala = '${cleanScala}'` : '';
+                db.all(`SELECT u.id, u.millesimi_proprieta FROM unita_immobiliari u WHERE u.condominio_id = ? ${scalaFilterSql}`, [condoId], (uErr, units) => {
+                    if (!uErr && Array.isArray(units)) {
+                        units.forEach(u => {
+                            db.run('INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale) VALUES (?, ?, ?)', [newTabId, u.id, parseFloat(u.millesimi_proprieta) || 0]);
+                        });
+                    }
+                });
+            }
+
+            logAudit(req.user.id, condoId, `Creata Tabella Millesimale: "${cleanCodice}" - ${cleanDesc}`, 'anagrafica_tabelle_millesimali', newTabId, null, req.ip);
+            return res.json({ success: true, message: `Tabella "${cleanDesc}" creata con successo!`, data: { id: newTabId } });
+        }
+    );
+});
+
+// 3. Dettaglio Quote per Singola Tabella con Dati Condòmino/Unità
+app.get('/api/millesimi/tabelle/:id/quote', authenticateToken, requireCondominio, (req, res) => {
+    const tabId = parseInt(req.params.id, 10);
+    const condoId = req.condominio_id;
+
+    db.get('SELECT * FROM anagrafica_tabelle_millesimali WHERE id = ? AND condominio_id = ?', [tabId, condoId], (tErr, tab) => {
+        if (tErr || !tab) return res.status(404).json({ success: false, message: 'Tabella millesimale non trovata.' });
+
+        db.all(`
+            SELECT q.id as quota_id, q.valore_millesimale, q.parametro_ausiliario, q.note,
+                   u.id as unita_id, u.identificativo, u.tipo, u.scala, u.piano, u.interno, u.dati_catastali,
+                   p.id as persona_id, p.nome, p.cognome, p.codice_fiscale
+            FROM quote_millesimali q
+            JOIN unita_immobiliari u ON q.unita_id = u.id
+            LEFT JOIN anagrafica_persone p ON (u.proprietario_id = p.id OR u.conduttore_id = p.id)
+            WHERE q.tabella_id = ?
+            ORDER BY u.scala ASC, u.piano ASC, u.interno ASC
+        `, [tabId], (err, rows) => {
+            if (err) return res.status(500).json({ success: false, message: 'Errore lettura quote: ' + err.message });
+            return res.json({ success: true, tabella: tab, data: rows || [] });
+        });
+    });
+});
+
+// 4. Aggiorna Quota Millesimale Singola Unità
+app.put('/api/millesimi/tabelle/:id/quote/:unitaId', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const tabId = parseInt(req.params.id, 10);
+    const unitaId = parseInt(req.params.unitaId, 10);
+    const { valore_millesimale, parametro_ausiliario, note } = req.body || {};
+
+    const cleanVal = Math.max(0, parseFloat(valore_millesimale) || 0);
+
+    db.run(`
+        INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale, parametro_ausiliario, note)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(tabella_id, unita_id) DO UPDATE SET 
+            valore_millesimale = excluded.valore_millesimale,
+            parametro_ausiliario = excluded.parametro_ausiliario,
+            note = excluded.note
+    `, [tabId, unitaId, cleanVal, parametro_ausiliario || null, note || null], function(err) {
+        if (err) return res.status(500).json({ success: false, message: 'Errore aggiornamento quota: ' + err.message });
+        return res.json({ success: true, message: 'Quota millesimale aggiornata!' });
+    });
+});
+
+// 5. Algoritmo di Calcolo Automatico Tabella B (Art. 1124 c.c. - Scale & Ascensore)
+app.post('/api/millesimi/tabelle/calcola-art1124', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const condoId = req.condominio_id;
+    const { tabella_destinazione_id, scala_filtro } = req.body || {};
+
+    if (!tabella_destinazione_id) {
+        return res.status(400).json({ success: false, message: 'Seleziona la tabella di destinazione per la Tabella B.' });
+    }
+
+    const scalaSql = scala_filtro ? `AND u.scala = '${String(scala_filtro).trim().toUpperCase()}'` : '';
+
+    // Recupera le unità del fabbricato con millesimi di proprietà e piano
+    db.all(`
+        SELECT u.id, u.identificativo, u.scala, u.piano, u.millesimi_proprieta,
+               COALESCE(u.altezza_piano_metri, NULL) as altezza_metri
+        FROM unita_immobiliari u
+        WHERE u.condominio_id = ? ${scalaSql}
+    `, [condoId], (err, units) => {
+        if (err || !units || units.length === 0) {
+            return res.status(400).json({ success: false, message: 'Nessuna unità immobiliare trovata per il calcolo.' });
+        }
+
+        // Calcola l'altezza convenzionale in base al piano (se non presente altezza metrica espressa)
+        // Piano T/R = 1, P1 = 2, P2 = 3, P3 = 4, Interrato = 0.5
+        const unitsWithH = units.map(u => {
+            const millProp = parseFloat(u.millesimi_proprieta) || 0;
+            let h = 1.0;
+            if (u.altezza_metri && parseFloat(u.altezza_metri) > 0) {
+                h = parseFloat(u.altezza_metri);
+            } else {
+                const pNum = parseInt(String(u.piano || '0').replace(/[^0-9\-]/g, ''), 10);
+                if (!isNaN(pNum)) {
+                    h = pNum < 0 ? 0.5 : (pNum === 0 ? 1.0 : (pNum + 1.0));
+                }
+            }
+            return {
+                id: u.id,
+                millProp,
+                h,
+                prodValoreAltezza: millProp * h
+            };
+        });
+
+        const totMillProp = unitsWithH.reduce((acc, u) => acc + u.millProp, 0);
+        const totProd = unitsWithH.reduce((acc, u) => acc + u.prodValoreAltezza, 0);
+
+        if (totMillProp <= 0 || totProd <= 0) {
+            return res.status(400).json({ success: false, message: 'Millesimi di proprietà generali non valorizzati per le unità.' });
+        }
+
+        // Formula Art. 1124 c.c.: 500 * (MillProp / TotMillProp) + 500 * (Prod / TotProd)
+        const computedQuotes = unitsWithH.map(u => {
+            const quotaValore = 500.0 * (u.millProp / totMillProp);
+            const quotaAltezza = 500.0 * (u.prodValoreAltezza / totProd);
+            const quotaTotale = Math.round((quotaValore + quotaAltezza) * 10000) / 10000;
+            return {
+                unita_id: u.id,
+                valore: quotaTotale
+            };
+        });
+
+        // Quadratura a 1000.0000 esatti
+        const sumComputed = computedQuotes.reduce((acc, q) => acc + q.valore, 0);
+        const diff = Math.round((1000.0000 - sumComputed) * 10000) / 10000;
+        if (diff !== 0 && computedQuotes.length > 0) {
+            computedQuotes.sort((a, b) => b.valore - a.valore);
+            computedQuotes[0].valore = Math.round((computedQuotes[0].valore + diff) * 10000) / 10000;
+        }
+
+        // Scrittura batch su database
+        let pending = computedQuotes.length;
+        computedQuotes.forEach(cq => {
+            db.run(`
+                INSERT INTO quote_millesimali (tabella_id, unita_id, valore_millesimale, note)
+                VALUES (?, ?, ?, 'Calcolato auto Art. 1124 c.c.')
+                ON CONFLICT(tabella_id, unita_id) DO UPDATE SET 
+                    valore_millesimale = excluded.valore_millesimale,
+                    note = excluded.note
+            `, [tabella_destinazione_id, cq.unita_id, cq.valore], () => {
+                pending--;
+                if (pending <= 0) {
+                    logAudit(req.user.id, condoId, `Calcolata Tabella B Art. 1124 c.c. per tabella ID ${tabella_destinazione_id}`, 'quote_millesimali', tabella_destinazione_id, null, req.ip);
+                    return res.json({
+                        success: true,
+                        message: `Tabella B calcolata con successo su ${computedQuotes.length} unità (Art. 1124 c.c., quadratura 1000.0000 millesimi)!`,
+                        data: computedQuotes
+                    });
+                }
+            });
+        });
+    });
+});
 
 // 404 per richieste API non trovate
 app.use('/api', (req, res) => {
