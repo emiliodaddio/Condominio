@@ -521,6 +521,7 @@ function renderQuotesTable() {
             }
             
             payAction += ` <button onclick="editQuote(${q.id})" class="ml-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold no-print" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>`;
+            payAction += ` <button onclick="deleteQuote(${q.id})" class="ml-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold no-print" title="Elimina rata"><i class="fa-solid fa-trash-can"></i></button>`;
 
             return `
                 <tr class="hover:bg-slate-50 transition-colors">
@@ -1303,30 +1304,31 @@ async function populateQuoteUsersSelect() {
     const selPersona = document.getElementById('quote-persona-id');
     const selUnita = document.getElementById('quote-unita-id');
     
-    // Fetch if missing
-    if (!state.anagraficaPersone) {
-        try {
-            const res = await fetch('/api/anagrafica-persone', { headers: getAuthHeaders() });
-            const data = await res.json();
-            if (data.success) state.anagraficaPersone = data.data;
-        } catch(e) {}
-    }
-    if (!state.unitaList) {
-        try {
-            const res = await fetch('/api/unita', { headers: getAuthHeaders() });
-            const data = await res.json();
-            if (data.success) state.unitaList = data.data;
-        } catch(e) {}
-    }
+    // Carica sempre i dati aggiornati da Anagrafica Condominio & Tabelle Millesimali
+    try {
+        const res = await fetch('/api/anagrafica-persone', { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) state.anagraficaPersone = data.data || [];
+    } catch(e) {}
 
     if (selPersona && state.anagraficaPersone) {
         selPersona.innerHTML = '<option value="">-- Seleziona Intestatario --</option>' + 
             state.anagraficaPersone.map(p => `<option value="${p.id}">${p.cognome} ${p.nome}</option>`).join('');
     }
     
-    if (selUnita && state.unitaList) {
-        selUnita.innerHTML = '<option value="">-- Nessuna Unità Specifica --</option>' + 
-            state.unitaList.map(u => `<option value="${u.id}">${u.identificativo} (${u.tipo})</option>`).join('');
+    if (selUnita && state.anagraficaPersone) {
+        const unitsFromAnagrafica = state.anagraficaPersone
+            .filter(p => p.unita_id)
+            .map(p => {
+                const loc = [
+                    p.unita_scala ? `Sc. ${p.unita_scala}` : '',
+                    p.unita_piano ? `P. ${p.unita_piano}` : '',
+                    p.unita_interno ? `Int. ${p.unita_interno}` : ''
+                ].filter(Boolean).join(' ');
+                const label = loc || p.unita_identificativo || p.unita_tipo || 'Unità';
+                return `<option value="${p.unita_id}">${label} - ${p.cognome} ${p.nome}</option>`;
+            });
+        selUnita.innerHTML = '<option value="">-- Unità associata in Anagrafica --</option>' + unitsFromAnagrafica.join('');
     }
 }
 
@@ -5858,51 +5860,56 @@ Puoi accedere subito da PC, tablet o smartphone per iniziare la gestione.`;
 
 let millesimiDistributionRows = [];
 
+window.deleteQuote = async function(id) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
+    if (!confirm('Sei sicuro di voler eliminare questa quota condominiale?')) return;
+    try {
+        const res = await fetch(`/api/quotes/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Quota eliminata con successo.', 'success');
+            if (typeof loadAccountingData === 'function') loadAccountingData();
+        } else {
+            showToast(data.message || 'Errore eliminazione quota.', 'error');
+        }
+    } catch (_) {
+        showToast('Errore di connessione.', 'error');
+    }
+};
+
 async function ensureMillesimiDataLoaded() {
     try {
-        const [resPers, resUnita] = await Promise.all([
-            fetch('/api/anagrafica-persone', { headers: getAuthHeaders() }),
-            fetch('/api/unita', { headers: getAuthHeaders() })
-        ]);
+        const resPers = await fetch('/api/anagrafica-persone', { headers: getAuthHeaders() });
         const dataPers = await resPers.json().catch(() => ({}));
-        const dataUnita = await resUnita.json().catch(() => ({}));
         if (dataPers.success) state.anagraficaPersone = dataPers.data || [];
-        if (dataUnita.success) state.unitaList = dataUnita.data || [];
     } catch (e) {
-        console.warn('Errore caricamento dati millesimi:', e);
+        console.warn('Errore caricamento dati millesimi da Anagrafica:', e);
     }
 }
 
 function getPersonaOrUnitMillesimi(personaId, unitaId, tabella = 'proprieta') {
     const colMap = {
-        proprieta: { p: 'unita_mill_prop', u: 'millesimi_proprieta' },
-        scale: { p: 'unita_mill_scale', u: 'millesimi_scale' },
-        ascensore: { p: 'unita_mill_asc', u: 'millesimi_ascensore' }
+        proprieta: 'unita_mill_prop',
+        scale: 'unita_mill_scale',
+        ascensore: 'unita_mill_asc'
     };
-    const cols = colMap[tabella] || colMap.proprieta;
+    const colName = colMap[tabella] || colMap.proprieta;
 
-    if (unitaId && state.unitaList) {
-        const u = state.unitaList.find(x => String(x.id) === String(unitaId));
-        if (u) return parseFloat(u[cols.u]) || 0;
-    }
-    if (personaId && state.anagraficaPersone) {
+    if (!Array.isArray(state.anagraficaPersone)) return 0;
+
+    if (personaId) {
         const p = state.anagraficaPersone.find(x => String(x.id) === String(personaId));
-        if (p) {
-            if (p[cols.p] !== null && p[cols.p] !== undefined && parseFloat(p[cols.p]) > 0) {
-                return parseFloat(p[cols.p]) || 0;
-            }
-            if (state.unitaList) {
-                const fullName = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
-                const revName = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
-                const uMatch = state.unitaList.find(u =>
-                    String(u.proprietario_id) === String(p.id) ||
-                    String(u.conduttore_id) === String(p.id) ||
-                    (p.email && u.condomino_email && p.email.toLowerCase() === u.condomino_email.toLowerCase()) ||
-                    (u.condomino_nome && (u.condomino_nome.toLowerCase() === fullName || u.condomino_nome.toLowerCase() === revName))
-                );
-                if (uMatch) return parseFloat(uMatch[cols.u]) || 0;
-            }
-        }
+        if (p) return parseFloat(p[colName]) || 0;
+    }
+    if (unitaId) {
+        const pByUnit = state.anagraficaPersone.find(x => String(x.unita_id) === String(unitaId));
+        if (pByUnit) return parseFloat(pByUnit[colName]) || 0;
     }
     return 0;
 }
@@ -5912,35 +5919,22 @@ window.onQuotePersonaOrUnitaChange = function(source) {
     const selUnita = document.getElementById('quote-unita-id');
     const tabella = document.getElementById('single-calc-tabella')?.value || 'proprieta';
 
-    if (source === 'persona' && selPersona && selPersona.value && state.anagraficaPersone) {
+    if (source === 'persona' && selPersona && selPersona.value && Array.isArray(state.anagraficaPersone)) {
         const p = state.anagraficaPersone.find(x => String(x.id) === String(selPersona.value));
-        if (p) {
-            let targetUnitaId = p.unita_id;
-            if (!targetUnitaId && state.unitaList) {
-                const fullName = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
-                const revName = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
-                const uMatch = state.unitaList.find(u =>
-                    String(u.proprietario_id) === String(p.id) ||
-                    (p.email && u.condomino_email && p.email.toLowerCase() === u.condomino_email.toLowerCase()) ||
-                    (u.condomino_nome && (u.condomino_nome.toLowerCase() === fullName || u.condomino_nome.toLowerCase() === revName))
-                );
-                if (uMatch) targetUnitaId = uMatch.id;
-            }
-            if (targetUnitaId && selUnita) {
-                selUnita.value = String(targetUnitaId);
-            }
+        if (p && selUnita) {
+            selUnita.value = p.unita_id ? String(p.unita_id) : '';
         }
-    } else if (source === 'unita' && selUnita && selUnita.value && state.unitaList) {
-        const u = state.unitaList.find(x => String(x.id) === String(selUnita.value));
-        if (u && u.proprietario_id && selPersona) {
-            selPersona.value = String(u.proprietario_id);
+    } else if (source === 'unita' && selUnita && selUnita.value && Array.isArray(state.anagraficaPersone)) {
+        const p = state.anagraficaPersone.find(x => String(x.unita_id) === String(selUnita.value));
+        if (p && selPersona) {
+            selPersona.value = String(p.id);
         }
     }
 
     const mill = getPersonaOrUnitMillesimi(selPersona?.value, selUnita?.value, tabella);
     const millInput = document.getElementById('single-calc-user-millesimi');
-    if (millInput && mill > 0) {
-        millInput.value = mill;
+    if (millInput) {
+        millInput.value = mill > 0 ? mill : '';
     }
     computeSingleQuoteMillesimi();
 };
@@ -5951,8 +5945,8 @@ window.onSingleCalcTabellaChange = function() {
     const tabella = document.getElementById('single-calc-tabella')?.value || 'proprieta';
     const mill = getPersonaOrUnitMillesimi(selPersona?.value, selUnita?.value, tabella);
     const millInput = document.getElementById('single-calc-user-millesimi');
-    if (millInput && mill > 0) {
-        millInput.value = mill;
+    if (millInput) {
+        millInput.value = mill > 0 ? mill : '';
     }
     computeSingleQuoteMillesimi();
 };
@@ -6013,8 +6007,8 @@ window.openNewQuoteModalForPersona = async function(personaId) {
 
 function buildMillesimiDistributionRows(tabella = 'proprieta') {
     const rows = [];
-    const usedUnitaIds = new Set();
-    const usedNames = new Set();
+    const seenPersonaIds = new Set();
+    const seenNames = new Set();
 
     const getMillByTab = (millProp, millScale, millAsc) => {
         if (tabella === 'scale') return millScale;
@@ -6022,80 +6016,32 @@ function buildMillesimiDistributionRows(tabella = 'proprieta') {
         return millProp;
     };
 
-    // 1. Partiamo dalle unità immobiliari censite nel condominio
-    if (Array.isArray(state.unitaList)) {
-        state.unitaList.forEach(u => {
-            usedUnitaIds.add(String(u.id));
-            let personaId = u.proprietario_id || u.conduttore_id || null;
-            let nominativo = '';
-            if (u.prop_cognome || u.prop_nome) {
-                nominativo = `${u.prop_cognome || ''} ${u.prop_nome || ''}`.trim();
-            } else if (u.condomino_nome) {
-                nominativo = u.condomino_nome.trim();
-            }
-
-            // Se non c'è proprietario_id diretto ma esiste in anagrafica_persone per email o nome, colleghiamolo
-            if (!personaId && Array.isArray(state.anagraficaPersone)) {
-                const pMatch = state.anagraficaPersone.find(p => {
-                    const pFull = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
-                    const pRev = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
-                    return (p.email && u.condomino_email && p.email.toLowerCase() === u.condomino_email.toLowerCase()) ||
-                           (nominativo && (nominativo.toLowerCase() === pFull || nominativo.toLowerCase() === pRev));
-                });
-                if (pMatch) {
-                    personaId = pMatch.id;
-                    nominativo = `${pMatch.cognome} ${pMatch.nome}`.trim();
-                }
-            }
-
-            if (!nominativo) nominativo = `Titolare ${u.identificativo || 'Unità'}`;
-            usedNames.add(nominativo.toLowerCase());
-
-            const locParts = [];
-            if (u.scala) locParts.push(`Sc. ${u.scala}`);
-            if (u.piano) locParts.push(`P. ${u.piano}`);
-            if (u.interno) locParts.push(`Int. ${u.interno}`);
-            const unitaLabel = [u.identificativo, locParts.join(' ')].filter(Boolean).join(' - ') || u.tipo || 'Appartamento';
-
-            const mProp = parseFloat(u.millesimi_proprieta) || 0;
-            const mScale = parseFloat(u.millesimi_scale) || 0;
-            const mAsc = parseFloat(u.millesimi_ascensore) || 0;
-
-            rows.push({
-                checked: true,
-                persona_id: personaId,
-                unita_id: u.id,
-                nominativo,
-                unita_label: unitaLabel,
-                millesimi_proprieta: mProp,
-                millesimi_scale: mScale,
-                millesimi_ascensore: mAsc,
-                millesimi: getMillByTab(mProp, mScale, mAsc),
-                is_simulation: false
-            });
-        });
-    }
-
-    // 2. Aggiungiamo eventuali persone in Anagrafica che non erano già incluse nelle unità
+    // FONTE UNICA DI VERITÀ: "Anagrafica Condominio & Tabelle Millesimali" (state.anagraficaPersone)
     if (Array.isArray(state.anagraficaPersone)) {
         state.anagraficaPersone.forEach(p => {
-            if (p.unita_id && usedUnitaIds.has(String(p.unita_id))) return;
+            if (!p || seenPersonaIds.has(String(p.id))) return;
             const nom = `${p.cognome || ''} ${p.nome || ''}`.trim();
-            const nomRev = `${p.nome || ''} ${p.cognome || ''}`.trim();
-            if (usedNames.has(nom.toLowerCase()) || usedNames.has(nomRev.toLowerCase())) return;
+            const normKey = nom.toLowerCase().replace(/\s+/g, ' ');
+            if (seenNames.has(normKey)) return;
+
+            seenPersonaIds.add(String(p.id));
+            seenNames.add(normKey);
 
             const mProp = parseFloat(p.unita_mill_prop) || 0;
             const mScale = parseFloat(p.unita_mill_scale) || 0;
             const mAsc = parseFloat(p.unita_mill_asc) || 0;
 
+            const tipo = p.unita_tipo || 'Appartamento';
             const locParts = [];
             if (p.unita_scala) locParts.push(`Sc. ${p.unita_scala}`);
             if (p.unita_piano) locParts.push(`P. ${p.unita_piano}`);
             if (p.unita_interno) locParts.push(`Int. ${p.unita_interno}`);
-            const unitaLabel = locParts.length > 0 ? locParts.join(' ') : (p.unita_identificativo || 'Unità da associare');
+            const unitaLabel = locParts.length > 0
+                ? `${tipo} (${locParts.join(' | ')})`
+                : (p.unita_identificativo || tipo);
 
             rows.push({
-                checked: (mProp > 0 || mScale > 0 || mAsc > 0),
+                checked: true,
                 persona_id: p.id,
                 unita_id: p.unita_id || null,
                 nominativo: nom,

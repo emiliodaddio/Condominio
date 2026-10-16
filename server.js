@@ -956,6 +956,48 @@ function ensureAnagraficaAndUnitaColumns(callback) {
     } catch(e) {
         console.warn('⚠️ Pulizia identificativi unità:', e.message);
     }
+
+    // Riallineamento rigoroso a "Anagrafica Condominio & Tabelle Millesimali" (anagrafica_persone)
+    realignDatabaseToAnagrafica();
+}
+
+function realignDatabaseToAnagrafica(condominioId = null, callback = null) {
+    try {
+        const condoFilterQuotes = condominioId ? `AND condominio_id = ${parseInt(condominioId, 10)}` : '';
+        const condoFilterUnita = condominioId ? `AND condominio_id = ${parseInt(condominioId, 10)}` : '';
+
+        // 1. Elimina le quote orfane non associate a una persona presente in Anagrafica Condominio & Tabelle Millesimali
+        db.run(`DELETE FROM quotes WHERE (persona_id IS NULL OR persona_id NOT IN (SELECT id FROM anagrafica_persone)) ${condoFilterQuotes}`, () => {
+            // 2. Elimina le unità immobiliari orfane (di test/seed) non collegate a nessuna persona in Anagrafica
+            db.run(`DELETE FROM unita_immobiliari WHERE (proprietario_id IS NULL OR proprietario_id NOT IN (SELECT id FROM anagrafica_persone)) AND (conduttore_id IS NULL OR conduttore_id NOT IN (SELECT id FROM anagrafica_persone)) ${condoFilterUnita}`, () => {
+                // 3. Deduplica eventuali quote identiche create per errore durante i test (stesso condominio, persona, titolo, scadenza, importo)
+                db.all(`SELECT id, condominio_id, persona_id, title, due_date, amount, paid_amount FROM quotes WHERE 1=1 ${condoFilterQuotes} ORDER BY paid_amount DESC, id ASC`, [], (errQ, qRows) => {
+                    if (!errQ && Array.isArray(qRows)) {
+                        const seenQuotes = new Set();
+                        const dupIds = [];
+                        qRows.forEach(q => {
+                            const key = `${q.condominio_id}|${q.persona_id}|${(q.title || '').trim().toLowerCase()}|${q.due_date}|${parseFloat(q.amount) || 0}`;
+                            if (seenQuotes.has(key)) {
+                                dupIds.push(q.id);
+                            } else {
+                                seenQuotes.add(key);
+                            }
+                        });
+                        if (dupIds.length > 0) {
+                            db.run(`DELETE FROM quotes WHERE id IN (${dupIds.join(',')})`, () => {
+                                if (callback) callback();
+                            });
+                            return;
+                        }
+                    }
+                    if (callback) callback();
+                });
+            });
+        });
+    } catch (e) {
+        console.warn('⚠️ realignDatabaseToAnagrafica:', e.message);
+        if (callback) callback();
+    }
 }
 
 function ensurePartialPaymentColumns() {
@@ -1576,16 +1618,16 @@ app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, r
     const fetchList = (isRetry = false) => {
         const sql = `
             SELECT p.*,
-                   (SELECT id FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_id,
-                   (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_identificativo,
-                   (SELECT tipo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_tipo,
-                   (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_scala,
-                   (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_piano,
-                   (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_interno,
-                   (SELECT millesimi_proprieta FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_prop,
-                   (SELECT millesimi_scale FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_scale,
-                   (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_mill_asc,
-                   (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id LIMIT 1) as unita_dati_catastali
+                   (SELECT id FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_id,
+                   (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_identificativo,
+                   (SELECT tipo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_tipo,
+                   (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_scala,
+                   (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_piano,
+                   (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_interno,
+                   (SELECT millesimi_proprieta FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_prop,
+                   (SELECT millesimi_scale FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_scale,
+                   (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_asc,
+                   (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_dati_catastali
             FROM anagrafica_persone p
             WHERE p.condominio_id = ?
             ORDER BY p.cognome ASC, p.nome ASC`;
@@ -1694,12 +1736,16 @@ app.put('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isA
 });
 
 app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    db.run('UPDATE unita_immobiliari SET proprietario_id = NULL WHERE proprietario_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
-        db.run('UPDATE unita_immobiliari SET conduttore_id = NULL WHERE conduttore_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
-            db.run('DELETE FROM anagrafica_persone WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], function(err) {
-                if (err) return res.status(500).json({ success: false, message: err.message });
-                logAudit(req.user.id, req.condominio_id, 'Eliminata Persona da Anagrafica', 'anagrafica_persone', req.params.id, null, req.ip);
-                res.json({ success: true });
+    db.run('DELETE FROM quotes WHERE persona_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
+        db.run('UPDATE unita_immobiliari SET proprietario_id = NULL WHERE proprietario_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
+            db.run('UPDATE unita_immobiliari SET conduttore_id = NULL WHERE conduttore_id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], () => {
+                db.run('DELETE FROM unita_immobiliari WHERE proprietario_id IS NULL AND conduttore_id IS NULL AND condominio_id = ?', [req.condominio_id], () => {
+                    db.run('DELETE FROM anagrafica_persone WHERE id = ? AND condominio_id = ?', [req.params.id, req.condominio_id], function(err) {
+                        if (err) return res.status(500).json({ success: false, message: err.message });
+                        logAudit(req.user.id, req.condominio_id, 'Eliminata Persona da Anagrafica', 'anagrafica_persone', req.params.id, null, req.ip);
+                        res.json({ success: true });
+                    });
+                });
             });
         });
     });
@@ -1714,9 +1760,9 @@ app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
             LEFT JOIN users us ON u.user_id = us.id 
             LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id 
             LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
-            WHERE u.condominio_id = ? 
+            WHERE u.condominio_id = ? AND (p.id IS NOT NULL OR c.id IS NOT NULL)
             ORDER BY u.identificativo ASC`, [req.condominio_id], (err, rows) => {
-        res.json({ success: true, data: rows });
+        res.json({ success: true, data: rows || [] });
     });
 });
 
@@ -1769,95 +1815,102 @@ app.get('/api/condominios', authenticateToken, (req, res) => {
     }
 });
 
-// Quote e Receivables (Crediti) con ANONIMIZZAZIONE e SALDO PARZIALE
+// Quote e Receivables (Crediti) con ANONIMIZZAZIONE, SALDO PARZIALE e allineamento rigoroso ad Anagrafica Condominio
 app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => {
-    db.all(`SELECT q.*, 
-                   p.nome as persona_nome, p.cognome as persona_cognome, 
-                   ui.identificativo as unita, ui.scala as unita_scala, ui.piano as unita_piano, ui.interno as unita_interno,
-                   up.nome as prop_nome, up.cognome as prop_cognome,
-                   us.nome as user_nome
-             FROM quotes q 
-             LEFT JOIN anagrafica_persone p ON q.persona_id = p.id 
-             LEFT JOIN unita_immobiliari ui ON q.unita_id = ui.id 
-             LEFT JOIN anagrafica_persone up ON ui.proprietario_id = up.id
-             LEFT JOIN users us ON ui.user_id = us.id
-             WHERE q.condominio_id = ? AND (q.status != 'Pagato' OR (q.amount - COALESCE(q.paid_amount, 0)) > 0.009)`, 
-    [req.condominio_id], (err, rows) => {
-        if (err) return res.status(500).json({success: false, message: err.message});
-        if (req.role_in_condominio === 'admin') {
-            res.json({ success: true, data: rows.map(r => {
-                const total = parseFloat(r.amount) || 0;
-                const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
-                const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
-                const debName = r.persona_cognome
-                    ? (r.persona_cognome + ' ' + (r.persona_nome || '')).trim()
-                    : (r.prop_cognome ? (r.prop_cognome + ' ' + (r.prop_nome || '')).trim() : (r.user_nome || 'Condòmino'));
-                return {
-                    ...r,
-                    debitore: debName,
-                    unita: r.unita || '-',
-                    titolo_quota: r.title,
-                    importo_totale: total,
-                    importo_versato: paid,
-                    importo: residual,
-                    residual: residual,
-                    scadenza: r.due_date,
-                    status: r.status
-                };
-            }) });
-        } else {
-            // Anonimizzazione
-            let i = 1;
-            const data = rows.map(r => {
-                const total = parseFloat(r.amount) || 0;
-                const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
-                const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
-                return {
-                    id: r.id, is_my_quote: false, importo: residual, importo_totale: total, importo_versato: paid, residual: residual, scadenza: r.due_date, titolo_quota: r.title, status: r.status,
-                    debitore: 'Condòmino #' + (i++), unita: 'Unità Riservata'
-                };
-            });
-            res.json({ success: true, data });
-        }
+    realignDatabaseToAnagrafica(req.condominio_id, () => {
+        db.all(`SELECT q.*, 
+                       p.nome as persona_nome, p.cognome as persona_cognome,
+                       (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita,
+                       (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_scala,
+                       (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_piano,
+                       (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_interno
+                 FROM quotes q 
+                 INNER JOIN anagrafica_persone p ON q.persona_id = p.id AND p.condominio_id = q.condominio_id
+                 WHERE q.condominio_id = ? AND (q.status != 'Pagato' OR (q.amount - COALESCE(q.paid_amount, 0)) > 0.009)
+                 ORDER BY q.due_date ASC, q.id DESC`, 
+        [req.condominio_id], (err, rows) => {
+            if (err) return res.status(500).json({success: false, message: err.message});
+            if (req.role_in_condominio === 'admin') {
+                res.json({ success: true, data: rows.map(r => {
+                    const total = parseFloat(r.amount) || 0;
+                    const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
+                    const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+                    const debName = `${r.persona_cognome || ''} ${r.persona_nome || ''}`.trim();
+                    const locParts = [];
+                    if (r.unita_scala) locParts.push(`Sc. ${r.unita_scala}`);
+                    if (r.unita_piano) locParts.push(`P. ${r.unita_piano}`);
+                    if (r.unita_interno) locParts.push(`Int. ${r.unita_interno}`);
+                    const unitaDisplay = locParts.length > 0 ? locParts.join(' | ') : (r.unita || '-');
+                    return {
+                        ...r,
+                        debitore: debName,
+                        unita: unitaDisplay,
+                        titolo_quota: r.title,
+                        importo_totale: total,
+                        importo_versato: paid,
+                        importo: residual,
+                        residual: residual,
+                        scadenza: r.due_date,
+                        status: r.status
+                    };
+                }) });
+            } else {
+                // Anonimizzazione
+                let i = 1;
+                const data = rows.map(r => {
+                    const total = parseFloat(r.amount) || 0;
+                    const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
+                    const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+                    return {
+                        id: r.id, is_my_quote: false, importo: residual, importo_totale: total, importo_versato: paid, residual: residual, scadenza: r.due_date, titolo_quota: r.title, status: r.status,
+                        debitore: 'Condòmino #' + (i++), unita: 'Unità Riservata'
+                    };
+                });
+                res.json({ success: true, data });
+            }
+        });
     });
 });
 
 
 app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
-    db.all(`SELECT q.*, 
-                   p.nome as persona_nome, p.cognome as persona_cognome, 
-                   ui.identificativo as condomino_unita, ui.scala as unita_scala, ui.piano as unita_piano, ui.interno as unita_interno,
-                   up.nome as prop_nome, up.cognome as prop_cognome,
-                   us.nome as user_nome
-             FROM quotes q 
-             LEFT JOIN anagrafica_persone p ON q.persona_id = p.id 
-             LEFT JOIN unita_immobiliari ui ON q.unita_id = ui.id 
-             LEFT JOIN anagrafica_persone up ON ui.proprietario_id = up.id
-             LEFT JOIN users us ON ui.user_id = us.id
-             WHERE q.condominio_id = ? ORDER BY q.due_date ASC, q.id DESC`, 
-    [req.condominio_id], (err, rows) => {
-        if (err) return res.status(500).json({success: false, message: err.message});
-        // Remap to match what frontend expects
-        const mapped = rows.map(r => {
-            const total = parseFloat(r.amount) || 0;
-            const paid = (r.paid_amount !== undefined && r.paid_amount !== null)
-                ? parseFloat(r.paid_amount)
-                : (r.status === 'Pagato' ? total : 0);
-            const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
-            const condName = r.persona_cognome
-                ? (r.persona_cognome + ' ' + (r.persona_nome || '')).trim()
-                : (r.prop_cognome ? (r.prop_cognome + ' ' + (r.prop_nome || '')).trim() : (r.user_nome || 'Condòmino'));
-            return {
-                ...r, 
-                amount: total,
-                paid_amount: paid,
-                residual: residual,
-                condomino_nome: condName, 
-                condomino_unita: r.condomino_unita || '-',
-                unita: r.condomino_unita || '-'
-            };
+    realignDatabaseToAnagrafica(req.condominio_id, () => {
+        db.all(`SELECT q.*, 
+                       p.nome as persona_nome, p.cognome as persona_cognome,
+                       (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as condomino_unita,
+                       (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_scala,
+                       (SELECT piano FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_piano,
+                       (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_interno
+                 FROM quotes q 
+                 INNER JOIN anagrafica_persone p ON q.persona_id = p.id AND p.condominio_id = q.condominio_id
+                 WHERE q.condominio_id = ? ORDER BY q.due_date ASC, q.id DESC`, 
+        [req.condominio_id], (err, rows) => {
+            if (err) return res.status(500).json({success: false, message: err.message});
+            // Remap to match what frontend expects
+            const mapped = rows.map(r => {
+                const total = parseFloat(r.amount) || 0;
+                const paid = (r.paid_amount !== undefined && r.paid_amount !== null)
+                    ? parseFloat(r.paid_amount)
+                    : (r.status === 'Pagato' ? total : 0);
+                const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+                const condName = `${r.persona_cognome || ''} ${r.persona_nome || ''}`.trim();
+                const locParts = [];
+                if (r.unita_scala) locParts.push(`Sc. ${r.unita_scala}`);
+                if (r.unita_piano) locParts.push(`P. ${r.unita_piano}`);
+                if (r.unita_interno) locParts.push(`Int. ${r.unita_interno}`);
+                const unitaDisplay = locParts.length > 0 ? locParts.join(' | ') : (r.condomino_unita || '-');
+                return {
+                    ...r, 
+                    amount: total,
+                    paid_amount: paid,
+                    residual: residual,
+                    condomino_nome: condName, 
+                    condomino_unita: unitaDisplay,
+                    unita: unitaDisplay
+                };
+            });
+            res.json({ success: true, data: mapped });
         });
-        res.json({ success: true, data: mapped });
     });
 });
 
