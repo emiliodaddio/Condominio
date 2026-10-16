@@ -1771,10 +1771,16 @@ app.get('/api/condominios', authenticateToken, (req, res) => {
 
 // Quote e Receivables (Crediti) con ANONIMIZZAZIONE e SALDO PARZIALE
 app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => {
-    db.all(`SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome, ui.identificativo as unita 
+    db.all(`SELECT q.*, 
+                   p.nome as persona_nome, p.cognome as persona_cognome, 
+                   ui.identificativo as unita, ui.scala as unita_scala, ui.piano as unita_piano, ui.interno as unita_interno,
+                   up.nome as prop_nome, up.cognome as prop_cognome,
+                   us.nome as user_nome
              FROM quotes q 
              LEFT JOIN anagrafica_persone p ON q.persona_id = p.id 
              LEFT JOIN unita_immobiliari ui ON q.unita_id = ui.id 
+             LEFT JOIN anagrafica_persone up ON ui.proprietario_id = up.id
+             LEFT JOIN users us ON ui.user_id = us.id
              WHERE q.condominio_id = ? AND (q.status != 'Pagato' OR (q.amount - COALESCE(q.paid_amount, 0)) > 0.009)`, 
     [req.condominio_id], (err, rows) => {
         if (err) return res.status(500).json({success: false, message: err.message});
@@ -1783,9 +1789,12 @@ app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => 
                 const total = parseFloat(r.amount) || 0;
                 const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
                 const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+                const debName = r.persona_cognome
+                    ? (r.persona_cognome + ' ' + (r.persona_nome || '')).trim()
+                    : (r.prop_cognome ? (r.prop_cognome + ' ' + (r.prop_nome || '')).trim() : (r.user_nome || 'Condòmino'));
                 return {
                     ...r,
-                    debitore: r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto',
+                    debitore: debName,
                     unita: r.unita || '-',
                     titolo_quota: r.title,
                     importo_totale: total,
@@ -1815,11 +1824,17 @@ app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => 
 
 
 app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
-    db.all(`SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome, ui.identificativo as condomino_unita 
+    db.all(`SELECT q.*, 
+                   p.nome as persona_nome, p.cognome as persona_cognome, 
+                   ui.identificativo as condomino_unita, ui.scala as unita_scala, ui.piano as unita_piano, ui.interno as unita_interno,
+                   up.nome as prop_nome, up.cognome as prop_cognome,
+                   us.nome as user_nome
              FROM quotes q 
              LEFT JOIN anagrafica_persone p ON q.persona_id = p.id 
              LEFT JOIN unita_immobiliari ui ON q.unita_id = ui.id 
-             WHERE q.condominio_id = ? ORDER BY q.due_date ASC`, 
+             LEFT JOIN anagrafica_persone up ON ui.proprietario_id = up.id
+             LEFT JOIN users us ON ui.user_id = us.id
+             WHERE q.condominio_id = ? ORDER BY q.due_date ASC, q.id DESC`, 
     [req.condominio_id], (err, rows) => {
         if (err) return res.status(500).json({success: false, message: err.message});
         // Remap to match what frontend expects
@@ -1829,12 +1844,15 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
                 ? parseFloat(r.paid_amount)
                 : (r.status === 'Pagato' ? total : 0);
             const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+            const condName = r.persona_cognome
+                ? (r.persona_cognome + ' ' + (r.persona_nome || '')).trim()
+                : (r.prop_cognome ? (r.prop_cognome + ' ' + (r.prop_nome || '')).trim() : (r.user_nome || 'Condòmino'));
             return {
                 ...r, 
                 amount: total,
                 paid_amount: paid,
                 residual: residual,
-                condomino_nome: r.persona_cognome ? r.persona_cognome + ' ' + r.persona_nome : 'Sconosciuto', 
+                condomino_nome: condName, 
                 condomino_unita: r.condomino_unita || '-',
                 unita: r.condomino_unita || '-'
             };
@@ -1844,7 +1862,7 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { persona_id, unita_id, type, title, amount, due_date, paid_amount, payment_method, notes } = req.body;
+    const { persona_id, unita_id, type, title, amount, due_date, paid_amount, payment_method, notes, description } = req.body;
     const personaVal = (persona_id !== undefined && persona_id !== '' && persona_id !== null) ? parseInt(persona_id, 10) : null;
     const unitaVal = (unita_id !== undefined && unita_id !== '' && unita_id !== null) ? parseInt(unita_id, 10) : null;
     const amountVal = parseFloat(amount) || 0;
@@ -1870,13 +1888,56 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCond
     }
 
     db.run(
-        `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, payment_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', title, amountVal, paidVal, due_date, status, history.length > 0 ? JSON.stringify(history) : null],
+        `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description, payment_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', title, amountVal, paidVal, due_date, status, description || notes || null, history.length > 0 ? JSON.stringify(history) : null],
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
+            logAudit(req.user.id, req.condominio_id, `Assegnazione Quota (€ ${amountVal.toFixed(2)})`, 'quotes', this.lastID, null, req.ip);
             res.json({ success: true, id: this.lastID });
         }
     );
+});
+
+app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+    const { type, title, due_date, items } = req.body;
+    if (!title || !due_date || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ success: false, message: 'Titolo, data di scadenza ed elenco quote sono obbligatori.' });
+    }
+
+    let inserted = 0;
+    let errors = 0;
+    let pending = items.length;
+
+    items.forEach(item => {
+        const personaVal = (item.persona_id !== undefined && item.persona_id !== '' && item.persona_id !== null) ? parseInt(item.persona_id, 10) : null;
+        const unitaVal = (item.unita_id !== undefined && item.unita_id !== '' && item.unita_id !== null) ? parseInt(item.unita_id, 10) : null;
+        const amountVal = Math.round((parseFloat(item.amount) || 0) * 100) / 100;
+        const descVal = item.description || null;
+        const itemTitle = item.title || title;
+
+        if (amountVal <= 0) {
+            pending--;
+            if (pending === 0) {
+                logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
+                return res.json({ success: true, inserted, errors });
+            }
+            return;
+        }
+
+        db.run(
+            `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'In sospeso', ?)`,
+            [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountVal, due_date, descVal],
+            function(err) {
+                if (err) errors++;
+                else inserted++;
+                pending--;
+                if (pending === 0) {
+                    logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
+                    res.json({ success: true, inserted, errors });
+                }
+            }
+        );
+    });
 });
 
 app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {

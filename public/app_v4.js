@@ -4812,7 +4812,10 @@ function renderRubricaTable() {
                     </span>
                 </td>
                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
-                    <button onclick="openPersonaModal(${p.id})" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors" title="Modifica Scheda">
+                    <button onclick="openNewQuoteModalForPersona(${p.id})" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Calcola Quota per Millesimi per questo Condòmino">
+                        <i class="fa-solid fa-calculator"></i>
+                    </button>
+                    <button onclick="openPersonaModal(${p.id})" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors ml-1" title="Modifica Scheda">
                         <i class="fa-solid fa-pen-to-square"></i>
                     </button>
                     <button onclick="deletePersona(${p.id}, '${safeNome}')" class="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors ml-1" title="Elimina Persona">
@@ -4822,6 +4825,27 @@ function renderRubricaTable() {
             </tr>
         `;
     }).join('');
+
+    const tfoot = document.getElementById('persone-table-footer');
+    if (tfoot) {
+        const totProp = state.anagraficaPersone.reduce((acc, p) => acc + (parseFloat(p.unita_mill_prop) || 0), 0);
+        const totScale = state.anagraficaPersone.reduce((acc, p) => acc + (parseFloat(p.unita_mill_scale) || 0), 0);
+        const totAsc = state.anagraficaPersone.reduce((acc, p) => acc + (parseFloat(p.unita_mill_asc) || 0), 0);
+        tfoot.innerHTML = `
+            <tr class="bg-slate-50/90 text-xs font-bold text-slate-800">
+                <td colspan="3" class="py-3 px-4 text-right uppercase tracking-wider text-slate-500">Totale Millesimi Censiti in Anagrafica:</td>
+                <td class="py-3 px-4 font-mono">
+                    <div class="text-slate-900">Prop: <b>${totProp.toFixed(2)}</b> / 1000</div>
+                    <div class="text-[11px] text-slate-500">Sc: ${totScale.toFixed(2)} | Asc: ${totAsc.toFixed(2)}</div>
+                </td>
+                <td colspan="3" class="py-3 px-4 text-right">
+                    <button type="button" onclick="openMillesimiCalculatorModal()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-2xs">
+                        <i class="fa-solid fa-calculator mr-1"></i> Simula o Ripartisci Spesa
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
 }
 
 function openPersonaModal(id = null) {
@@ -5827,5 +5851,657 @@ Puoi accedere subito da PC, tablet o smartphone per iniziare la gestione.`;
         showToast('Impossibile copiare negli appunti', 'error');
     });
 };
+
+// ============================================================================
+// CALCOLATORE & RIPARTIZIONE SPESE PER MILLESIMI (ESPERTO CONTABILE)
+// ============================================================================
+
+let millesimiDistributionRows = [];
+
+async function ensureMillesimiDataLoaded() {
+    try {
+        const [resPers, resUnita] = await Promise.all([
+            fetch('/api/anagrafica-persone', { headers: getAuthHeaders() }),
+            fetch('/api/unita', { headers: getAuthHeaders() })
+        ]);
+        const dataPers = await resPers.json().catch(() => ({}));
+        const dataUnita = await resUnita.json().catch(() => ({}));
+        if (dataPers.success) state.anagraficaPersone = dataPers.data || [];
+        if (dataUnita.success) state.unitaList = dataUnita.data || [];
+    } catch (e) {
+        console.warn('Errore caricamento dati millesimi:', e);
+    }
+}
+
+function getPersonaOrUnitMillesimi(personaId, unitaId, tabella = 'proprieta') {
+    const colMap = {
+        proprieta: { p: 'unita_mill_prop', u: 'millesimi_proprieta' },
+        scale: { p: 'unita_mill_scale', u: 'millesimi_scale' },
+        ascensore: { p: 'unita_mill_asc', u: 'millesimi_ascensore' }
+    };
+    const cols = colMap[tabella] || colMap.proprieta;
+
+    if (unitaId && state.unitaList) {
+        const u = state.unitaList.find(x => String(x.id) === String(unitaId));
+        if (u) return parseFloat(u[cols.u]) || 0;
+    }
+    if (personaId && state.anagraficaPersone) {
+        const p = state.anagraficaPersone.find(x => String(x.id) === String(personaId));
+        if (p) {
+            if (p[cols.p] !== null && p[cols.p] !== undefined && parseFloat(p[cols.p]) > 0) {
+                return parseFloat(p[cols.p]) || 0;
+            }
+            if (state.unitaList) {
+                const fullName = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                const revName = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                const uMatch = state.unitaList.find(u =>
+                    String(u.proprietario_id) === String(p.id) ||
+                    String(u.conduttore_id) === String(p.id) ||
+                    (p.email && u.condomino_email && p.email.toLowerCase() === u.condomino_email.toLowerCase()) ||
+                    (u.condomino_nome && (u.condomino_nome.toLowerCase() === fullName || u.condomino_nome.toLowerCase() === revName))
+                );
+                if (uMatch) return parseFloat(uMatch[cols.u]) || 0;
+            }
+        }
+    }
+    return 0;
+}
+
+window.onQuotePersonaOrUnitaChange = function(source) {
+    const selPersona = document.getElementById('quote-persona-id');
+    const selUnita = document.getElementById('quote-unita-id');
+    const tabella = document.getElementById('single-calc-tabella')?.value || 'proprieta';
+
+    if (source === 'persona' && selPersona && selPersona.value && state.anagraficaPersone) {
+        const p = state.anagraficaPersone.find(x => String(x.id) === String(selPersona.value));
+        if (p) {
+            let targetUnitaId = p.unita_id;
+            if (!targetUnitaId && state.unitaList) {
+                const fullName = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                const revName = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                const uMatch = state.unitaList.find(u =>
+                    String(u.proprietario_id) === String(p.id) ||
+                    (p.email && u.condomino_email && p.email.toLowerCase() === u.condomino_email.toLowerCase()) ||
+                    (u.condomino_nome && (u.condomino_nome.toLowerCase() === fullName || u.condomino_nome.toLowerCase() === revName))
+                );
+                if (uMatch) targetUnitaId = uMatch.id;
+            }
+            if (targetUnitaId && selUnita) {
+                selUnita.value = String(targetUnitaId);
+            }
+        }
+    } else if (source === 'unita' && selUnita && selUnita.value && state.unitaList) {
+        const u = state.unitaList.find(x => String(x.id) === String(selUnita.value));
+        if (u && u.proprietario_id && selPersona) {
+            selPersona.value = String(u.proprietario_id);
+        }
+    }
+
+    const mill = getPersonaOrUnitMillesimi(selPersona?.value, selUnita?.value, tabella);
+    const millInput = document.getElementById('single-calc-user-millesimi');
+    if (millInput && mill > 0) {
+        millInput.value = mill;
+    }
+    computeSingleQuoteMillesimi();
+};
+
+window.onSingleCalcTabellaChange = function() {
+    const selPersona = document.getElementById('quote-persona-id');
+    const selUnita = document.getElementById('quote-unita-id');
+    const tabella = document.getElementById('single-calc-tabella')?.value || 'proprieta';
+    const mill = getPersonaOrUnitMillesimi(selPersona?.value, selUnita?.value, tabella);
+    const millInput = document.getElementById('single-calc-user-millesimi');
+    if (millInput && mill > 0) {
+        millInput.value = mill;
+    }
+    computeSingleQuoteMillesimi();
+};
+
+window.computeSingleQuoteMillesimi = function() {
+    const spesaTotale = parseFloat(document.getElementById('single-calc-total-expense')?.value) || 0;
+    const millTotali = parseFloat(document.getElementById('single-calc-total-millesimi')?.value) || 1000;
+    const millCondomino = parseFloat(document.getElementById('single-calc-user-millesimi')?.value) || 0;
+    const stepsBox = document.getElementById('single-calc-steps-box');
+    const amountInput = document.getElementById('quote-amount');
+
+    if (spesaTotale <= 0 || millTotali <= 0 || millCondomino <= 0) {
+        if (stepsBox) stepsBox.classList.add('hidden');
+        return;
+    }
+
+    const quotaPerMillesimo = spesaTotale / millTotali;
+    const quotaEsatta = quotaPerMillesimo * millCondomino;
+    const quotaArrotondata = Math.round(quotaEsatta * 100) / 100;
+
+    if (amountInput) {
+        amountInput.value = quotaArrotondata.toFixed(2);
+    }
+
+    if (stepsBox) {
+        stepsBox.classList.remove('hidden');
+        stepsBox.innerHTML = `
+            <div class="font-sans font-bold text-emerald-900 mb-1 flex items-center justify-between">
+                <span><i class="fa-solid fa-check-circle text-emerald-600 mr-1"></i>Passaggi Matematici Applicati:</span>
+                <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-lg font-extrabold">€ ${quotaArrotondata.toFixed(2)}</span>
+            </div>
+            <div><b>1. Formula:</b> (Spesa Totale &divide; Millesimi Totali) &times; Millesimi Condòmino</div>
+            <div><b>2. Valore 1 Millesimo:</b> € ${spesaTotale.toFixed(2)} &divide; ${millTotali} = <b>€ ${quotaPerMillesimo.toFixed(6)}</b></div>
+            <div><b>3. Quota Condòmino:</b> € ${quotaPerMillesimo.toFixed(6)} &times; ${millCondomino} = € ${quotaEsatta.toFixed(4)}</div>
+            <div class="text-emerald-800 font-bold pt-0.5 border-t border-emerald-100"><b>4. Arrotondamento al centesimo:</b> € ${quotaArrotondata.toFixed(2)}</div>
+        `;
+    }
+};
+
+window.openNewQuoteModalForPersona = async function(personaId) {
+    await ensureMillesimiDataLoaded();
+    await openNewQuoteModal();
+    const selPersona = document.getElementById('quote-persona-id');
+    if (selPersona && personaId) {
+        selPersona.value = String(personaId);
+        onQuotePersonaOrUnitaChange('persona');
+    }
+    const dueEl = document.getElementById('quote-due-date');
+    if (dueEl && !dueEl.value) {
+        dueEl.value = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
+    }
+    const expEl = document.getElementById('single-calc-total-expense');
+    if (expEl && !expEl.value) {
+        expEl.value = '1200.00';
+        computeSingleQuoteMillesimi();
+    }
+};
+
+function buildMillesimiDistributionRows(tabella = 'proprieta') {
+    const rows = [];
+    const usedUnitaIds = new Set();
+    const usedNames = new Set();
+
+    const getMillByTab = (millProp, millScale, millAsc) => {
+        if (tabella === 'scale') return millScale;
+        if (tabella === 'ascensore') return millAsc;
+        return millProp;
+    };
+
+    // 1. Partiamo dalle unità immobiliari censite nel condominio
+    if (Array.isArray(state.unitaList)) {
+        state.unitaList.forEach(u => {
+            usedUnitaIds.add(String(u.id));
+            let personaId = u.proprietario_id || u.conduttore_id || null;
+            let nominativo = '';
+            if (u.prop_cognome || u.prop_nome) {
+                nominativo = `${u.prop_cognome || ''} ${u.prop_nome || ''}`.trim();
+            } else if (u.condomino_nome) {
+                nominativo = u.condomino_nome.trim();
+            }
+
+            // Se non c'è proprietario_id diretto ma esiste in anagrafica_persone per email o nome, colleghiamolo
+            if (!personaId && Array.isArray(state.anagraficaPersone)) {
+                const pMatch = state.anagraficaPersone.find(p => {
+                    const pFull = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                    const pRev = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                    return (p.email && u.condomino_email && p.email.toLowerCase() === u.condomino_email.toLowerCase()) ||
+                           (nominativo && (nominativo.toLowerCase() === pFull || nominativo.toLowerCase() === pRev));
+                });
+                if (pMatch) {
+                    personaId = pMatch.id;
+                    nominativo = `${pMatch.cognome} ${pMatch.nome}`.trim();
+                }
+            }
+
+            if (!nominativo) nominativo = `Titolare ${u.identificativo || 'Unità'}`;
+            usedNames.add(nominativo.toLowerCase());
+
+            const locParts = [];
+            if (u.scala) locParts.push(`Sc. ${u.scala}`);
+            if (u.piano) locParts.push(`P. ${u.piano}`);
+            if (u.interno) locParts.push(`Int. ${u.interno}`);
+            const unitaLabel = [u.identificativo, locParts.join(' ')].filter(Boolean).join(' - ') || u.tipo || 'Appartamento';
+
+            const mProp = parseFloat(u.millesimi_proprieta) || 0;
+            const mScale = parseFloat(u.millesimi_scale) || 0;
+            const mAsc = parseFloat(u.millesimi_ascensore) || 0;
+
+            rows.push({
+                checked: true,
+                persona_id: personaId,
+                unita_id: u.id,
+                nominativo,
+                unita_label: unitaLabel,
+                millesimi_proprieta: mProp,
+                millesimi_scale: mScale,
+                millesimi_ascensore: mAsc,
+                millesimi: getMillByTab(mProp, mScale, mAsc),
+                is_simulation: false
+            });
+        });
+    }
+
+    // 2. Aggiungiamo eventuali persone in Anagrafica che non erano già incluse nelle unità
+    if (Array.isArray(state.anagraficaPersone)) {
+        state.anagraficaPersone.forEach(p => {
+            if (p.unita_id && usedUnitaIds.has(String(p.unita_id))) return;
+            const nom = `${p.cognome || ''} ${p.nome || ''}`.trim();
+            const nomRev = `${p.nome || ''} ${p.cognome || ''}`.trim();
+            if (usedNames.has(nom.toLowerCase()) || usedNames.has(nomRev.toLowerCase())) return;
+
+            const mProp = parseFloat(p.unita_mill_prop) || 0;
+            const mScale = parseFloat(p.unita_mill_scale) || 0;
+            const mAsc = parseFloat(p.unita_mill_asc) || 0;
+
+            const locParts = [];
+            if (p.unita_scala) locParts.push(`Sc. ${p.unita_scala}`);
+            if (p.unita_piano) locParts.push(`P. ${p.unita_piano}`);
+            if (p.unita_interno) locParts.push(`Int. ${p.unita_interno}`);
+            const unitaLabel = locParts.length > 0 ? locParts.join(' ') : (p.unita_identificativo || 'Unità da associare');
+
+            rows.push({
+                checked: (mProp > 0 || mScale > 0 || mAsc > 0),
+                persona_id: p.id,
+                unita_id: p.unita_id || null,
+                nominativo: nom,
+                unita_label: unitaLabel,
+                millesimi_proprieta: mProp,
+                millesimi_scale: mScale,
+                millesimi_ascensore: mAsc,
+                millesimi: getMillByTab(mProp, mScale, mAsc),
+                is_simulation: false
+            });
+        });
+    }
+
+    millesimiDistributionRows = rows;
+}
+
+window.openMillesimiCalculatorModal = async function() {
+    await ensureMillesimiDataLoaded();
+
+    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Ma.Ca.';
+    const subEl = document.getElementById('mill-calc-condo-subtitle');
+    if (subEl) {
+        subEl.innerHTML = `Tabella millesimale attiva per <b>${condoName}</b> &bull; Puoi modificare i millesimi o la spesa totale per simulare qualsiasi riparto`;
+    }
+
+    // Popola select fatture fornitori per importazione rapida
+    const suppSel = document.getElementById('mill-calc-supplier-select');
+    if (suppSel) {
+        const payments = state.suppliers || [];
+        suppSel.innerHTML = '<option value="">-- Inserimento Manuale Importo --</option>' +
+            payments.map(s => `<option value="${s.id}">€ ${(parseFloat(s.amount) || 0).toFixed(2)} - ${s.supplier_name} (${s.category || 'Fattura'})</option>`).join('');
+    }
+
+    // Imposta data scadenza default (+15 gg)
+    const dueEl = document.getElementById('mill-calc-quote-due-date');
+    if (dueEl && !dueEl.value) {
+        dueEl.value = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
+    }
+
+    const tabella = document.getElementById('mill-calc-tabella')?.value || 'proprieta';
+    buildMillesimiDistributionRows(tabella);
+    recalcMillesimiDistribution();
+
+    const modal = document.getElementById('modal-ripartizione-millesimi');
+    if (modal) modal.classList.remove('hidden');
+};
+
+window.closeMillesimiCalculatorModal = function() {
+    const modal = document.getElementById('modal-ripartizione-millesimi');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.onChangeMillesimiTableType = function() {
+    const tabella = document.getElementById('mill-calc-tabella')?.value || 'proprieta';
+    millesimiDistributionRows.forEach(r => {
+        if (!r.is_simulation) {
+            if (tabella === 'scale') r.millesimi = r.millesimi_scale || 0;
+            else if (tabella === 'ascensore') r.millesimi = r.millesimi_ascensore || 0;
+            else r.millesimi = r.millesimi_proprieta || 0;
+        }
+    });
+    recalcMillesimiDistribution();
+};
+
+window.setMillesimiBaseFromRealSum = function() {
+    const sumMill = millesimiDistributionRows.reduce((acc, r) => acc + (r.checked ? (parseFloat(r.millesimi) || 0) : 0), 0);
+    if (sumMill > 0) {
+        document.getElementById('mill-calc-totale-millesimi').value = (Math.round(sumMill * 100) / 100).toString();
+        recalcMillesimiDistribution();
+    } else {
+        showToast('La somma dei millesimi selezionati è zero.', 'warning');
+    }
+};
+
+window.onSelectSupplierForMillesimiCalc = function() {
+    const suppId = document.getElementById('mill-calc-supplier-select')?.value;
+    if (!suppId || !state.suppliers) return;
+    const supp = state.suppliers.find(s => String(s.id) === String(suppId));
+    if (supp) {
+        document.getElementById('mill-calc-spesa-totale').value = (parseFloat(supp.amount) || 0).toFixed(2);
+        const titleEl = document.getElementById('mill-calc-quote-title');
+        if (titleEl) {
+            titleEl.value = `Riparto ${supp.category || 'Spesa'}: ${supp.supplier_name}${supp.invoice_number ? ' (Fatt. ' + supp.invoice_number + ')' : ''}`;
+        }
+        recalcMillesimiDistribution();
+    }
+};
+
+window.addSimulationRowMillesimi = function() {
+    millesimiDistributionRows.push({
+        checked: true,
+        persona_id: null,
+        unita_id: null,
+        nominativo: `Condòmino Simulato #${millesimiDistributionRows.length + 1}`,
+        unita_label: 'Unità Simulazione',
+        millesimi_proprieta: 45.5,
+        millesimi_scale: 45.5,
+        millesimi_ascensore: 45.5,
+        millesimi: 45.5,
+        is_simulation: true
+    });
+    recalcMillesimiDistribution();
+};
+
+window.removeSimulationRowMillesimi = function(idx) {
+    millesimiDistributionRows.splice(idx, 1);
+    recalcMillesimiDistribution();
+};
+
+window.toggleAllMillesimiRows = function(checked) {
+    millesimiDistributionRows.forEach(r => { r.checked = checked; });
+    recalcMillesimiDistribution();
+};
+
+window.onToggleMillesimiRowCheck = function(idx, checked) {
+    if (millesimiDistributionRows[idx]) {
+        millesimiDistributionRows[idx].checked = checked;
+        recalcMillesimiDistribution();
+    }
+};
+
+window.onEditMillesimiRowValue = function(idx, val) {
+    if (millesimiDistributionRows[idx]) {
+        millesimiDistributionRows[idx].millesimi = parseFloat(val) || 0;
+        recalcMillesimiDistribution(true);
+    }
+};
+
+window.recalcMillesimiDistribution = function(skipInputRebuild = false) {
+    const spesaTotale = parseFloat(document.getElementById('mill-calc-spesa-totale')?.value) || 0;
+    const millTotaliTabella = parseFloat(document.getElementById('mill-calc-totale-millesimi')?.value) || 1000;
+    const coeffUnitario = millTotaliTabella > 0 ? (spesaTotale / millTotaliTabella) : 0;
+
+    // 1. Aggiorna banner formula e passaggi matematici
+    const banner = document.getElementById('mill-calc-formula-banner');
+    const sumMillesimiCensiti = millesimiDistributionRows.reduce((acc, r) => acc + (r.checked ? (parseFloat(r.millesimi) || 0) : 0), 0);
+    const firstActiveRow = millesimiDistributionRows.find(r => r.checked && (parseFloat(r.millesimi) || 0) > 0) || { nominativo: 'Condòmino Esempio', millesimi: 43 };
+    const exMill = parseFloat(firstActiveRow.millesimi) || 43;
+    const exExact = coeffUnitario * exMill;
+    const exRounded = Math.round(exExact * 100) / 100;
+
+    if (banner) {
+        banner.innerHTML = `
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-center">
+                <div class="lg:col-span-2 space-y-1.5 text-xs text-slate-700">
+                    <div class="font-extrabold text-emerald-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-square-root-variable text-emerald-600"></i>
+                        Dimostrazione Matematica e Formula Contabile (Art. 1123 c.c.)
+                    </div>
+                    <div class="font-mono bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] text-slate-800">
+                        <b>Formula:</b> Quota Singolo Condòmino = (Spesa Totale &divide; Millesimi Totali) &times; Millesimi Condòmino
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 font-mono text-[11px]">
+                        <div class="p-2 rounded-lg bg-emerald-50/70 border border-emerald-200/70">
+                            <span class="block text-[10px] font-sans font-bold text-slate-500 uppercase">1° Passaggio (Quota 1 Mill.)</span>
+                            € ${spesaTotale.toFixed(2)} &divide; ${millTotaliTabella} = <b class="text-emerald-800">€ ${coeffUnitario.toFixed(6)}</b>
+                        </div>
+                        <div class="p-2 rounded-lg bg-blue-50/70 border border-blue-200/70">
+                            <span class="block text-[10px] font-sans font-bold text-slate-500 uppercase">2° Passaggio (Es. ${firstActiveRow.nominativo})</span>
+                            € ${coeffUnitario.toFixed(6)} &times; ${exMill} = <b class="text-blue-800">€ ${exExact.toFixed(4)}</b>
+                        </div>
+                        <div class="p-2 rounded-lg bg-indigo-50/70 border border-indigo-200/70">
+                            <span class="block text-[10px] font-sans font-bold text-slate-500 uppercase">3° Passaggio (Arrotondamento)</span>
+                            Arrotondato al centesimo = <b class="text-indigo-900 text-xs">€ ${exRounded.toFixed(2)}</b>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-3.5 rounded-xl flex flex-col justify-between space-y-2">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-300">Spesa da Ripartire:</span>
+                        <span class="font-extrabold text-emerald-400 text-sm">€ ${spesaTotale.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-300">Base Millesimale:</span>
+                        <span class="font-mono font-bold">${millTotaliTabella.toFixed(2)} mill.</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-300">Somma Mill. Attivi:</span>
+                        <span class="font-mono font-bold ${Math.abs(sumMillesimiCensiti - millTotaliTabella) > 0.01 ? 'text-amber-300' : 'text-emerald-300'}">${sumMillesimiCensiti.toFixed(2)} mill.</span>
+                    </div>
+                    ${Math.abs(sumMillesimiCensiti - millTotaliTabella) > 0.01 && sumMillesimiCensiti > 0 ? `
+                        <button type="button" onclick="setMillesimiBaseFromRealSum()" class="w-full py-1 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 rounded-lg text-[10px] font-bold transition">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Ripartisci su base ${sumMillesimiCensiti.toFixed(2)} mill.
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    // 2. Popola tabella
+    const tbody = document.getElementById('mill-calc-table-body');
+    const tfoot = document.getElementById('mill-calc-table-footer');
+    if (!tbody) return;
+
+    let totMillSelected = 0;
+    let totExactSelected = 0;
+    let totRoundedSelected = 0;
+
+    if (!skipInputRebuild) {
+        tbody.innerHTML = millesimiDistributionRows.map((r, idx) => {
+            const mill = parseFloat(r.millesimi) || 0;
+            const exact = r.checked ? (coeffUnitario * mill) : 0;
+            const rounded = r.checked ? (Math.round(exact * 100) / 100) : 0;
+            if (r.checked) {
+                totMillSelected += mill;
+                totExactSelected += exact;
+                totRoundedSelected += rounded;
+            }
+            return `
+                <tr class="${r.checked ? 'hover:bg-slate-50/90' : 'opacity-45 bg-slate-50/40'} transition-colors">
+                    <td class="py-2.5 px-3 text-center">
+                        <input type="checkbox" ${r.checked ? 'checked' : ''} onchange="onToggleMillesimiRowCheck(${idx}, this.checked)" class="rounded border-slate-300">
+                    </td>
+                    <td class="py-2.5 px-3 font-bold text-slate-800">
+                        ${r.nominativo}
+                        ${r.is_simulation ? `<span class="ml-1 px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-800 rounded font-semibold">Simulazione</span>` : ''}
+                    </td>
+                    <td class="py-2.5 px-3 text-slate-600">${r.unita_label}</td>
+                    <td class="py-2.5 px-3 text-right">
+                        <input type="number" step="0.01" value="${mill}" oninput="onEditMillesimiRowValue(${idx}, this.value)" class="w-24 px-2 py-1 text-right font-mono font-bold text-slate-900 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                    </td>
+                    <td class="py-2.5 px-3 font-mono text-[11px] text-slate-600" id="mill-row-formula-${idx}">
+                        (${spesaTotale.toFixed(2)} &divide; ${millTotaliTabella}) &times; ${mill.toFixed(2)}
+                    </td>
+                    <td class="py-2.5 px-3 text-right font-mono text-slate-500" id="mill-row-exact-${idx}">
+                        € ${exact.toFixed(4)}
+                    </td>
+                    <td class="py-2.5 px-3 text-right font-mono font-extrabold text-emerald-700 text-sm" id="mill-row-rounded-${idx}">
+                        € ${rounded.toFixed(2)}
+                        ${r.is_simulation ? `<button type="button" onclick="removeSimulationRowMillesimi(${idx})" class="ml-2 text-rose-500 hover:text-rose-700" title="Rimuovi riga"><i class="fa-solid fa-trash-can text-xs"></i></button>` : ''}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } else {
+        millesimiDistributionRows.forEach((r, idx) => {
+            const mill = parseFloat(r.millesimi) || 0;
+            const exact = r.checked ? (coeffUnitario * mill) : 0;
+            const rounded = r.checked ? (Math.round(exact * 100) / 100) : 0;
+            if (r.checked) {
+                totMillSelected += mill;
+                totExactSelected += exact;
+                totRoundedSelected += rounded;
+            }
+            const fEl = document.getElementById(`mill-row-formula-${idx}`);
+            const eEl = document.getElementById(`mill-row-exact-${idx}`);
+            const rEl = document.getElementById(`mill-row-rounded-${idx}`);
+            if (fEl) fEl.innerHTML = `(${spesaTotale.toFixed(2)} &divide; ${millTotaliTabella}) &times; ${mill.toFixed(2)}`;
+            if (eEl) eEl.textContent = `€ ${exact.toFixed(4)}`;
+            if (rEl) rEl.innerHTML = `€ ${rounded.toFixed(2)}${r.is_simulation ? `<button type="button" onclick="removeSimulationRowMillesimi(${idx})" class="ml-2 text-rose-500 hover:text-rose-700" title="Rimuovi riga"><i class="fa-solid fa-trash-can text-xs"></i></button>` : ''}`;
+        });
+    }
+
+    if (tfoot) {
+        const residuoNonRipartito = Math.round((spesaTotale - totRoundedSelected) * 100) / 100;
+        tfoot.innerHTML = `
+            <tr class="bg-slate-100 text-slate-900">
+                <td colspan="3" class="py-3 px-3 text-right uppercase tracking-wider text-xs">Totale Riparto Condòmini Selezionati:</td>
+                <td class="py-3 px-3 text-right font-mono text-xs">${totMillSelected.toFixed(2)} / ${millTotaliTabella}</td>
+                <td class="py-3 px-3 font-mono text-[11px] text-slate-500">
+                    ${Math.abs(residuoNonRipartito) > 0.009 ? `Quota residua su ${Math.max(0, millTotaliTabella - totMillSelected).toFixed(2)} mill.: € ${residuoNonRipartito.toFixed(2)}` : 'Quadratura 100%'}
+                </td>
+                <td class="py-3 px-3 text-right font-mono text-xs text-slate-600">€ ${totExactSelected.toFixed(4)}</td>
+                <td class="py-3 px-3 text-right font-mono text-sm font-extrabold text-emerald-700">€ ${totRoundedSelected.toFixed(2)}</td>
+            </tr>
+        `;
+    }
+};
+
+window.submitBatchMillesimiQuotes = async function() {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "error");
+        return;
+    }
+
+    const spesaTotale = parseFloat(document.getElementById('mill-calc-spesa-totale')?.value) || 0;
+    const millTotaliTabella = parseFloat(document.getElementById('mill-calc-totale-millesimi')?.value) || 1000;
+    const coeffUnitario = millTotaliTabella > 0 ? (spesaTotale / millTotaliTabella) : 0;
+    const title = (document.getElementById('mill-calc-quote-title')?.value || '').trim();
+    const type = document.getElementById('mill-calc-quote-type')?.value || 'ordinaria';
+    const due_date = document.getElementById('mill-calc-quote-due-date')?.value || '';
+
+    if (!title || !due_date) {
+        showToast('Inserisci il Titolo/Causale della bolletta e la Data di Scadenza.', 'warning');
+        return;
+    }
+
+    const items = millesimiDistributionRows
+        .filter(r => r.checked && (parseFloat(r.millesimi) || 0) > 0 && (r.persona_id || r.unita_id))
+        .map(r => {
+            const mill = parseFloat(r.millesimi) || 0;
+            const amount = Math.round((coeffUnitario * mill) * 100) / 100;
+            return {
+                persona_id: r.persona_id,
+                unita_id: r.unita_id,
+                amount,
+                title: `${title} (${mill.toFixed(2)}/${millTotaliTabella} mill.)`,
+                description: `Calcolo millesimale: (€ ${spesaTotale.toFixed(2)} / ${millTotaliTabella}) x ${mill.toFixed(2)} mill. = € ${amount.toFixed(2)}`
+            };
+        })
+        .filter(i => i.amount > 0);
+
+    if (items.length === 0) {
+        showToast('Nessun condòmino reale con millesimi > 0 selezionato per la generazione delle quote.', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/quotes/batch', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ type, title, due_date, items })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Generate e assegnate con successo ${data.inserted} quote millesimali!`, 'success');
+            closeMillesimiCalculatorModal();
+            if (typeof loadAccountingData === 'function') loadAccountingData();
+        } else {
+            showToast(data.message || 'Errore nella generazione massiva delle quote.', 'error');
+        }
+    } catch (e) {
+        showToast('Errore di connessione al server.', 'error');
+    }
+};
+
+window.printMillesimiDistribution = function() {
+    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Ma.Ca.';
+    const spesaTotale = parseFloat(document.getElementById('mill-calc-spesa-totale')?.value) || 0;
+    const millTotaliTabella = parseFloat(document.getElementById('mill-calc-totale-millesimi')?.value) || 1000;
+    const coeffUnitario = millTotaliTabella > 0 ? (spesaTotale / millTotaliTabella) : 0;
+    const title = document.getElementById('mill-calc-quote-title')?.value || 'Prospetto Ripartizione Spesa per Millesimi';
+
+    let totMill = 0;
+    let totRounded = 0;
+    const rowsHtml = millesimiDistributionRows.filter(r => r.checked).map(r => {
+        const mill = parseFloat(r.millesimi) || 0;
+        const exact = coeffUnitario * mill;
+        const rounded = Math.round(exact * 100) / 100;
+        totMill += mill;
+        totRounded += rounded;
+        return `
+            <tr>
+                <td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;">${r.nominativo}</td>
+                <td style="padding:8px;border:1px solid #cbd5e1;">${r.unita_label}</td>
+                <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-family:monospace;">${mill.toFixed(2)}</td>
+                <td style="padding:8px;border:1px solid #cbd5e1;font-family:monospace;">(€ ${spesaTotale.toFixed(2)} ÷ ${millTotaliTabella}) × ${mill.toFixed(2)}</td>
+                <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-family:monospace;">€ ${exact.toFixed(4)}</td>
+                <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;font-family:monospace;">€ ${rounded.toFixed(2)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`
+        <html>
+        <head>
+            <title>Piano di Riparto Millesimale - ${condoName}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 30px; color: #1e293b; }
+                h1 { font-size: 20px; margin-bottom: 4px; }
+                p { font-size: 12px; color: #475569; margin-top: 0; }
+                .formula-box { background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; margin: 16px 0; font-size: 12px; }
+                table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+                th { background: #f1f5f9; padding: 8px; border: 1px solid #cbd5e1; text-align: left; }
+            </style>
+        </head>
+        <body>
+            <h1>${condoName} - Piano di Riparto Millesimale</h1>
+            <p><b>Causale:</b> ${title} &bull; <b>Data elaborazione:</b> ${new Date().toLocaleDateString('it-IT')}</p>
+            <div class="formula-box">
+                <b>Dati Contabili di Riferimento:</b><br>
+                &bull; Spesa Totale del Condominio: <b>€ ${spesaTotale.toFixed(2)}</b><br>
+                &bull; Millesimi Totali di Riferimento: <b>${millTotaliTabella}</b><br>
+                &bull; Coefficiente per 1 Millesimo (Spesa &divide; Millesimi Totali): <b>€ ${coeffUnitario.toFixed(6)}</b><br>
+                &bull; Formula Applicata: <b>Quota Condòmino = (Spesa Totale &divide; Millesimi Totali) &times; Millesimi di Proprietà</b>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Condòmino</th>
+                        <th>Unità Immobiliare</th>
+                        <th style="text-align:right;">Millesimi</th>
+                        <th>Formula Applicata</th>
+                        <th style="text-align:right;">Quota Esatta</th>
+                        <th style="text-align:right;">Quota Arrotondata (€)</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+                <tfoot>
+                    <tr style="background:#f8fafc;font-weight:bold;">
+                        <td colspan="2" style="padding:8px;border:1px solid #cbd5e1;text-align:right;">TOTALE RIPARTITO:</td>
+                        <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-family:monospace;">${totMill.toFixed(2)}</td>
+                        <td colspan="2" style="padding:8px;border:1px solid #cbd5e1;"></td>
+                        <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-family:monospace;">€ ${totRounded.toFixed(2)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <script>window.onload = function() { window.print(); };</script>
+        </body>
+        </html>
+    `);
+    w.document.close();
+};
+
 
 
