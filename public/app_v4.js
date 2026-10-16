@@ -2159,16 +2159,20 @@ async function loadAnagrafica() {
             document.getElementById('condominio-indirizzo').value = data.data.indirizzo || '';
             document.getElementById('condominio-cf').value = data.data.cf || '';
             document.getElementById('condominio-scala').value = data.data.scala || '';
+            const datiBancariInput = document.getElementById('condominio-dati-bancari');
+            if (datiBancariInput) datiBancariInput.value = data.data.dati_bancari || '';
             
             const dashNome = document.getElementById('dash-condo-nome');
             if(dashNome) dashNome.textContent = (data.data.nome || 'CONDOMINIO').toUpperCase();
             
             const dashBox = document.getElementById('dash-condo-details-box');
-            if(dashBox && (data.data.indirizzo || data.data.cf)) {
+            if(dashBox && (data.data.indirizzo || data.data.cf || data.data.dati_bancari)) {
                 dashBox.classList.remove('hidden');
                 document.getElementById('dash-condo-indirizzo').textContent = data.data.indirizzo || 'N/D';
                 document.getElementById('dash-condo-cf').textContent = data.data.cf || 'N/D';
                 document.getElementById('dash-condo-scala').textContent = data.data.scala || 'Unica';
+                const dashBanca = document.getElementById('dash-condo-dati-bancari');
+                if (dashBanca) dashBanca.textContent = data.data.dati_bancari || 'Non specificati';
                 
                 if (data.data.admin_nome || data.data.admin_cognome) {
                     const adminDetails = document.getElementById('dash-admin-details');
@@ -2244,6 +2248,7 @@ async function handleSaveCondominio(e) {
         indirizzo: (document.getElementById('condominio-indirizzo').value || '').trim(),
         cf: (document.getElementById('condominio-cf').value || '').trim().toUpperCase(),
         scala: (document.getElementById('condominio-scala').value || '').trim(),
+        dati_bancari: (document.getElementById('condominio-dati-bancari')?.value || '').trim(),
         piano: ''
     };
     try {
@@ -2265,6 +2270,8 @@ async function handleSaveCondominio(e) {
             if (dashCf) dashCf.textContent = payload.cf || 'N/D';
             const dashSc = document.getElementById('dash-condo-scala');
             if (dashSc) dashSc.textContent = payload.scala || 'Unica';
+            const dashBanca = document.getElementById('dash-condo-dati-bancari');
+            if (dashBanca) dashBanca.textContent = payload.dati_bancari || 'Non specificati';
             loadAnagrafica();
         } else {
             showToast('Errore nel salvataggio: ' + (data.error || data.message || ''), 'error');

@@ -656,6 +656,7 @@ function initDatabase() {
             cf TEXT,
             scala TEXT,
             piano TEXT,
+            dati_bancari TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
 
@@ -887,7 +888,8 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'unita_immobiliari', col: 'conduttore_id', defMysql: 'INT', defSqlite: 'INTEGER' },
         { table: 'convocations_log', col: 'tipo', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
         { table: 'convocations_log', col: 'oggetto', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
-        { table: 'convocations_log', col: 'contenuto_html', defMysql: 'LONGTEXT', defSqlite: 'TEXT' }
+        { table: 'convocations_log', col: 'contenuto_html', defMysql: 'LONGTEXT', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'dati_bancari', defMysql: 'VARCHAR(500)', defSqlite: 'TEXT' }
     ];
 
     let pending = colsToEnsure.length;
@@ -2587,7 +2589,7 @@ app.get('/api/condominio', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.put('/api/condominio', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const fields = ['nome', 'indirizzo', 'cf', 'scala', 'admin_nome', 'admin_cognome', 'admin_titolo', 'admin_telefono', 'admin_cellulare', 'admin_emergenze', 'admin_email', 'admin_pec'];
+    const fields = ['nome', 'indirizzo', 'cf', 'scala', 'dati_bancari', 'admin_nome', 'admin_cognome', 'admin_titolo', 'admin_telefono', 'admin_cellulare', 'admin_emergenze', 'admin_email', 'admin_pec'];
     let updatePairs = [];
     let params = [];
     
@@ -2603,10 +2605,18 @@ app.put('/api/condominio', authenticateToken, requireCondominio, isAdmin, checkC
     params.push(req.condominio_id);
     const query = 'UPDATE condominios SET ' + updatePairs.join(', ') + ' WHERE id = ?';
     
-    db.run(query, params, function(err) {
-        if (err) return res.status(500).json({ success: false, error: err.message });
-        res.json({ success: true });
-    });
+    const executeUpdate = (retried = false) => {
+        db.run(query, params, function(err) {
+            if (err) {
+                if (!retried && /Unknown column|no such column/i.test(err.message)) {
+                    return ensureAnagraficaAndUnitaColumns(() => executeUpdate(true));
+                }
+                return res.status(500).json({ success: false, error: err.message });
+            }
+            res.json({ success: true });
+        });
+    };
+    executeUpdate();
 });
 
 

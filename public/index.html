@@ -1001,6 +1001,17 @@
                             </button>
                         </div>
 
+                        <!-- Riga Dati Bancari del Condominio -->
+                        <div id="dash-condo-banca-row" class="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-100">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <i class="fa-solid fa-building-columns text-emerald-300 text-sm shrink-0"></i>
+                                <div class="text-xs sm:text-sm">
+                                    <span class="text-emerald-200 font-bold uppercase tracking-wider text-[11px] mr-1.5">Dati Bancari:</span>
+                                    <b id="dash-condo-dati-bancari" class="text-white font-mono font-bold break-all">Non specificati</b>
+                                </div>
+                            </div>
+                        </div>
+
                         <div id="dash-admin-details" class="flex flex-wrap items-center gap-3 sm:gap-4 text-blue-100/90 pt-3 border-t border-white/10 hidden">
                             <div class="flex items-center gap-1.5">
                                 <i class="fa-solid fa-user-tie text-blue-300"></i>
@@ -1949,6 +1960,14 @@
                             </label>
                             <input type="text" id="condominio-scala" placeholder="es. Scale A, B oppure Palazzina 1-2" class="w-full text-sm font-semibold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
                             <p class="text-[11px] text-slate-400 mt-1">Indicazione delle scale o corpi di fabbrica presenti.</p>
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-building-columns text-amber-600"></i> Dati Bancari / Coordinate IBAN del Condominio
+                            </label>
+                            <input type="text" id="condominio-dati-bancari" placeholder="es. Banca Intesa Sanpaolo - IBAN: IT00A0123456789000000123456 - Intestato a: Condominio..." class="w-full text-sm font-mono font-bold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
+                            <p class="text-[11px] text-slate-400 mt-1">Questi dati bancari verranno mostrati direttamente nel riquadro di benvenuto nella Home Page del Condominio.</p>
                         </div>
                     </div>
 
@@ -3071,7 +3090,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261016_v2"></script>
+    <script src="app_v4.js?v=20261016_v3"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
