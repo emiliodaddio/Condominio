@@ -47,8 +47,8 @@ function initEmailTransporter() {
         return;
     }
 
-    // 3. AWS SES o SMTP generico
-    if (process.env.SMTP_HOST) {
+    // 3. Brevo, AWS SES o SMTP generico
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
         transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
             port: parseInt(process.env.SMTP_PORT || '587', 10),
@@ -58,7 +58,7 @@ function initEmailTransporter() {
                 pass: process.env.SMTP_PASS
             }
         });
-        console.log(`📧 Email Service: Collegato a SMTP (${process.env.SMTP_HOST}).`);
+        console.log(`📧 Email Service: Collegato con successo a SMTP (${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 587}).`);
         return;
     }
 
@@ -78,6 +78,12 @@ function initEmailTransporter() {
     }).catch(err => {
         console.warn('⚠️ Avviso inizializzazione email Ethereal:', err.message);
     });
+}
+
+function reloadEmailTransporter() {
+    isEthereal = false;
+    transporter = null;
+    initEmailTransporter();
 }
 
 initEmailTransporter();
@@ -330,5 +336,7 @@ module.exports = {
     sendOnboardingInviteEmail,
     sendTwoFactorOtpEmail,
     sendPasswordResetEmail,
-    buildEmailHtml
+    buildEmailHtml,
+    reloadEmailTransporter,
+    isUsingEthereal: () => isEthereal
 };
