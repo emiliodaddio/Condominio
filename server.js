@@ -2318,7 +2318,7 @@ app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => 
                     const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
                     const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
                     return {
-                        id: r.id, is_my_quote: false, importo: residual, importo_totale: total, importo_versato: paid, residual: residual, scadenza: r.due_date, titolo_quota: r.title, status: r.status,
+                        id: r.id, is_my_quote: false, type: r.type, importo: residual, importo_totale: total, importo_versato: paid, residual: residual, scadenza: r.due_date, titolo_quota: r.title, status: r.status,
                         debitore: 'Condòmino #' + (i++), unita: 'Unità Riservata'
                     };
                 });

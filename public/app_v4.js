@@ -827,92 +827,332 @@ function renderQuotesTable() {
 
 /**
  * Renderizza la tabella dei crediti/debiti con gestione della Privacy
+/**
+ * Renderizza la tabella dei Crediti Condominiali da Riscuotere
+ * Impaginata con la stessa ricchezza, estetica e coerenza di Tutte le Quote del Condominio (Vista Amministratore)
  */
+state.receivablesFilterStatus = state.receivablesFilterStatus || 'all';
+state.receivablesSearchQuery = state.receivablesSearchQuery || '';
+
+window.filterReceivablesByStatus = function(status) {
+    state.receivablesFilterStatus = status;
+    updateReceivablesFilterButtons();
+    renderReceivablesTable();
+};
+
+window.filterReceivablesBySearch = function(query) {
+    state.receivablesSearchQuery = (query || '').trim().toLowerCase();
+    renderReceivablesTable();
+};
+
+function updateReceivablesFilterButtons() {
+    const statuses = ['all', 'scaduta', 'acconto', 'in_attesa'];
+    statuses.forEach(s => {
+        const btn = document.getElementById(`rf-btn-${s}`);
+        if (!btn) return;
+        if (state.receivablesFilterStatus === s) {
+            btn.className = 'px-2.5 py-1 rounded-lg font-bold transition bg-slate-900 text-white shadow-2xs cursor-pointer';
+        } else {
+            const colors = {
+                scaduta: 'text-rose-700 hover:bg-rose-50',
+                acconto: 'text-amber-700 hover:bg-amber-50',
+                in_attesa: 'text-slate-700 hover:bg-slate-100',
+                all: 'text-slate-700 hover:bg-slate-100'
+            };
+            btn.className = `px-2.5 py-1 rounded-lg font-bold transition bg-white ${colors[s] || 'text-slate-600'} border border-slate-200 cursor-pointer`;
+        }
+    });
+}
+
 function renderReceivablesTable(recData) {
+    if (recData && recData.data) {
+        state.receivables = recData.data;
+    } else if (Array.isArray(recData)) {
+        state.receivables = recData;
+    }
+
     const tbody = document.getElementById('receivables-table-body');
     const tfoot = document.getElementById('receivables-table-footer');
+    const header = document.getElementById('receivables-table-header');
     const badgeContainer = document.getElementById('privacy-badge-container');
-    const isAdmin = state.currentUser.role === 'admin';
+    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
 
-    // Badge Privacy / Trasparenza
-    if (isAdmin) {
-        badgeContainer.innerHTML = `
-            <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                <i class="fa-solid fa-eye mr-1"></i> Nominativi in Chiaro (Vista Admin)
-            </span>
-        `;
-    } else {
-        badgeContainer.innerHTML = `
-            <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <i class="fa-solid fa-user-secret mr-1"></i> Nominativi Anonimizzati dal Backend (Privacy Tutelata)
-            </span>
+    if (!tbody) return;
+
+    // Header della tabella coerente con la Vista Amministratore di Quote
+    if (header) {
+        header.innerHTML = `
+            <th class="py-3.5 px-4">${isAdmin ? 'Debitore / Unit&agrave;' : 'Cond&ograve;mino / Unit&agrave;'}</th>
+            <th class="py-3.5 px-4">Tipo</th>
+            <th class="py-3.5 px-4">Descrizione Quota</th>
+            <th class="py-3.5 px-4">Scadenza</th>
+            <th class="py-3.5 px-4 text-right">Importo Totale</th>
+            <th class="py-3.5 px-4 text-right">Versato / Residuo</th>
+            <th class="py-3.5 px-4 text-center">Stato</th>
+            <th class="py-3.5 px-4 text-center">Azioni</th>
         `;
     }
 
-    if (!recData.data || recData.data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Nessun credito in sospeso. Tutti i Condomini sono in regola!</td></tr>`;
+    // Badge Privacy / Trasparenza
+    if (badgeContainer) {
+        if (isAdmin) {
+            badgeContainer.innerHTML = `
+                <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200 shadow-2xs">
+                    <i class="fa-solid fa-eye mr-1"></i> Nominativi in Chiaro (Vista Admin)
+                </span>
+            `;
+        } else {
+            badgeContainer.innerHTML = `
+                <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                    <i class="fa-solid fa-user-secret mr-1"></i> Nominativi Anonimizzati (Privacy Tutelata)
+                </span>
+            `;
+        }
+    }
+
+    const rawList = state.receivables || [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Conteggi per i pulsanti filtro
+    let countAll = rawList.length;
+    let countScaduta = 0;
+    let countAcconto = 0;
+    let countInAttesa = 0;
+
+    const enriched = rawList.map(r => {
+        const residual = parseFloat(r.importo || r.residual || r.amount) || 0;
+        const total = parseFloat(r.importo_totale) || (residual + (parseFloat(r.importo_versato) || 0));
+        const paid = parseFloat(r.importo_versato) || 0;
+        const isPaid = residual <= 0.009;
+        const isPartial = !isPaid && (r.status === 'Parziale' || paid > 0.009);
+
+        let isExpired = false;
+        let daysLate = 0;
+        let daysToDue = null;
+
+        const dueDateStr = r.scadenza || r.due_date;
+        if (dueDateStr && !isPaid) {
+            const due = new Date(dueDateStr);
+            due.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((today - due) / (1000 * 60 * 60 * 24));
+            if (diffDays > 0) {
+                isExpired = true;
+                daysLate = diffDays;
+            } else {
+                daysToDue = Math.abs(diffDays);
+            }
+        }
+
+        let statusCode = 'in_attesa';
+        if (isPartial) {
+            statusCode = 'acconto';
+            countAcconto++;
+        } else if (isExpired) {
+            statusCode = 'scaduta';
+            countScaduta++;
+        } else {
+            statusCode = 'in_attesa';
+            countInAttesa++;
+        }
+
+        return {
+            ...r,
+            _total: total,
+            _paid: paid,
+            _residual: residual,
+            _isPaid: isPaid,
+            _isPartial: isPartial,
+            _isExpired: isExpired,
+            _daysLate: daysLate,
+            _daysToDue: daysToDue,
+            _statusCode: statusCode
+        };
+    });
+
+    // Aggiornamento etichette numeriche bottoni filtro
+    const elCountAll = document.getElementById('rf-count-all');
+    if (elCountAll) elCountAll.textContent = countAll;
+    const elCountScaduta = document.getElementById('rf-count-scaduta');
+    if (elCountScaduta) elCountScaduta.textContent = countScaduta;
+    const elCountAcconto = document.getElementById('rf-count-acconto');
+    if (elCountAcconto) elCountAcconto.textContent = countAcconto;
+    const elCountInAttesa = document.getElementById('rf-count-in_attesa');
+    if (elCountInAttesa) elCountInAttesa.textContent = countInAttesa;
+
+    // Filtraggio per stato e query di ricerca
+    let filtered = enriched;
+    if (state.receivablesFilterStatus && state.receivablesFilterStatus !== 'all') {
+        filtered = filtered.filter(r => r._statusCode === state.receivablesFilterStatus);
+    }
+    if (state.receivablesSearchQuery) {
+        filtered = filtered.filter(r => {
+            const pool = [
+                r.debitore || '',
+                r.persona_cognome || '',
+                r.persona_nome || '',
+                r.titolo_quota || r.title || '',
+                r.unita || ''
+            ].join(' ').toLowerCase();
+            return pool.includes(state.receivablesSearchQuery);
+        });
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">Nessun credito in sospeso trovato con i filtri correnti.</td></tr>`;
         if (tfoot) tfoot.innerHTML = '';
         return;
     }
 
-    const sumReceivables = recData.data.reduce((acc, r) => acc + (parseFloat(r.importo || r.amount) || 0), 0);
+    const sumTotal = filtered.reduce((acc, r) => acc + r._total, 0);
+    const sumPaid = filtered.reduce((acc, r) => acc + r._paid, 0);
+    const sumResidual = filtered.reduce((acc, r) => acc + r._residual, 0);
 
-    tbody.innerHTML = recData.data.map(r => {
+    tbody.innerHTML = filtered.map(r => {
         const isOwn = r.is_my_quote;
-        const nameClass = isOwn ? 'font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded' : 'font-medium text-slate-700';
+        const isOrd = (r.type === 'ordinaria' || (r.titolo_quota && r.titolo_quota.toLowerCase().includes('ordinar')));
+        const typeBadge = isOrd 
+            ? '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700">Ordinaria</span>' 
+            : '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-700">Straordinaria</span>';
 
-        const residual = parseFloat(r.importo || r.amount) || 0;
-        const total = parseFloat(r.importo_totale) || (residual + (parseFloat(r.importo_versato) || 0));
-        const paid = parseFloat(r.importo_versato) || 0;
-        const isPartial = r.status === 'Parziale' || paid > 0.009;
-
-        const statusBadge = isPartial
-            ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Già versati € ${paid.toFixed(2)}"><i class="fa-solid fa-hourglass-half mr-1 text-[10px]"></i>Parziale</span>`
-            : `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">In sospeso</span>`;
-
-        let actionHtml = '-';
+        // 1. Debitore / Unità
+        let debtorHtml = '';
         if (isAdmin) {
-            actionHtml = `
-                <div class="flex items-center justify-center gap-1.5 no-print">
-                    <button onclick="openPaymentModal('quote', ${r.id})" class="px-2.5 py-1 ${isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded-lg text-xs font-bold shadow-2xs" title="Registra incasso o acconto">
-                        <i class="fa-solid fa-money-bill-wave mr-1"></i>${isPartial ? 'Acconto / Saldo' : 'Incassa'}
-                    </button>
-                    <button onclick="editQuote(${r.id})" class="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>
+            const debName = r.debitore || `${r.persona_cognome || ''} ${r.persona_nome || ''}`.trim() || 'Sconosciuto';
+            debtorHtml = `
+                <div class="font-bold text-slate-900">${debName}</div>
+                <div class="text-xs text-slate-500">${r.unita || '-'}</div>
+            `;
+        } else {
+            debtorHtml = `
+                <div class="${isOwn ? 'font-bold text-amber-800' : 'font-medium text-slate-700'} flex items-center gap-1.5 flex-wrap">
+                    ${isOwn ? '<i class="fa-solid fa-user text-amber-600"></i>' : '<i class="fa-solid fa-user-shield text-slate-400"></i>'}
+                    <span>${r.debitore}</span>
+                    ${isOwn ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">La tua quota</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-400">${r.unita || 'Unità Riservata'}</div>
+            `;
+        }
+
+        // 2. Stato Badge Evoluto (Stesso design di Quote Condominiali)
+        let statusHtml = '';
+        if (r._isPartial) {
+            const pct = r._total > 0 ? Math.min(99, Math.max(1, Math.round((r._paid / r._total) * 100))) : 50;
+            statusHtml = `
+                <div class="inline-flex flex-col items-center">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <i class="fa-solid fa-clock-rotate-left text-[10px] text-amber-600"></i>
+                        <span>Acconto ${pct}%</span>
+                    </span>
+                    <span class="text-[10px] text-amber-700 font-bold mt-0.5">Res. ${formatCurrency(r._residual)}</span>
                 </div>
             `;
+        } else if (r._isExpired) {
+            statusHtml = `
+                <div class="inline-flex flex-col items-center">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                        <i class="fa-solid fa-triangle-exclamation text-[10px] text-rose-500"></i>
+                        <span>Scaduta</span>
+                    </span>
+                    <span class="text-[10px] text-rose-600 font-black mt-0.5">${r._daysLate} gg fa</span>
+                </div>
+            `;
+        } else {
+            const isImminent = r._daysToDue !== null && r._daysToDue <= 7;
+            if (isImminent) {
+                statusHtml = `
+                    <div class="inline-flex flex-col items-center">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-sky-50 text-sky-800 border border-sky-300 shadow-2xs">
+                            <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                            <i class="fa-regular fa-clock text-[10px] text-sky-600"></i>
+                            <span>In Scadenza</span>
+                        </span>
+                        <span class="text-[10px] text-sky-700 font-semibold mt-0.5">${r._daysToDue === 0 ? 'Oggi' : 'tra ' + r._daysToDue + ' gg'}</span>
+                    </div>
+                `;
+            } else {
+                statusHtml = `
+                    <div class="inline-flex flex-col items-center">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs">
+                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            <i class="fa-regular fa-calendar text-[10px] text-slate-400"></i>
+                            <span>Da Saldare</span>
+                        </span>
+                        <span class="text-[10px] text-slate-400 font-medium mt-0.5">In attesa</span>
+                    </div>
+                `;
+            }
+        }
+
+        // 3. Azioni
+        let actionHtml = '';
+        if (isAdmin) {
+            actionHtml = `
+                <div class="flex items-center justify-center gap-1.5 no-print whitespace-nowrap">
+                    <button onclick="openPaymentModal('quote', ${r.id})" class="px-2.5 py-1 ${r._isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded-lg text-xs font-bold shadow-2xs cursor-pointer" title="${r._isPartial ? 'Registra ulteriore acconto o saldo' : 'Registra incasso o acconto'}">
+                        <i class="fa-solid fa-money-bill-wave mr-1"></i>${r._isPartial ? 'Acconto / Saldo' : 'Incassa'}
+                    </button>
+                    <button onclick="sendReminder(${r.id})" class="ml-1 px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-bold shadow-2xs cursor-pointer" title="Invia Sollecito di Pagamento"><i class="fa-solid fa-bell"></i> Sollecito</button>
+                    <button onclick="editQuote(${r.id})" class="ml-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold cursor-pointer" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>
+                </div>
+            `;
+        } else {
+            if (isOwn) {
+                actionHtml = `
+                    <div class="flex items-center justify-center text-xs text-slate-500 no-print">
+                        <button onclick="openPaymentModal('quote', ${r.id})" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-2xs cursor-pointer" title="Paga la tua quota"><i class="fa-solid fa-credit-card mr-1"></i>Paga Ora</button>
+                    </div>
+                `;
+            } else {
+                actionHtml = `<span class="text-slate-400">-</span>`;
+            }
         }
 
         return `
             <tr class="hover:bg-slate-50 transition-colors ${isOwn ? 'bg-amber-50/30' : ''}">
-                <td class="py-3.5 px-4">
-                    <span class="${nameClass}">
-                        ${isOwn ? '<i class="fa-solid fa-user mr-1 text-amber-600"></i>' : '<i class="fa-solid fa-user-shield mr-1 text-slate-400"></i>'}
-                        ${r.debitore}
-                    </span>
+                <td class="py-3.5 px-4">${debtorHtml}</td>
+                <td class="py-3.5 px-4">${typeBadge}</td>
+                <td class="py-3.5 px-4 font-medium text-slate-900">${r.titolo_quota || r.title}</td>
+                <td class="py-3.5 px-4 text-xs text-slate-500 font-mono">${formatDate(r.scadenza || r.due_date)}</td>
+                <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(r._total)}</td>
+                <td class="py-3.5 px-4 text-right text-xs">
+                    <div class="font-bold text-emerald-600">${formatCurrency(r._paid)}</div>
+                    <div class="text-[11px] ${r._residual > 0.009 ? 'text-rose-500 font-bold' : 'text-slate-400'}">Res. ${formatCurrency(r._residual)}</div>
                 </td>
-                <td class="py-3.5 px-4 text-xs text-slate-600">${r.unita}</td>
-                <td class="py-3.5 px-4 text-xs font-medium text-slate-800">${r.titolo_quota}</td>
-                <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(r.scadenza)}</td>
-                <td class="py-3.5 px-4 text-right">
-                    <div class="font-bold text-rose-600 text-sm">${formatCurrency(residual)}</div>
-                    ${isPartial ? `<div class="text-[11px] text-slate-400">Tot: ${formatCurrency(total)} (Vers: ${formatCurrency(paid)})</div>` : ''}
-                </td>
-                <td class="py-3.5 px-4 text-center">${statusBadge}</td>
-                <td class="py-3.5 px-4 text-center">${actionHtml}</td>
+                <td class="py-3.5 px-4 text-center">${statusHtml}</td>
+                <td class="py-3.5 px-4 text-center whitespace-nowrap">${actionHtml}</td>
             </tr>
         `;
     }).join('');
 
-    // Calcolo riga totale in fondo alla tabella Crediti da Riscuotere
+    // Footer totali
     if (tfoot) {
         tfoot.innerHTML = `
-            <tr class="bg-amber-50/70 border-t-2 border-amber-200 font-bold text-xs">
-                <td colspan="4" class="py-3.5 px-4 text-amber-900 flex items-center gap-2">
-                    <i class="fa-solid fa-calculator text-amber-600"></i>
-                    <span>TOTALE CREDITI DA RISCUOTERE (${recData.data.length} quote insolute o parziali):</span>
+            <tr class="bg-amber-50/70 border-t-2 border-amber-300 font-bold text-xs text-slate-700">
+                <td colspan="4" class="py-3.5 px-4 text-amber-950">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <i class="fa-solid fa-calculator text-amber-600"></i>
+                        <span>TOTALE CREDITI DA RISCUOTERE (${filtered.length}${filtered.length !== enriched.length ? ' di ' + enriched.length : ''}):</span>
+                        <span class="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            <i class="fa-solid fa-check-double mr-1 text-[10px]"></i> Già Versati: ${formatCurrency(sumPaid)}
+                        </span>
+                        <span class="inline-flex items-center text-[11px] font-bold text-rose-800 bg-rose-100/90 border border-rose-200 px-2 py-0.5 rounded-full">
+                            <i class="fa-solid fa-triangle-exclamation mr-1 text-[10px]"></i> Insoluti / Residui: ${formatCurrency(sumResidual)}
+                        </span>
+                    </div>
                 </td>
-                <td class="py-3.5 px-4 text-right font-black text-rose-600 text-sm">${formatCurrency(sumReceivables)}</td>
-                <td class="py-3.5 px-4 text-center text-xs text-amber-800">In sospeso</td>
+                <td class="py-3.5 px-4 text-right font-extrabold text-slate-900 text-sm">${formatCurrency(sumTotal)}</td>
+                <td class="py-3.5 px-4 text-right text-xs">
+                    <div class="font-bold text-emerald-600">${formatCurrency(sumPaid)}</div>
+                    <div class="text-[11px] text-rose-600 font-bold">Res. ${formatCurrency(sumResidual)}</div>
+                </td>
+                <td class="py-3.5 px-4 text-center">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                        In Sospeso
+                    </span>
+                </td>
                 <td></td>
             </tr>
         `;

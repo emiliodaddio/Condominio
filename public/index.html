@@ -1409,26 +1409,44 @@
 
             <!-- SEZIONE 1.2: CREDITI DEL CONDOMINIO DA RISCUOTERE (CON PRIVACY & ANONIMIZZAZIONE) -->
             <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                     <div>
                         <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
                             <i class="fa-solid fa-user-shield text-amber-600"></i>
                             Elenco Crediti Condominiali da Riscuotere (Quote Non Pagate)
                         </h2>
-                        <p class="text-xs text-slate-500">Monitoraggio quote scoperte nel pieno rispetto della privacy dei condòmini</p>
+                        <p class="text-xs text-slate-500">Monitoraggio quote scoperte nel pieno rispetto della privacy dei cond&ograve;mini</p>
                     </div>
                     <div id="privacy-badge-container"></div>
+                </div>
+
+                <!-- Barra Filtri Stato Crediti (con conteggi in tempo reale) -->
+                <div class="px-5 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-1.5 flex-wrap" id="receivables-status-filters">
+                        <span class="text-slate-400 font-extrabold uppercase tracking-wider text-[10px] mr-1">Filtro:</span>
+                        <button type="button" onclick="filterReceivablesByStatus('all')" id="rf-btn-all" class="px-2.5 py-1 rounded-lg font-bold transition bg-slate-900 text-white shadow-2xs cursor-pointer">Tutti (<span id="rf-count-all">0</span>)</button>
+                        <button type="button" onclick="filterReceivablesByStatus('scaduta')" id="rf-btn-scaduta" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-rose-700 hover:bg-rose-50 border border-slate-200 cursor-pointer">Scadute (<span id="rf-count-scaduta">0</span>)</button>
+                        <button type="button" onclick="filterReceivablesByStatus('acconto')" id="rf-btn-acconto" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-amber-700 hover:bg-amber-50 border border-slate-200 cursor-pointer">Acconti (<span id="rf-count-acconto">0</span>)</button>
+                        <button type="button" onclick="filterReceivablesByStatus('in_attesa')" id="rf-btn-in_attesa" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 cursor-pointer">Da Saldare (<span id="rf-count-in_attesa">0</span>)</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-xs"></i>
+                            <input type="text" id="receivables-search-input" oninput="filterReceivablesBySearch(this.value)" placeholder="Cerca debitore o quota..." class="pl-7 pr-3 py-1 rounded-lg border border-slate-300 text-xs bg-white outline-none focus:border-blue-500 w-44 sm:w-56 shadow-2xs">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
-                            <tr>
-                                <th class="py-3.5 px-4">Debitore</th>
-                                <th class="py-3.5 px-4">Unità Immobiliare</th>
+                            <tr id="receivables-table-header">
+                                <th class="py-3.5 px-4">Debitore / Unit&agrave;</th>
+                                <th class="py-3.5 px-4">Tipo</th>
                                 <th class="py-3.5 px-4">Descrizione Quota</th>
                                 <th class="py-3.5 px-4">Scadenza</th>
-                                <th class="py-3.5 px-4 text-right">Importo Insoluto</th>
+                                <th class="py-3.5 px-4 text-right">Importo Totale</th>
+                                <th class="py-3.5 px-4 text-right">Versato / Residuo</th>
                                 <th class="py-3.5 px-4 text-center">Stato</th>
                                 <th class="py-3.5 px-4 text-center">Azioni</th>
                             </tr>
