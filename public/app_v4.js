@@ -472,6 +472,40 @@ async function loadAccountingData() {
 /**
  * Renderizza la tabella delle quote (Personali per il condomino o generali per l'admin)
  */
+state.quotesFilterStatus = state.quotesFilterStatus || 'all';
+state.quotesSearchQuery = state.quotesSearchQuery || '';
+
+window.filterQuotesByStatus = function(status) {
+    state.quotesFilterStatus = status;
+    updateQuoteFilterButtons();
+    renderQuotesTable();
+};
+
+window.filterQuotesBySearch = function(query) {
+    state.quotesSearchQuery = (query || '').trim().toLowerCase();
+    renderQuotesTable();
+};
+
+function updateQuoteFilterButtons() {
+    const statuses = ['all', 'saldata', 'acconto', 'scaduta', 'in_attesa'];
+    statuses.forEach(s => {
+        const btn = document.getElementById(`qf-btn-${s}`);
+        if (!btn) return;
+        if (state.quotesFilterStatus === s) {
+            btn.className = 'px-2.5 py-1 rounded-lg font-bold transition bg-slate-900 text-white shadow-2xs cursor-pointer';
+        } else {
+            const colors = {
+                saldata: 'text-emerald-700 hover:bg-emerald-50',
+                acconto: 'text-amber-700 hover:bg-amber-50',
+                scaduta: 'text-rose-700 hover:bg-rose-50',
+                in_attesa: 'text-slate-700 hover:bg-slate-100',
+                all: 'text-slate-700 hover:bg-slate-100'
+            };
+            btn.className = `px-2.5 py-1 rounded-lg font-bold transition bg-white ${colors[s] || 'text-slate-600'} border border-slate-200 cursor-pointer`;
+        }
+    });
+}
+
 function renderQuotesTable() {
     const tbody = document.getElementById('quotes-table-body');
     const header = document.getElementById('quotes-table-header');
@@ -508,30 +542,181 @@ function renderQuotesTable() {
         return;
     }
 
-    const totalAmount = state.quotes.reduce((acc, q) => acc + (parseFloat(q.amount) || 0), 0);
-    const totalPaid = state.quotes.reduce((acc, q) => {
-        const amt = parseFloat(q.amount) || 0;
-        const paid = parseFloat(q.paid_amount);
-        if (!isNaN(paid) && paid > 0) return acc + paid;
-        return q.status === 'Pagato' ? acc + amt : acc;
-    }, 0);
-    const totalPending = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    tbody.innerHTML = state.quotes.map(q => {
+    // Conteggi globali per i filtri di stato
+    let countAll = state.quotes.length;
+    let countSaldata = 0;
+    let countAcconto = 0;
+    let countScaduta = 0;
+    let countInAttesa = 0;
+
+    // Arricchimento dati quote con stato calcolato
+    const enrichedQuotes = state.quotes.map(q => {
         const amt = parseFloat(q.amount) || 0;
         const paid = parseFloat(q.paid_amount) || (q.status === 'Pagato' ? amt : 0);
         const residual = q.residual !== undefined ? parseFloat(q.residual) : Math.max(0, Math.round((amt - paid) * 100) / 100);
         const isPaid = q.status === 'Pagato' || residual <= 0.009;
-        const isPartial = q.status === 'Parziale' || (!isPaid && paid > 0.009);
+        const isPartial = !isPaid && (q.status === 'Parziale' || paid > 0.009);
 
-        let badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
-        let statusText = q.status || 'In sospeso';
+        let isExpired = false;
+        let daysLate = 0;
+        let daysToDue = null;
+
+        if (q.due_date && !isPaid) {
+            const due = new Date(q.due_date);
+            due.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((today - due) / (1000 * 60 * 60 * 24));
+            if (diffDays > 0) {
+                isExpired = true;
+                daysLate = diffDays;
+            } else {
+                daysToDue = Math.abs(diffDays);
+            }
+        }
+
+        let statusCode = 'in_attesa';
         if (isPaid) {
-            badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-            statusText = 'Pagato';
+            statusCode = 'saldata';
+            countSaldata++;
         } else if (isPartial) {
-            badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
-            statusText = '<i class="fa-solid fa-hourglass-half mr-1 text-[10px]"></i>Parziale';
+            statusCode = 'acconto';
+            countAcconto++;
+        } else if (isExpired) {
+            statusCode = 'scaduta';
+            countScaduta++;
+        } else {
+            statusCode = 'in_attesa';
+            countInAttesa++;
+        }
+
+        return {
+            ...q,
+            _amt: amt,
+            _paid: paid,
+            _residual: residual,
+            _isPaid: isPaid,
+            _isPartial: isPartial,
+            _isExpired: isExpired,
+            _daysLate: daysLate,
+            _daysToDue: daysToDue,
+            _statusCode: statusCode
+        };
+    });
+
+    // Aggiornamento contatori nei bottoni filtro
+    const elCountAll = document.getElementById('qf-count-all');
+    if (elCountAll) elCountAll.textContent = countAll;
+    const elCountSaldata = document.getElementById('qf-count-saldata');
+    if (elCountSaldata) elCountSaldata.textContent = countSaldata;
+    const elCountAcconto = document.getElementById('qf-count-acconto');
+    if (elCountAcconto) elCountAcconto.textContent = countAcconto;
+    const elCountScaduta = document.getElementById('qf-count-scaduta');
+    if (elCountScaduta) elCountScaduta.textContent = countScaduta;
+    const elCountInAttesa = document.getElementById('qf-count-in_attesa');
+    if (elCountInAttesa) elCountInAttesa.textContent = countInAttesa;
+
+    // Filtraggio per stato e per ricerca testuale
+    let filtered = enrichedQuotes;
+    if (state.quotesFilterStatus && state.quotesFilterStatus !== 'all') {
+        filtered = filtered.filter(q => q._statusCode === state.quotesFilterStatus);
+    }
+    if (state.quotesSearchQuery) {
+        filtered = filtered.filter(q => {
+            const searchPool = [
+                q.condomino_nome || '',
+                q.persona_cognome || '',
+                q.persona_nome || '',
+                q.title || '',
+                q.unita || '',
+                q.condomino_unita || ''
+            ].join(' ').toLowerCase();
+            return searchPool.includes(state.quotesSearchQuery);
+        });
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${isAdmin ? 8 : 7}" class="py-8 text-center text-slate-400">Nessuna quota trovata con i filtri correnti.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
+        return;
+    }
+
+    const totalAmount = filtered.reduce((acc, q) => acc + q._amt, 0);
+    const totalPaid = filtered.reduce((acc, q) => acc + q._paid, 0);
+    const totalPending = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100);
+
+    tbody.innerHTML = filtered.map(q => {
+        const amt = q._amt;
+        const paid = q._paid;
+        const residual = q._residual;
+        const isPaid = q._isPaid;
+        const isPartial = q._isPartial;
+        const isExpired = q._isExpired;
+        const daysLate = q._daysLate;
+        const daysToDue = q._daysToDue;
+
+        // Visualizzazione avanzata ed elegante dello STATO
+        let statusHtml = '';
+        if (isPaid) {
+            statusHtml = `
+                <div class="inline-flex flex-col items-center">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <i class="fa-solid fa-check text-[10px]"></i>
+                        <span>Saldata</span>
+                    </span>
+                    <span class="text-[10px] text-emerald-600 font-semibold mt-0.5">100% Incassata</span>
+                </div>
+            `;
+        } else if (isPartial) {
+            const pct = amt > 0 ? Math.min(99, Math.max(1, Math.round((paid / amt) * 100))) : 50;
+            statusHtml = `
+                <div class="inline-flex flex-col items-center">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <i class="fa-solid fa-clock-rotate-left text-[10px] text-amber-600"></i>
+                        <span>Acconto ${pct}%</span>
+                    </span>
+                    <span class="text-[10px] text-amber-700 font-bold mt-0.5">Res. ${formatCurrency(residual)}</span>
+                </div>
+            `;
+        } else if (isExpired) {
+            statusHtml = `
+                <div class="inline-flex flex-col items-center">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                        <i class="fa-solid fa-triangle-exclamation text-[10px] text-rose-500"></i>
+                        <span>Scaduta</span>
+                    </span>
+                    <span class="text-[10px] text-rose-600 font-black mt-0.5">${daysLate} gg fa</span>
+                </div>
+            `;
+        } else {
+            const isImminent = daysToDue !== null && daysToDue <= 7;
+            if (isImminent) {
+                statusHtml = `
+                    <div class="inline-flex flex-col items-center">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-sky-50 text-sky-800 border border-sky-300 shadow-2xs">
+                            <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                            <i class="fa-regular fa-clock text-[10px] text-sky-600"></i>
+                            <span>In Scadenza</span>
+                        </span>
+                        <span class="text-[10px] text-sky-700 font-semibold mt-0.5">${daysToDue === 0 ? 'Oggi' : 'tra ' + daysToDue + ' gg'}</span>
+                    </div>
+                `;
+            } else {
+                statusHtml = `
+                    <div class="inline-flex flex-col items-center">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs">
+                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            <i class="fa-regular fa-calendar text-[10px] text-slate-400"></i>
+                            <span>Da Saldare</span>
+                        </span>
+                        <span class="text-[10px] text-slate-400 font-medium mt-0.5">In attesa</span>
+                    </div>
+                `;
+            }
         }
 
         const isOrd = q.type === 'ordinaria';
@@ -541,7 +726,7 @@ function renderQuotesTable() {
         const versatoResiduoCell = `
             <td class="py-3.5 px-4 text-right text-xs">
                 <div class="font-bold text-emerald-600">${formatCurrency(paid)}</div>
-                <div class="text-[11px] ${residual > 0.009 ? 'text-rose-500 font-semibold' : 'text-slate-400'}">Res. ${formatCurrency(residual)}</div>
+                <div class="text-[11px] ${residual > 0.009 ? 'text-rose-500 font-bold' : 'text-slate-400'}">Res. ${formatCurrency(residual)}</div>
             </td>
         `;
 
@@ -549,20 +734,20 @@ function renderQuotesTable() {
             let payAction = '';
             if (isPaid) {
                 payAction = `
-                    <button onclick="openPaymentModal('quote', ${q.id})" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold no-print" title="Visualizza dettagli e storico versamenti"><i class="fa-solid fa-receipt mr-1"></i>Saldata</button>
-                    <button onclick="sendReceipt(${q.id})" class="ml-1 px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Invia Ricevuta via Email"><i class="fa-solid fa-envelope"></i> Ricevuta</button>
+                    <button onclick="openPaymentModal('quote', ${q.id})" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold no-print cursor-pointer" title="Visualizza dettagli e storico versamenti"><i class="fa-solid fa-receipt mr-1"></i>Saldata</button>
+                    <button onclick="sendReceipt(${q.id})" class="ml-1 px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print cursor-pointer" title="Invia Ricevuta via Email"><i class="fa-solid fa-envelope"></i> Ricevuta</button>
                 `;
             } else {
                 payAction = `
-                    <button onclick="openPaymentModal('quote', ${q.id})" class="px-2.5 py-1 ${isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="${isPartial ? 'Registra ulteriore acconto o saldo' : 'Registra incasso o acconto'}">
+                    <button onclick="openPaymentModal('quote', ${q.id})" class="px-2.5 py-1 ${isPartial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded-lg text-xs font-bold shadow-2xs no-print cursor-pointer" title="${isPartial ? 'Registra ulteriore acconto o saldo' : 'Registra incasso o acconto'}">
                         <i class="fa-solid fa-money-bill-wave mr-1"></i>${isPartial ? 'Acconto / Saldo' : 'Incassa'}
                     </button>
-                    <button onclick="sendReminder(${q.id})" class="ml-1 px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print" title="Invia Sollecito di Pagamento"><i class="fa-solid fa-bell"></i> Sollecito</button>
+                    <button onclick="sendReminder(${q.id})" class="ml-1 px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-bold shadow-2xs no-print cursor-pointer" title="Invia Sollecito di Pagamento"><i class="fa-solid fa-bell"></i> Sollecito</button>
                 `;
             }
             
-            payAction += ` <button onclick="editQuote(${q.id})" class="ml-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold no-print" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>`;
-            payAction += ` <button onclick="deleteQuote(${q.id})" class="ml-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold no-print" title="Elimina rata"><i class="fa-solid fa-trash-can"></i></button>`;
+            payAction += ` <button onclick="editQuote(${q.id})" class="ml-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold no-print cursor-pointer" title="Modifica rata"><i class="fa-solid fa-pen"></i></button>`;
+            payAction += ` <button onclick="deleteQuote(${q.id})" class="ml-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold no-print cursor-pointer" title="Elimina rata"><i class="fa-solid fa-trash-can"></i></button>`;
 
             return `
                 <tr class="hover:bg-slate-50 transition-colors">
@@ -572,10 +757,10 @@ function renderQuotesTable() {
                     </td>
                     <td class="py-3.5 px-4">${typeBadge}</td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
-                    <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(q.due_date)}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-500 font-mono">${formatDate(q.due_date)}</td>
                     <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(amt)}</td>
                     ${versatoResiduoCell}
-                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${statusText}</span></td>
+                    <td class="py-3.5 px-4 text-center">${statusHtml}</td>
                     <td class="py-3.5 px-4 text-center whitespace-nowrap">${payAction}</td>
                 </tr>
             `;
@@ -584,10 +769,10 @@ function renderQuotesTable() {
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="py-3.5 px-4">${typeBadge}</td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
-                    <td class="py-3.5 px-4 text-xs text-slate-500">${formatDate(q.due_date)}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-500 font-mono">${formatDate(q.due_date)}</td>
                     <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(amt)}</td>
                     ${versatoResiduoCell}
-                    <td class="py-3.5 px-4 text-center"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}">${statusText}</span></td>
+                    <td class="py-3.5 px-4 text-center">${statusHtml}</td>
                     <td class="py-3.5 px-4 text-center text-xs text-slate-500">${q.payment_date ? formatDate(q.payment_date) : (isPartial ? '<span class="text-amber-600 font-semibold">Parzialmente versato</span>' : '<span class="italic text-slate-400">In attesa</span>')}</td>
                 </tr>
             `;
@@ -601,7 +786,7 @@ function renderQuotesTable() {
                 <tr class="bg-slate-50 border-t-2 border-slate-300 font-bold text-xs text-slate-700">
                     <td colspan="4" class="py-3.5 px-4">
                         <div class="flex flex-wrap items-center gap-2">
-                            <span>TOTALE QUOTE (${state.quotes.length}):</span>
+                            <span>TOTALE QUOTE (${filtered.length}${filtered.length !== state.quotes.length ? ' di ' + state.quotes.length : ''}):</span>
                             <span class="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full">
                                 <i class="fa-solid fa-check-double mr-1 text-[10px]"></i> Incassate: ${formatCurrency(totalPaid)}
                             </span>

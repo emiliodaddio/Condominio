@@ -1375,10 +1375,25 @@
                                 <i class="fa-solid fa-plus mr-1"></i> Assegna Quota Singola
                             </button>
                         </div>
-                    </div>
                 </div>
 
-                <div class="overflow-x-auto">
+                <!-- Barra Filtri Stato Quote (con conteggi in tempo reale) -->
+                <div class="px-5 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-1.5 flex-wrap" id="quotes-status-filters">
+                        <span class="text-slate-400 font-extrabold uppercase tracking-wider text-[10px] mr-1">Filtro:</span>
+                        <button type="button" onclick="filterQuotesByStatus('all')" id="qf-btn-all" class="px-2.5 py-1 rounded-lg font-bold transition bg-slate-900 text-white shadow-2xs cursor-pointer">Tutte (<span id="qf-count-all">0</span>)</button>
+                        <button type="button" onclick="filterQuotesByStatus('saldata')" id="qf-btn-saldata" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-emerald-700 hover:bg-emerald-50 border border-slate-200 cursor-pointer">Saldate (<span id="qf-count-saldata">0</span>)</button>
+                        <button type="button" onclick="filterQuotesByStatus('acconto')" id="qf-btn-acconto" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-amber-700 hover:bg-amber-50 border border-slate-200 cursor-pointer">Acconti (<span id="qf-count-acconto">0</span>)</button>
+                        <button type="button" onclick="filterQuotesByStatus('scaduta')" id="qf-btn-scaduta" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-rose-700 hover:bg-rose-50 border border-slate-200 cursor-pointer">Scadute (<span id="qf-count-scaduta">0</span>)</button>
+                        <button type="button" onclick="filterQuotesByStatus('in_attesa')" id="qf-btn-in_attesa" class="px-2.5 py-1 rounded-lg font-bold transition bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 cursor-pointer">Da Saldare (<span id="qf-count-in_attesa">0</span>)</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-xs"></i>
+                            <input type="text" id="quotes-search-input" oninput="filterQuotesBySearch(this.value)" placeholder="Cerca condomino o quota..." class="pl-7 pr-3 py-1 rounded-lg border border-slate-300 text-xs bg-white outline-none focus:border-blue-500 w-44 sm:w-56 shadow-2xs">
+                        </div>
+                    </div>
+                </div>
                     <table class="w-full text-left text-sm">
                         <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200 font-semibold">
                             <tr id="quotes-table-header"></tr>
