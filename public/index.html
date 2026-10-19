@@ -1936,39 +1936,131 @@
         <!-- ====================================================================
              TAB: PROFILO AMMINISTRATORE
              ==================================================================== -->
+        <!-- ====================================================================
+             TAB: PROFILO AMMINISTRATORE
+             ==================================================================== -->
         <section id="tab-admin-profile" class="tab-pane hidden space-y-6">
             <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
                 <div class="absolute top-0 right-0 p-8 opacity-5"><i class="fa-solid fa-id-card-clip text-9xl"></i></div>
-                <div class="relative z-10 flex justify-between items-start mb-6">
+                <div class="relative z-10 flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-4 border-b border-slate-100">
                     <div>
-                        <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Dati Amministratore</h2>
-                        <p class="text-sm text-slate-500 mt-1">Informazioni di contatto ufficiali dell'Amministratore del Condominio.</p>
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-sm">
+                                <i class="fa-solid fa-id-card-clip"></i>
+                            </span>
+                            <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Studio & Dati Amministratore</h2>
+                        </div>
+                        <p class="text-xs sm:text-sm text-slate-500 mt-1">Recapiti ufficiali dell'Amministratore, sede dello Studio, orari di ricevimento e referenti collaboratori.</p>
                     </div>
-                    <button id="btn-edit-admin" onclick="toggleEditAdmin(true)" class="hidden admin-only px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md transition-all">
-                        <i class="fa-solid fa-pen-to-square mr-1.5"></i> Modifica Dati
+                    <button id="btn-edit-admin" onclick="toggleEditAdmin(true)" class="hidden admin-only self-start sm:self-auto px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>Modifica Dati & Studio</span>
                     </button>
                 </div>
                 
                 <!-- Vista in Sola Lettura -->
-                <div id="admin-view-mode" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div id="admin-view-mode" class="space-y-6">
                     <!-- Loaded dynamically via JS -->
                 </div>
 
                 <!-- Vista in Modifica (Form) -->
-                <form id="admin-edit-form" onsubmit="saveAdminProfile(event)" class="hidden bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Nome</label><input type="text" id="admin-nome-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Cognome</label><input type="text" id="admin-cognome-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Titolo (es. Dott., Geom.)</label><input type="text" id="admin-titolo-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Email Ufficiale</label><input type="email" id="admin-email-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">PEC (Posta Elettronica Certificata)</label><input type="email" id="admin-pec-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Telefono Fisso</label><input type="text" id="admin-telefono-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Cellulare</label><input type="text" id="admin-cellulare-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"></div>
-                        <div><label class="block text-xs font-bold text-slate-700 mb-1">Numero Emergenze</label><input type="text" id="admin-emergenze-input" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-rose-50"></div>
+                <form id="admin-edit-form" onsubmit="saveAdminProfile(event)" class="hidden bg-slate-50/70 p-6 sm:p-7 rounded-2xl border border-slate-200 space-y-6">
+                    <!-- Sezione 1: Studio e Amministratore Principale -->
+                    <div>
+                        <h3 class="text-sm font-extrabold text-slate-900 mb-3 flex items-center gap-2">
+                            <i class="fa-solid fa-building text-violet-600"></i>
+                            <span>Dati Studio & Amministratore Principale</span>
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Denominazione Studio</label>
+                                <input type="text" id="admin-studio-nome-input" placeholder="es. Studio Amministrazioni Immobiliari Dott. Rossi" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white font-medium">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Titolo (es. Dott., Geom., Ing., Rag.)</label>
+                                <input type="text" id="admin-titolo-input" placeholder="es. Dott." class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nome Amministratore</label>
+                                <input type="text" id="admin-nome-input" placeholder="es. Mario" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white font-medium">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cognome Amministratore</label>
+                                <input type="text" id="admin-cognome-input" placeholder="es. Rossi" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white font-medium">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Sede / Indirizzo dello Studio</label>
+                                <input type="text" id="admin-studio-indirizzo-input" placeholder="es. Via Roma 45, Piano 2 - 80100 Napoli" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Email Ufficiale</label>
+                                <input type="email" id="admin-email-input" placeholder="es. studio@amministrazioni.it" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white font-mono text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">PEC (Posta Elettronica Certificata)</label>
+                                <input type="email" id="admin-pec-input" placeholder="es. studio.rossi@pec.it" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white font-mono text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Telefono Fisso</label>
+                                <input type="text" id="admin-telefono-input" placeholder="es. 081 1234567" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cellulare</label>
+                                <input type="text" id="admin-cellulare-input" placeholder="es. 333 1234567" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-rose-700 mb-1 flex items-center gap-1"><i class="fa-solid fa-truck-medical"></i> Numero Emergenze / Reperibilità</label>
+                                <input type="text" id="admin-emergenze-input" placeholder="es. 338 9876543 (H24)" class="w-full border border-rose-300 rounded-xl px-3.5 py-2 text-sm focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-rose-50 font-bold text-rose-800">
+                            </div>
+                        </div>
                     </div>
-                    <div class="flex justify-end space-x-3 pt-4 border-t border-slate-200 mt-4">
-                        <button type="button" onclick="toggleEditAdmin(false)" class="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-bold transition-all">Annulla</button>
-                        <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-md">Salva Dati</button>
+
+                    <!-- Sezione 2: Giorni ed Orari di Ricevimento -->
+                    <div class="pt-4 border-t border-slate-200">
+                        <h3 class="text-sm font-extrabold text-slate-900 mb-3 flex items-center gap-2">
+                            <i class="fa-solid fa-clock text-amber-600"></i>
+                            <span>Giorni ed Orari di Ricevimento</span>
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Giorni e Fasce Orarie di Ricevimento</label>
+                                <textarea id="admin-orari-ricevimento-input" rows="3" placeholder="es. Lunedì - Mercoledì - Venerdì: 09:30 - 12:30&#10;Martedì e Giovedì: 15:30 - 18:30" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Modalità & Note di Ricevimento</label>
+                                <textarea id="admin-ricevimento-note-input" rows="3" placeholder="es. Il ricevimento in studio avviene preferibilmente previo appuntamento telefonico. Per urgenze e guasti contattare il recapito dedicato." class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sezione 3: Collaboratori di Studio -->
+                    <div class="pt-4 border-t border-slate-200">
+                        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-3">
+                            <div>
+                                <h3 class="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                                    <i class="fa-solid fa-users-gear text-indigo-600"></i>
+                                    <span>Collaboratori & Referenti di Studio</span>
+                                </h3>
+                                <p class="text-xs text-slate-500 mt-0.5">Aggiungi collaboratori, tecnici, contabili o segreteria a disposizione dei condòmini.</p>
+                            </div>
+                            <button type="button" onclick="addCollaboratoreRow()" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 transition-colors flex items-center gap-1.5 self-start sm:self-auto">
+                                <i class="fa-solid fa-plus"></i> Aggiungi Collaboratore
+                            </button>
+                        </div>
+
+                        <!-- Elenco dinamico righe collaboratori -->
+                        <div id="admin-collaboratori-container" class="space-y-3">
+                            <!-- Popolato dinamicamente via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Bottoni di Salvataggio / Annulla -->
+                    <div class="flex justify-end space-x-3 pt-5 border-t border-slate-200 mt-4">
+                        <button type="button" onclick="toggleEditAdmin(false)" class="px-5 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-bold transition-all">Annulla</button>
+                        <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-md flex items-center gap-2">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span>Salva Dati Studio</span>
+                        </button>
                     </div>
                 </form>
             </div>

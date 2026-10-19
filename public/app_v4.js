@@ -3638,66 +3638,290 @@ async function loadAdminProfile() {
     }
 }
 
+function addCollaboratoreRow(data = {}) {
+    const container = document.getElementById('admin-collaboratori-container');
+    if (!container) return;
+    
+    const rowId = 'collab-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    const row = document.createElement('div');
+    row.id = rowId;
+    row.className = 'collab-row p-4 rounded-xl border border-slate-200 bg-white shadow-xs space-y-3';
+    row.innerHTML = `
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <span class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <i class="fa-solid fa-user-gear text-indigo-500"></i> Scheda Collaboratore / Referente
+            </span>
+            <button type="button" onclick="document.getElementById('${rowId}').remove()" class="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1">
+                <i class="fa-solid fa-trash-can"></i> Rimuovi
+            </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Titolo</label>
+                <input type="text" class="collab-titolo w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:border-indigo-500 outline-none" placeholder="es. Dott., Geom., Sig." value="${data.titolo ? String(data.titolo).replace(/"/g, '&quot;') : ''}">
+            </div>
+            <div class="sm:col-span-1 lg:col-span-2">
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Nome e Cognome *</label>
+                <input type="text" class="collab-nome w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:border-indigo-500 outline-none font-bold text-slate-800" placeholder="es. Laura Bianchi" value="${data.nome ? String(data.nome).replace(/"/g, '&quot;') : ''}">
+            </div>
+            <div>
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Ruolo / Reparto</label>
+                <input type="text" class="collab-ruolo w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:border-indigo-500 outline-none" placeholder="es. Contabilità, Tecnico, Segreteria" value="${data.ruolo ? String(data.ruolo).replace(/"/g, '&quot;') : ''}">
+            </div>
+            <div>
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Telefono / Cellulare</label>
+                <input type="text" class="collab-telefono w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:border-indigo-500 outline-none" placeholder="es. 081 123456 int. 2" value="${data.telefono ? String(data.telefono).replace(/"/g, '&quot;') : ''}">
+            </div>
+            <div class="sm:col-span-1 lg:col-span-2">
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Email Diretta</label>
+                <input type="email" class="collab-email w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:border-indigo-500 outline-none font-mono" placeholder="es. referente@studio.it" value="${data.email ? String(data.email).replace(/"/g, '&quot;') : ''}">
+            </div>
+            <div>
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Giorni / Note Presenza</label>
+                <input type="text" class="collab-note w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:border-indigo-500 outline-none" placeholder="es. Mar e Gio matt." value="${data.note ? String(data.note).replace(/"/g, '&quot;') : ''}">
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
 function renderAdminProfileView() {
     const admin = state.CondominioInfo || {};
     const viewMode = document.getElementById('admin-view-mode');
-    
-    document.getElementById('admin-nome-input').value = admin.admin_nome || '';
-    document.getElementById('admin-cognome-input').value = admin.admin_cognome || '';
-    document.getElementById('admin-titolo-input').value = admin.admin_titolo || '';
-    document.getElementById('admin-telefono-input').value = admin.admin_telefono || '';
-    document.getElementById('admin-cellulare-input').value = admin.admin_cellulare || '';
-    document.getElementById('admin-emergenze-input').value = admin.admin_emergenze || '';
-    document.getElementById('admin-email-input').value = admin.admin_email || '';
-    document.getElementById('admin-pec-input').value = admin.admin_pec || '';
+    if (!viewMode) return;
 
-    const fields = [
-        { icon: 'fa-user', label: 'Nome Completo', value: (admin.admin_titolo ? admin.admin_titolo + ' ' : '') + (admin.admin_nome || '') + ' ' + (admin.admin_cognome || '') },
-        { icon: 'fa-envelope', label: 'Email Ufficiale', value: admin.admin_email },
-        { icon: 'fa-at', label: 'PEC', value: admin.admin_pec },
-        { icon: 'fa-phone', label: 'Telefono Fisso', value: admin.admin_telefono },
-        { icon: 'fa-mobile-screen', label: 'Cellulare', value: admin.admin_cellulare },
-        { icon: 'fa-truck-medical', label: 'Emergenze', value: admin.admin_emergenze, isEmergency: true }
-    ].filter(f => f.value && f.value.trim() !== '');
+    // Popolamento Form di Modifica
+    if (document.getElementById('admin-studio-nome-input')) document.getElementById('admin-studio-nome-input').value = admin.admin_studio_nome || '';
+    if (document.getElementById('admin-studio-indirizzo-input')) document.getElementById('admin-studio-indirizzo-input').value = admin.admin_studio_indirizzo || '';
+    if (document.getElementById('admin-nome-input')) document.getElementById('admin-nome-input').value = admin.admin_nome || '';
+    if (document.getElementById('admin-cognome-input')) document.getElementById('admin-cognome-input').value = admin.admin_cognome || '';
+    if (document.getElementById('admin-titolo-input')) document.getElementById('admin-titolo-input').value = admin.admin_titolo || '';
+    if (document.getElementById('admin-telefono-input')) document.getElementById('admin-telefono-input').value = admin.admin_telefono || '';
+    if (document.getElementById('admin-cellulare-input')) document.getElementById('admin-cellulare-input').value = admin.admin_cellulare || '';
+    if (document.getElementById('admin-emergenze-input')) document.getElementById('admin-emergenze-input').value = admin.admin_emergenze || '';
+    if (document.getElementById('admin-email-input')) document.getElementById('admin-email-input').value = admin.admin_email || '';
+    if (document.getElementById('admin-pec-input')) document.getElementById('admin-pec-input').value = admin.admin_pec || '';
+    if (document.getElementById('admin-orari-ricevimento-input')) document.getElementById('admin-orari-ricevimento-input').value = admin.admin_orari_ricevimento || '';
+    if (document.getElementById('admin-ricevimento-note-input')) document.getElementById('admin-ricevimento-note-input').value = admin.admin_ricevimento_note || '';
 
-    if (fields.length > 0) {
-        viewMode.innerHTML = fields.map(f => {
-            const color = f.isEmergency ? 'text-rose-600 bg-rose-50' : 'text-blue-600 bg-blue-50';
-            const labelColor = f.isEmergency ? 'text-rose-500 font-bold' : 'text-slate-500';
-            return `
-                <div class="flex items-center space-x-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/50">
-                    <div class="w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${color}">
-                        <i class="fa-solid ${f.icon}"></i>
+    // Collaboratori
+    let collaboratori = [];
+    if (admin.admin_collaboratori) {
+        try {
+            collaboratori = typeof admin.admin_collaboratori === 'string'
+                ? JSON.parse(admin.admin_collaboratori)
+                : admin.admin_collaboratori;
+            if (!Array.isArray(collaboratori)) collaboratori = [];
+        } catch (_) {
+            collaboratori = [];
+        }
+    }
+
+    // Popola righe collaboratori nel form
+    const collabContainer = document.getElementById('admin-collaboratori-container');
+    if (collabContainer) {
+        collabContainer.innerHTML = '';
+        if (collaboratori.length > 0) {
+            collaboratori.forEach(c => addCollaboratoreRow(c));
+        }
+    }
+
+    // Costruzione HTML Vista in Sola Lettura
+    let html = '';
+
+    // 1. Scheda Studio (se presente intestazione studio o indirizzo)
+    const studioNome = admin.admin_studio_nome || '';
+    const studioIndirizzo = admin.admin_studio_indirizzo || '';
+    if (studioNome || studioIndirizzo) {
+        html += `
+            <div class="p-5 rounded-2xl bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-12 h-12 rounded-xl bg-violet-600 text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
+                        <i class="fa-solid fa-building-columns"></i>
                     </div>
-                    <div class="overflow-hidden">
-                        <p class="text-[10px] font-bold uppercase tracking-wider mb-0.5 ${labelColor}">${f.label}</p>
-                        <p class="font-bold text-slate-800 truncate">${f.value}</p>
+                    <div>
+                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-violet-700">Studio di Amministrazione</span>
+                        <h3 class="text-lg font-black text-slate-900 leading-tight">${studioNome || 'Studio Amministrativo'}</h3>
+                        ${studioIndirizzo ? `<p class="text-xs text-slate-600 mt-0.5 flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-violet-500"></i> ${studioIndirizzo}</p>` : ''}
                     </div>
                 </div>
-            `;
-        }).join('');
-    } else {
-        viewMode.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">Nessun dato dell'amministratore inserito.</div>`;
+            </div>
+        `;
     }
+
+    // 2. Recapiti Amministratore Principale
+    const adminFullName = ((admin.admin_titolo ? admin.admin_titolo + ' ' : '') + (admin.admin_nome || '') + ' ' + (admin.admin_cognome || '')).trim();
+    const contactCards = [
+        { icon: 'fa-user-tie', label: 'Amministratore', value: adminFullName || 'N/D', isLink: false },
+        { icon: 'fa-envelope', label: 'Email Ufficiale', value: admin.admin_email, isLink: true, linkType: 'mailto' },
+        { icon: 'fa-at', label: 'PEC', value: admin.admin_pec, isLink: true, linkType: 'mailto' },
+        { icon: 'fa-phone', label: 'Telefono Fisso', value: admin.admin_telefono, isLink: true, linkType: 'tel' },
+        { icon: 'fa-mobile-screen', label: 'Cellulare', value: admin.admin_cellulare, isLink: true, linkType: 'tel' },
+        { icon: 'fa-truck-medical', label: 'Emergenze & Reperibilità', value: admin.admin_emergenze, isEmergency: true, isLink: true, linkType: 'tel' }
+    ].filter(f => f.value && f.value.trim() !== '');
+
+    html += `
+        <div>
+            <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                <i class="fa-solid fa-address-card text-violet-600"></i> Contatti Ufficiali Amministratore
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${contactCards.map(f => {
+                    const color = f.isEmergency ? 'text-rose-600 bg-rose-50' : 'text-violet-600 bg-violet-50';
+                    const labelColor = f.isEmergency ? 'text-rose-600 font-bold' : 'text-slate-500';
+                    const border = f.isEmergency ? 'border-rose-200 bg-rose-50/40' : 'border-slate-100 bg-slate-50/50';
+                    
+                    let valHtml = `<span class="font-bold text-slate-800 truncate">${f.value}</span>`;
+                    if (f.isLink && f.value) {
+                        valHtml = `<a href="${f.linkType}:${f.value}" class="font-bold ${f.isEmergency ? 'text-rose-700 hover:text-rose-900' : 'text-violet-700 hover:text-violet-900'} hover:underline truncate">${f.value}</a>`;
+                    }
+                    return `
+                        <div class="flex items-center space-x-3.5 p-4 rounded-2xl border ${border}">
+                            <div class="w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${color}">
+                                <i class="fa-solid ${f.icon}"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <p class="text-[10px] font-bold uppercase tracking-wider mb-0.5 ${labelColor}">${f.label}</p>
+                                ${valHtml}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+
+    // 3. Ricevimento & Orari di Studio
+    const orari = admin.admin_orari_ricevimento || '';
+    const noteRicevimento = admin.admin_ricevimento_note || '';
+    html += `
+        <div class="p-5 rounded-2xl border border-amber-200 bg-amber-50/40 space-y-3">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-sm font-bold">
+                    <i class="fa-solid fa-clock"></i>
+                </div>
+                <h4 class="text-sm font-extrabold text-slate-900">Giorni ed Orari di Ricevimento Studio</h4>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div class="bg-white p-3.5 rounded-xl border border-amber-200/60 shadow-2xs">
+                    <span class="block text-[10px] font-extrabold uppercase tracking-wider text-amber-700 mb-1">Orari di Apertura & Ricevimento</span>
+                    <p class="text-xs sm:text-sm font-semibold text-slate-800 whitespace-pre-line">${orari ? orari : '<span class="text-slate-400 italic">Nessun orario di ricevimento specificato.</span>'}</p>
+                </div>
+                <div class="bg-white p-3.5 rounded-xl border border-amber-200/60 shadow-2xs">
+                    <span class="block text-[10px] font-extrabold uppercase tracking-wider text-amber-700 mb-1">Modalità & Note di Ricevimento</span>
+                    <p class="text-xs sm:text-sm text-slate-700 whitespace-pre-line">${noteRicevimento ? noteRicevimento : '<span class="text-slate-400 italic">Si riceve preferibilmente previo appuntamento concordato con lo studio.</span>'}</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 4. Collaboratori & Referenti dello Studio
+    html += `
+        <div class="space-y-3 pt-2">
+            <div class="flex items-center justify-between">
+                <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-users-gear text-indigo-600"></i> Team di Studio & Collaboratori (${collaboratori.length})
+                </h4>
+            </div>
+    `;
+
+    if (collaboratori.length > 0) {
+        html += `
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${collaboratori.map(c => {
+                    const collabTitle = (c.titolo ? c.titolo + ' ' : '') + (c.nome || 'Collaboratore');
+                    return `
+                        <div class="p-4 rounded-2xl border border-slate-200 bg-white hover:border-indigo-200 shadow-2xs transition-all space-y-2.5">
+                            <div class="flex items-start justify-between gap-2 border-b border-slate-100 pb-2">
+                                <div>
+                                    <h5 class="text-sm font-extrabold text-slate-900 leading-tight">${collabTitle}</h5>
+                                    ${c.ruolo ? `<span class="inline-block mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">${c.ruolo}</span>` : ''}
+                                </div>
+                                <div class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-xs shrink-0">
+                                    <i class="fa-solid fa-user"></i>
+                                </div>
+                            </div>
+                            <div class="space-y-1.5 text-xs">
+                                ${c.telefono ? `
+                                    <div class="flex items-center gap-2 text-slate-600">
+                                        <i class="fa-solid fa-phone text-slate-400 w-3.5 text-center"></i>
+                                        <a href="tel:${c.telefono}" class="font-semibold text-slate-800 hover:text-indigo-600 hover:underline">${c.telefono}</a>
+                                    </div>
+                                ` : ''}
+                                ${c.email ? `
+                                    <div class="flex items-center gap-2 text-slate-600">
+                                        <i class="fa-solid fa-envelope text-slate-400 w-3.5 text-center"></i>
+                                        <a href="mailto:${c.email}" class="font-semibold text-slate-800 hover:text-indigo-600 hover:underline truncate">${c.email}</a>
+                                    </div>
+                                ` : ''}
+                                ${c.note ? `
+                                    <div class="flex items-start gap-2 text-slate-500 pt-1 border-t border-slate-50 text-[11px]">
+                                        <i class="fa-regular fa-clock text-slate-400 w-3.5 text-center mt-0.5"></i>
+                                        <span>${c.note}</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="p-6 text-center text-slate-400 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                <i class="fa-solid fa-users text-slate-300 text-2xl mb-1.5 block"></i>
+                <p class="text-xs font-medium">Nessun collaboratore aggiuntivo censito per questo studio.</p>
+            </div>
+        `;
+    }
+
+    html += `</div>`;
+
+    viewMode.innerHTML = html;
 }
 
 function toggleEditAdmin(showForm) {
-    document.getElementById('admin-view-mode').classList.toggle('hidden', showForm);
-    document.getElementById('admin-edit-form').classList.toggle('hidden', !showForm);
-    document.getElementById('btn-edit-admin').classList.toggle('hidden', showForm);
+    const viewMode = document.getElementById('admin-view-mode');
+    const editForm = document.getElementById('admin-edit-form');
+    const editBtn = document.getElementById('btn-edit-admin');
+    if (viewMode) viewMode.classList.toggle('hidden', showForm);
+    if (editForm) editForm.classList.toggle('hidden', !showForm);
+    if (editBtn) editBtn.classList.toggle('hidden', showForm);
 }
 
 async function saveAdminProfile(e) {
     e.preventDefault();
+
+    // Raccoglie i collaboratori dalle righe dinamiche
+    const collabRows = document.querySelectorAll('#admin-collaboratori-container .collab-row');
+    const collaboratori = [];
+    collabRows.forEach(row => {
+        const titolo = (row.querySelector('.collab-titolo')?.value || '').trim();
+        const nome = (row.querySelector('.collab-nome')?.value || '').trim();
+        const ruolo = (row.querySelector('.collab-ruolo')?.value || '').trim();
+        const telefono = (row.querySelector('.collab-telefono')?.value || '').trim();
+        const email = (row.querySelector('.collab-email')?.value || '').trim();
+        const note = (row.querySelector('.collab-note')?.value || '').trim();
+
+        if (nome || telefono || email || ruolo) {
+            collaboratori.push({ titolo, nome, ruolo, telefono, email, note });
+        }
+    });
+
     const payload = {
-        admin_nome: document.getElementById('admin-nome-input').value,
-        admin_cognome: document.getElementById('admin-cognome-input').value,
-        admin_titolo: document.getElementById('admin-titolo-input').value,
-        admin_telefono: document.getElementById('admin-telefono-input').value,
-        admin_cellulare: document.getElementById('admin-cellulare-input').value,
-        admin_emergenze: document.getElementById('admin-emergenze-input').value,
-        admin_email: document.getElementById('admin-email-input').value,
-        admin_pec: document.getElementById('admin-pec-input').value
+        admin_studio_nome: (document.getElementById('admin-studio-nome-input')?.value || '').trim(),
+        admin_studio_indirizzo: (document.getElementById('admin-studio-indirizzo-input')?.value || '').trim(),
+        admin_nome: (document.getElementById('admin-nome-input')?.value || '').trim(),
+        admin_cognome: (document.getElementById('admin-cognome-input')?.value || '').trim(),
+        admin_titolo: (document.getElementById('admin-titolo-input')?.value || '').trim(),
+        admin_telefono: (document.getElementById('admin-telefono-input')?.value || '').trim(),
+        admin_cellulare: (document.getElementById('admin-cellulare-input')?.value || '').trim(),
+        admin_emergenze: (document.getElementById('admin-emergenze-input')?.value || '').trim(),
+        admin_email: (document.getElementById('admin-email-input')?.value || '').trim(),
+        admin_pec: (document.getElementById('admin-pec-input')?.value || '').trim(),
+        admin_orari_ricevimento: (document.getElementById('admin-orari-ricevimento-input')?.value || '').trim(),
+        admin_ricevimento_note: (document.getElementById('admin-ricevimento-note-input')?.value || '').trim(),
+        admin_collaboratori: JSON.stringify(collaboratori)
     };
 
     try {
@@ -3708,14 +3932,14 @@ async function saveAdminProfile(e) {
         });
         const data = await res.json();
         if (data.success) {
-            showToast('Dati amministratore salvati', 'success');
+            showToast('Dati amministratore e studio salvati con successo', 'success');
             toggleEditAdmin(false);
             loadAdminProfile();
         } else {
-            showToast('Errore nel salvataggio', 'error');
+            showToast('Errore nel salvataggio: ' + (data.message || data.error || ''), 'error');
         }
     } catch (_) {
-        showToast('Errore di connessione', 'error');
+        showToast('Errore di connessione durante il salvataggio', 'error');
     }
 }
 // Inattività - Logout automatico dopo 15 minuti

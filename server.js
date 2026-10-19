@@ -903,7 +903,12 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'convocations_log', col: 'tipo', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
         { table: 'convocations_log', col: 'oggetto', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'convocations_log', col: 'contenuto_html', defMysql: 'LONGTEXT', defSqlite: 'TEXT' },
-        { table: 'condominios', col: 'dati_bancari', defMysql: 'VARCHAR(500)', defSqlite: 'TEXT' }
+        { table: 'condominios', col: 'dati_bancari', defMysql: 'VARCHAR(500)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'admin_studio_nome', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'admin_studio_indirizzo', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'admin_orari_ricevimento', defMysql: 'TEXT', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'admin_ricevimento_note', defMysql: 'TEXT', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'admin_collaboratori', defMysql: 'LONGTEXT', defSqlite: 'TEXT' }
     ];
 
     let pending = colsToEnsure.length;
@@ -2798,7 +2803,15 @@ app.get('/api/condominio', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.put('/api/condominio', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const fields = ['nome', 'indirizzo', 'cf', 'scala', 'dati_bancari', 'admin_nome', 'admin_cognome', 'admin_titolo', 'admin_telefono', 'admin_cellulare', 'admin_emergenze', 'admin_email', 'admin_pec'];
+    const fields = [
+        'nome', 'indirizzo', 'cf', 'scala', 'dati_bancari',
+        'admin_nome', 'admin_cognome', 'admin_titolo',
+        'admin_studio_nome', 'admin_studio_indirizzo',
+        'admin_telefono', 'admin_cellulare', 'admin_emergenze',
+        'admin_email', 'admin_pec',
+        'admin_orari_ricevimento', 'admin_ricevimento_note',
+        'admin_collaboratori'
+    ];
     let updatePairs = [];
     let params = [];
     
