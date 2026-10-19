@@ -1070,17 +1070,17 @@
                             </div>
                         </div>
 
-                        <!-- 2. Card: Dati Condominio (Admin) -->
-                        <div onclick="switchTab('condominio')" class="admin-only hidden card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-amber-300">
+                        <!-- 2. Card: Scheda & Dati Condominio -->
+                        <div onclick="switchTab('condominio')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-amber-300">
                             <div>
                                 <div class="w-13 h-13 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
                                     <i class="fa-solid fa-city"></i>
                                 </div>
-                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-amber-600 transition-colors">Dati Condominio</h3>
-                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Denominazione, indirizzo, codice fiscale, coordinate IBAN e struttura dello stabile.</p>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-amber-600 transition-colors">Scheda & Dati Condominio</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Fascicolo ufficiale del fabbricato: dati generali, studio, coordinate bancarie, polizza e note.</p>
                             </div>
                             <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600">
-                                <span>Dati dello stabile</span>
+                                <span>Scheda anagrafica & tecnica</span>
                                 <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                             </div>
                         </div>
@@ -2212,72 +2212,248 @@
                 <div class="relative z-10 flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-6 border-b border-slate-100">
                     <div>
                         <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1.5 mb-2">
-                            <i class="fa-solid fa-building"></i> Scheda Fabbricato
+                            <i class="fa-solid fa-building"></i> Fascicolo & Scheda Fabbricato
                         </span>
-                        <h2 class="text-2xl font-black text-slate-900 tracking-tight">Dati Generali del Condominio</h2>
-                        <p class="text-sm text-slate-500 mt-1">Configurazione della denominazione ufficiale, indirizzo, codice fiscale e struttura dello stabile.</p>
+                        <h2 class="text-2xl font-black text-slate-900 tracking-tight">Scheda Anagrafica & Tecnica del Condominio</h2>
+                        <p class="text-sm text-slate-500 mt-1">Quadro sinottico ufficiale: dati generali, studio amministrativo, coordinate bancarie, polizza assicurativa e note.</p>
                     </div>
-                    <div class="flex items-center gap-2 flex-wrap">
+                    <div class="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                        <button type="button" onclick="copySchedaMarkdown()" class="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs" title="Copia le 4 tabelle in formato Markdown negli appunti">
+                            <i class="fa-regular fa-copy text-indigo-600"></i>
+                            <span>Copia Markdown</span>
+                        </button>
                         <button type="button" onclick="downloadSchedaTecnicaPdf()" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md">
                             <i class="fa-solid fa-file-pdf text-rose-400"></i>
-                            <span>Scarica Scheda Anagrafica & Tecnica (PDF)</span>
+                            <span>Scarica PDF</span>
                         </button>
-                        <button type="button" onclick="switchTab('anagrafica')" class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs">
-                            <i class="fa-solid fa-users text-emerald-600"></i>
-                            <span>Vai ad Anagrafica Condòmini</span>
+                        <button id="btn-edit-scheda" type="button" onclick="toggleEditScheda(true)" class="admin-only hidden px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                            <span>Modifica Scheda</span>
                         </button>
                     </div>
                 </div>
 
-                <form id="form-condominio" onsubmit="handleSaveCondominio(event)" class="space-y-6">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        <div class="sm:col-span-2">
-                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                                <i class="fa-solid fa-city text-amber-600"></i> Denominazione Condominio *
-                            </label>
-                            <input type="text" id="condominio-nome" required placeholder="es. Condominio Parco dei Fiori" class="w-full text-sm font-bold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
-                            <p class="text-[11px] text-slate-400 mt-1">Il nome comparirà nell'intestazione della piattaforma, nei bilanci e nelle comunicazioni ufficiali.</p>
+                <!-- 1. VISTA SCHEDA: LE 4 TABELLE UFFICIALI VISIBILI A VIDEO -->
+                <div id="scheda-condominio-view" class="space-y-8">
+                    <!-- Tabella 1: DATI GENERALI DEL CONDOMINIO -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2.5">
+                            <h3 class="text-xs font-black uppercase tracking-wider text-sky-800 flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center text-[10px] font-bold">1</span>
+                                Dati Generali del Condominio
+                            </h3>
                         </div>
-
-                        <div class="sm:col-span-2">
-                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                                <i class="fa-solid fa-location-dot text-amber-600"></i> Indirizzo Completo *
-                            </label>
-                            <input type="text" id="condominio-indirizzo" required placeholder="es. Via Alessandro Manzoni 24, 00100 Roma (RM)" class="w-full text-sm font-semibold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
+                        <div class="overflow-hidden rounded-2xl border border-slate-200 shadow-2xs">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+                                        <th class="py-2.5 px-4 w-1/3">Campo</th>
+                                        <th class="py-2.5 px-4 w-2/3">Valore</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 bg-white" id="tbody-scheda-generali">
+                                    <!-- Generato via JS -->
+                                </tbody>
+                            </table>
                         </div>
+                    </div>
 
+                    <!-- Tabella 2: STUDIO & DATI AMMINISTRATORE -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2.5">
+                            <h3 class="text-xs font-black uppercase tracking-wider text-violet-800 flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center text-[10px] font-bold">2</span>
+                                Studio & Dati Amministratore
+                            </h3>
+                        </div>
+                        <div class="overflow-hidden rounded-2xl border border-slate-200 shadow-2xs">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+                                        <th class="py-2.5 px-4 w-1/3">Campo</th>
+                                        <th class="py-2.5 px-4 w-2/3">Valore</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 bg-white" id="tbody-scheda-studio">
+                                    <!-- Generato via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tabella 3: DATI BANCARI & ASSICURATIVI -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2.5">
+                            <h3 class="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold">3</span>
+                                Dati Bancari & Assicurativi
+                            </h3>
+                        </div>
+                        <div class="overflow-hidden rounded-2xl border border-slate-200 shadow-2xs">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+                                        <th class="py-2.5 px-4 w-1/3">Campo</th>
+                                        <th class="py-2.5 px-4 w-2/3">Valore</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 bg-white" id="tbody-scheda-banca">
+                                    <!-- Generato via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Sezione 4: NOTE E SPECIFICHE AGGIUNTIVE -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2.5">
+                            <h3 class="text-xs font-black uppercase tracking-wider text-amber-800 flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center text-[10px] font-bold">4</span>
+                                Note e Specifiche Aggiuntive
+                            </h3>
+                        </div>
+                        <div id="box-scheda-note" class="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-line shadow-2xs">
+                            <!-- Generato via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. FORM DI MODIFICA SCHEDA (ADMIN) -->
+                <form id="form-condominio" onsubmit="handleSaveCondominio(event)" class="hidden space-y-6 pt-2">
+                    <div class="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between">
+                        <span class="text-xs font-bold text-amber-800 flex items-center gap-2">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                            Modalità Modifica Scheda Anagrafica & Tecnica
+                        </span>
+                        <button type="button" onclick="toggleEditScheda(false)" class="text-xs font-bold text-slate-600 hover:text-slate-900 underline">
+                            Torna alla visualizzazione tabelle
+                        </button>
+                    </div>
+
+                    <!-- Sezione 1: Dati Generali -->
+                    <div class="space-y-4">
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-building text-sky-600"></i> 1. Dati Generali del Condominio
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Denominazione Condominio *</label>
+                                <input type="text" id="condominio-nome" required placeholder="es. Condominio Ma.Ca." class="w-full text-sm font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Indirizzo Completo *</label>
+                                <input type="text" id="condominio-indirizzo" required placeholder="es. Via Vittorio Alfieri, 4 - 81020 San Nicola la Strada (CE)" class="w-full text-sm font-semibold p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Codice Fiscale Condominio</label>
+                                <input type="text" id="condominio-cf" placeholder="es. 123456789" class="w-full text-sm font-mono font-bold p-2.5 rounded-xl border border-slate-200 bg-white uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Codice CIG (se applicabile)</label>
+                                <input type="text" id="condominio-cig" placeholder="es. Z123456789 (se presente)" class="w-full text-sm font-mono p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Scale / Struttura Fabbricato</label>
+                                <input type="text" id="condominio-scala" placeholder="es. Scale A e B" class="w-full text-sm font-semibold p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sezione 2: Studio & Amministratore -->
+                    <div class="space-y-4 pt-4 border-t border-slate-200">
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-user-tie text-violet-600"></i> 2. Studio & Dati Amministratore
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nome Studio / Denominazione</label>
+                                <input type="text" id="condominio-studio-nome" placeholder="es. Studio Amministrativo Rossi" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Titolo (es. Dott., Avv., Geom.)</label>
+                                <input type="text" id="condominio-admin-titolo" placeholder="es. Avv." class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Nome e Cognome Referente</label>
+                                <input type="text" id="condominio-admin-nome" placeholder="es. Tizio Caio" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white font-bold">
+                            </div>
+                            <div class="sm:col-span-2 lg:col-span-3">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Indirizzo Sede Studio</label>
+                                <input type="text" id="condominio-studio-indirizzo" placeholder="es. Via Roma 10, Piano 2 - Napoli" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Telefono Fisso</label>
+                                <input type="text" id="condominio-admin-telefono" placeholder="es. 018890192456" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cellulare di Urgenza / Emergenze</label>
+                                <input type="text" id="condominio-admin-emergenze" placeholder="es. 34879512689" class="w-full text-sm p-2.5 rounded-xl border border-rose-300 bg-rose-50 font-bold text-rose-800">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Cellulare Ordinario</label>
+                                <input type="text" id="condominio-admin-cellulare" placeholder="es. 3357985406" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Email Studio</label>
+                                <input type="email" id="condominio-admin-email" placeholder="es. studio@email.it" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Email Dedicata al Condominio</label>
+                                <input type="email" id="condominio-admin-email-condo" placeholder="es. condominio.maca@email.it" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">PEC (Posta Elettronica Certificata)</label>
+                                <input type="email" id="condominio-admin-pec" placeholder="es. studio@pec.it" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white font-mono">
+                            </div>
+                            <div class="sm:col-span-2 lg:col-span-3">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Orari di Apertura / Reperibilità</label>
+                                <input type="text" id="condominio-admin-orari" placeholder="es. Lun - Ven 09:30 - 12:30; Reperibilità emergenze continua" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sezione 3: Dati Bancari & Assicurativi -->
+                    <div class="space-y-4 pt-4 border-t border-slate-200">
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-shield-halved text-emerald-600"></i> 3. Dati Bancari & Assicurativi
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Coordinate IBAN / Dati Bancari</label>
+                                <input type="text" id="condominio-dati-bancari" placeholder="es. IT30000000... - Intestato a: Condominio..." class="w-full text-sm font-mono font-bold p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Compagnia Assicurativa (Polizza Fabbricati)</label>
+                                <input type="text" id="condominio-assicurazione-compagnia" placeholder="es. Generali Assicurazioni / Allianz" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Numero Polizza</label>
+                                <input type="text" id="condominio-assicurazione-polizza" placeholder="es. POL-987654321" class="w-full text-sm font-mono p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Scadenza Polizza</label>
+                                <input type="text" id="condominio-assicurazione-scadenza" placeholder="es. 31/12/2026 oppure GG/MM/AAAA" class="w-full text-sm p-2.5 rounded-xl border border-slate-200 bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sezione 4: Note e Specifiche -->
+                    <div class="space-y-4 pt-4 border-t border-slate-200">
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-clipboard text-amber-600"></i> 4. Note e Specifiche Aggiuntive
+                        </h4>
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                                <i class="fa-solid fa-fingerprint text-amber-600"></i> Codice Fiscale del Condominio
-                            </label>
-                            <input type="text" id="condominio-cf" placeholder="es. 90012345678" class="w-full text-sm font-mono font-bold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs uppercase">
-                            <p class="text-[11px] text-slate-400 mt-1">Codice fiscale numerico attribuito dall'Agenzia delle Entrate.</p>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                                <i class="fa-solid fa-stairs text-amber-600"></i> Scale / Struttura Fabbricato
-                            </label>
-                            <input type="text" id="condominio-scala" placeholder="es. Scale A, B oppure Palazzina 1-2" class="w-full text-sm font-semibold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
-                            <p class="text-[11px] text-slate-400 mt-1">Indicazione delle scale o corpi di fabbrica presenti.</p>
-                        </div>
-
-                        <div class="sm:col-span-2">
-                            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                                <i class="fa-solid fa-building-columns text-amber-600"></i> Dati Bancari / Coordinate IBAN del Condominio
-                            </label>
-                            <input type="text" id="condominio-dati-bancari" placeholder="es. Banca Intesa Sanpaolo - IBAN: IT00A0123456789000000123456 - Intestato a: Condominio..." class="w-full text-sm font-mono font-bold p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition shadow-2xs">
-                            <p class="text-[11px] text-slate-400 mt-1">Questi dati bancari verranno mostrati direttamente nel riquadro di benvenuto nella Home Page del Condominio.</p>
+                            <textarea id="condominio-note-fabbricato" rows="3" placeholder="Inserisci annotazioni sul fabbricato, dettagli manutentivi o note particolari..." class="w-full text-xs font-medium p-3 rounded-xl border border-slate-200 bg-white"></textarea>
                         </div>
                     </div>
 
                     <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                        <button type="button" onclick="switchTab('dashboard')" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition">
+                        <button type="button" onclick="toggleEditScheda(false)" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition">
                             Annulla
                         </button>
-                        <button type="submit" class="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-600/20 flex items-center gap-2 transition-all">
+                        <button type="submit" class="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all">
                             <i class="fa-solid fa-floppy-disk"></i>
-                            <span>Salva Dati Condominio</span>
+                            <span>Salva Scheda Condominio</span>
                         </button>
                     </div>
                 </form>

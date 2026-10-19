@@ -2210,17 +2210,159 @@ function updateLicenseReadOnlyUI() {
     });
 }
 
+function toggleEditScheda(showForm) {
+    const view = document.getElementById('scheda-condominio-view');
+    const form = document.getElementById('form-condominio');
+    const btn = document.getElementById('btn-edit-scheda');
+    if (view) view.classList.toggle('hidden', showForm);
+    if (form) form.classList.toggle('hidden', !showForm);
+    if (btn) btn.classList.toggle('hidden', showForm);
+}
+
+function copySchedaMarkdown() {
+    const c = state.activeCondominioData || {};
+    const adminFullName = ((c.admin_titolo ? c.admin_titolo + ' ' : '') + (c.admin_nome || '') + ' ' + (c.admin_cognome || '')).trim() || '[Dato non fornito]';
+    const studioDenom = c.admin_studio_nome || (c.admin_nome ? `Studio di Amministrazione ${adminFullName}` : '[Dato non fornito]');
+    const iban = c.bank_iban || c.dati_bancari || '[Dato non fornito]';
+    const banca = c.bank_name || '[Dato non fornito]';
+
+    const md = `### 1. DATI GENERALI DEL CONDOMINIO
+
+| Campo | Valore |
+| :--- | :--- |
+| **Denominazione Condominio** | ${c.nome || '[Dato non fornito]'} |
+| **Indirizzo Completo** | ${c.indirizzo || '[Dato non fornito]'} |
+| **Codice Fiscale Condominio** | ${c.cf || '[Dato non fornito]'} |
+| **Codice CIG (se applicabile)** | ${c.cig || '[Dato non fornito]'} |
+| **Numero di Unità Immobiliari** | ${c.units_count && c.units_count > 0 ? c.units_count : '[Dato non fornito]'} |
+
+### 2. STUDIO & DATI AMMINISTRATORE
+
+| Campo | Valore |
+| :--- | :--- |
+| **Nome Studio / Amministratore** | ${studioDenom} |
+| **Responsabile / Referente** | ${adminFullName} |
+| **Indirizzo Studio** | ${c.admin_studio_indirizzo || '[Dato non fornito]'} |
+| **Telefono Fisso** | ${c.admin_telefono || '[Dato non fornito]'} |
+| **Cellulare di Urgenza** | ${c.admin_emergenze || c.admin_cellulare || '[Dato non fornito]'} |
+| **Email Studio** | ${c.admin_email || '[Dato non fornito]'} |
+| **Email Dedicata al Condominio** | ${c.admin_email_condominio || c.admin_email || '[Dato non fornito]'} |
+| **PEC (Posta Elettronica Certificata)** | ${c.admin_pec || '[Dato non fornito]'} |
+| **Sito Web / Portale Condomini** | ${window.location.origin} (Condominio Trasparente) |
+| **Orari di Apertura / Reperibilità** | ${c.admin_orari_ricevimento || '[Dato non fornito]'} |
+
+### 3. DATI BANCARI & ASSICURATIVI
+
+| Campo | Valore |
+| :--- | :--- |
+| **Istituto Bancario** | ${banca} |
+| **IBAN del Condominio** | ${iban} |
+| **Compagnia Assicurativa (Polizza Fabbricati)** | ${c.assicurazione_compagnia || '[Dato non fornito]'} |
+| **Numero Polizza** | ${c.assicurazione_polizza || '[Dato non fornito]'} |
+| **Scadenza Polizza** | ${c.assicurazione_scadenza || '[Dato non fornito]'} |
+
+### 4. NOTE E SPECIFICHE AGGIUNTIVE
+${c.note_fabbricato || (c.scala ? `Fabbricato suddiviso in ${c.scala}. ` : '') + (c.admin_ricevimento_note || 'Nessuna nota aggiuntiva.')}`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(md).then(() => {
+            showToast('Tabelle copiate negli appunti in formato Markdown!', 'success');
+        }).catch(() => {
+            prompt('Copia il testo Markdown seguente:', md);
+        });
+    } else {
+        prompt('Copia il testo Markdown seguente:', md);
+    }
+}
+
+function renderSchedaTecnicaView(c) {
+    state.activeCondominioData = c;
+
+    // Popola Form di Modifica
+    if (document.getElementById('condominio-nome')) document.getElementById('condominio-nome').value = c.nome || '';
+    if (document.getElementById('condominio-indirizzo')) document.getElementById('condominio-indirizzo').value = c.indirizzo || '';
+    if (document.getElementById('condominio-cf')) document.getElementById('condominio-cf').value = c.cf || '';
+    if (document.getElementById('condominio-cig')) document.getElementById('condominio-cig').value = c.cig || '';
+    if (document.getElementById('condominio-scala')) document.getElementById('condominio-scala').value = c.scala || '';
+    if (document.getElementById('condominio-studio-nome')) document.getElementById('condominio-studio-nome').value = c.admin_studio_nome || '';
+    if (document.getElementById('condominio-admin-titolo')) document.getElementById('condominio-admin-titolo').value = c.admin_titolo || '';
+    if (document.getElementById('condominio-admin-nome')) document.getElementById('condominio-admin-nome').value = ((c.admin_nome || '') + ' ' + (c.admin_cognome || '')).trim();
+    if (document.getElementById('condominio-studio-indirizzo')) document.getElementById('condominio-studio-indirizzo').value = c.admin_studio_indirizzo || '';
+    if (document.getElementById('condominio-admin-telefono')) document.getElementById('condominio-admin-telefono').value = c.admin_telefono || '';
+    if (document.getElementById('condominio-admin-emergenze')) document.getElementById('condominio-admin-emergenze').value = c.admin_emergenze || '';
+    if (document.getElementById('condominio-admin-cellulare')) document.getElementById('condominio-admin-cellulare').value = c.admin_cellulare || '';
+    if (document.getElementById('condominio-admin-email')) document.getElementById('condominio-admin-email').value = c.admin_email || '';
+    if (document.getElementById('condominio-admin-email-condo')) document.getElementById('condominio-admin-email-condo').value = c.admin_email_condominio || '';
+    if (document.getElementById('condominio-admin-pec')) document.getElementById('condominio-admin-pec').value = c.admin_pec || '';
+    if (document.getElementById('condominio-admin-orari')) document.getElementById('condominio-admin-orari').value = c.admin_orari_ricevimento || '';
+    if (document.getElementById('condominio-dati-bancari')) document.getElementById('condominio-dati-bancari').value = c.dati_bancari || c.bank_iban || '';
+    if (document.getElementById('condominio-assicurazione-compagnia')) document.getElementById('condominio-assicurazione-compagnia').value = c.assicurazione_compagnia || '';
+    if (document.getElementById('condominio-assicurazione-polizza')) document.getElementById('condominio-assicurazione-polizza').value = c.assicurazione_polizza || '';
+    if (document.getElementById('condominio-assicurazione-scadenza')) document.getElementById('condominio-assicurazione-scadenza').value = c.assicurazione_scadenza || '';
+    if (document.getElementById('condominio-note-fabbricato')) document.getElementById('condominio-note-fabbricato').value = c.note_fabbricato || '';
+
+    // Popola le 4 Tabelle Visive a Video
+    const adminFullName = ((c.admin_titolo ? c.admin_titolo + ' ' : '') + (c.admin_nome || '') + ' ' + (c.admin_cognome || '')).trim() || '[Dato non fornito]';
+    const studioDenom = c.admin_studio_nome || (c.admin_nome ? `Studio di Amministrazione ${adminFullName}` : '[Dato non fornito]');
+    const iban = c.bank_iban || c.dati_bancari || '[Dato non fornito]';
+    const banca = c.bank_name || (c.dati_bancari ? c.dati_bancari.split('-')[0].trim() : '[Dato non fornito]');
+
+    // Tabella 1: Generali
+    const tbodyGen = document.getElementById('tbody-scheda-generali');
+    if (tbodyGen) {
+        tbodyGen.innerHTML = `
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Denominazione Condominio</td><td class="py-2.5 px-4 font-bold text-slate-900">${c.nome || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Indirizzo Completo</td><td class="py-2.5 px-4 text-slate-800">${c.indirizzo || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Codice Fiscale Condominio</td><td class="py-2.5 px-4 font-mono font-bold text-slate-900">${c.cf || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Codice CIG (se applicabile)</td><td class="py-2.5 px-4 font-mono text-slate-800">${c.cig || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Numero di Unità Immobiliari</td><td class="py-2.5 px-4 font-semibold text-slate-800">${c.units_count && c.units_count > 0 ? c.units_count + ' unità censite' : '[Dato non fornito]'}</td></tr>
+            ${c.scala ? `<tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Scale / Struttura Fabbricato</td><td class="py-2.5 px-4 text-slate-800">${c.scala}</td></tr>` : ''}
+        `;
+    }
+
+    // Tabella 2: Studio
+    const tbodyStudio = document.getElementById('tbody-scheda-studio');
+    if (tbodyStudio) {
+        tbodyStudio.innerHTML = `
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Nome Studio / Amministratore</td><td class="py-2.5 px-4 font-bold text-slate-900">${studioDenom}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Responsabile / Referente</td><td class="py-2.5 px-4 text-slate-800">${adminFullName}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Indirizzo Studio</td><td class="py-2.5 px-4 text-slate-800">${c.admin_studio_indirizzo || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Telefono Fisso</td><td class="py-2.5 px-4 font-semibold text-slate-800">${c.admin_telefono ? `<a href="tel:${c.admin_telefono}" class="text-violet-700 hover:underline">${c.admin_telefono}</a>` : '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-rose-700 bg-rose-50/30">Cellulare di Urgenza / Emergenze</td><td class="py-2.5 px-4 font-bold text-rose-700">${c.admin_emergenze || c.admin_cellulare ? `<a href="tel:${c.admin_emergenze || c.admin_cellulare}" class="hover:underline">${c.admin_emergenze || c.admin_cellulare}</a>` : '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Email Studio</td><td class="py-2.5 px-4 font-mono text-slate-800">${c.admin_email ? `<a href="mailto:${c.admin_email}" class="text-violet-700 hover:underline">${c.admin_email}</a>` : '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Email Dedicata al Condominio</td><td class="py-2.5 px-4 font-mono text-slate-800">${c.admin_email_condominio || c.admin_email ? `<a href="mailto:${c.admin_email_condominio || c.admin_email}" class="text-violet-700 hover:underline">${c.admin_email_condominio || c.admin_email}</a>` : '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">PEC (Posta Elettronica Certificata)</td><td class="py-2.5 px-4 font-mono text-slate-800">${c.admin_pec ? `<a href="mailto:${c.admin_pec}" class="text-violet-700 hover:underline">${c.admin_pec}</a>` : '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Sito Web / Portale Condomini</td><td class="py-2.5 px-4 text-violet-700 font-medium">${window.location.origin} (Condominio Trasparente)</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Orari di Apertura / Reperibilità</td><td class="py-2.5 px-4 text-slate-800">${c.admin_orari_ricevimento || '[Dato non fornito]'}</td></tr>
+        `;
+    }
+
+    // Tabella 3: Banca & Assicurazione
+    const tbodyBanca = document.getElementById('tbody-scheda-banca');
+    if (tbodyBanca) {
+        tbodyBanca.innerHTML = `
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Istituto Bancario</td><td class="py-2.5 px-4 font-semibold text-slate-900">${banca}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">IBAN del Condominio</td><td class="py-2.5 px-4 font-mono font-bold text-slate-900">${iban}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Compagnia Assicurativa (Polizza Fabbricati)</td><td class="py-2.5 px-4 font-semibold text-slate-800">${c.assicurazione_compagnia || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Numero Polizza</td><td class="py-2.5 px-4 font-mono text-slate-800">${c.assicurazione_polizza || '[Dato non fornito]'}</td></tr>
+            <tr class="hover:bg-slate-50/80 transition"><td class="py-2.5 px-4 font-bold text-slate-700 bg-slate-50/50">Scadenza Polizza</td><td class="py-2.5 px-4 font-semibold text-slate-800">${c.assicurazione_scadenza || '[Dato non fornito]'}</td></tr>
+        `;
+    }
+
+    // Sezione 4: Note
+    const boxNote = document.getElementById('box-scheda-note');
+    if (boxNote) {
+        const noteText = c.note_fabbricato || (c.scala ? `Complesso fabbricato articolato su ${c.scala}. ` : '') + (c.admin_ricevimento_note || 'Nessuna nota aggiuntiva.');
+        boxNote.textContent = noteText;
+    }
+}
+
 async function loadAnagrafica() {
     try {
         const res = await fetch('/api/condominio', { headers: getAuthHeaders() });
         const data = await res.json();
         if (data.success && data.data.nome) {
-            document.getElementById('condominio-nome').value = data.data.nome || '';
-            document.getElementById('condominio-indirizzo').value = data.data.indirizzo || '';
-            document.getElementById('condominio-cf').value = data.data.cf || '';
-            document.getElementById('condominio-scala').value = data.data.scala || '';
-            const datiBancariInput = document.getElementById('condominio-dati-bancari');
-            if (datiBancariInput) datiBancariInput.value = data.data.dati_bancari || '';
+            renderSchedaTecnicaView(data.data);
             
             const dashNome = document.getElementById('dash-condo-nome');
             if(dashNome) dashNome.textContent = (data.data.nome || 'CONDOMINIO').toUpperCase();
@@ -2303,14 +2445,37 @@ async function handleSaveCondominio(e) {
         showToast("Operazione bloccata: la licenza per questo condominio è scaduta o sospesa (Sola Lettura).", "error");
         return;
     }
+
+    const adminNomeRaw = (document.getElementById('condominio-admin-nome')?.value || '').trim();
+    let nomeSplitted = adminNomeRaw.split(' ');
+    let adminNome = nomeSplitted[0] || '';
+    let adminCognome = nomeSplitted.slice(1).join(' ') || '';
+
     const payload = {
         nome: (document.getElementById('condominio-nome').value || '').trim(),
         indirizzo: (document.getElementById('condominio-indirizzo').value || '').trim(),
         cf: (document.getElementById('condominio-cf').value || '').trim().toUpperCase(),
+        cig: (document.getElementById('condominio-cig')?.value || '').trim().toUpperCase(),
         scala: (document.getElementById('condominio-scala').value || '').trim(),
         dati_bancari: (document.getElementById('condominio-dati-bancari')?.value || '').trim(),
-        piano: ''
+        admin_studio_nome: (document.getElementById('condominio-studio-nome')?.value || '').trim(),
+        admin_titolo: (document.getElementById('condominio-admin-titolo')?.value || '').trim(),
+        admin_nome: adminNome,
+        admin_cognome: adminCognome,
+        admin_studio_indirizzo: (document.getElementById('condominio-studio-indirizzo')?.value || '').trim(),
+        admin_telefono: (document.getElementById('condominio-admin-telefono')?.value || '').trim(),
+        admin_emergenze: (document.getElementById('condominio-admin-emergenze')?.value || '').trim(),
+        admin_cellulare: (document.getElementById('condominio-admin-cellulare')?.value || '').trim(),
+        admin_email: (document.getElementById('condominio-admin-email')?.value || '').trim(),
+        admin_email_condominio: (document.getElementById('condominio-admin-email-condo')?.value || '').trim(),
+        admin_pec: (document.getElementById('condominio-admin-pec')?.value || '').trim(),
+        admin_orari_ricevimento: (document.getElementById('condominio-admin-orari')?.value || '').trim(),
+        assicurazione_compagnia: (document.getElementById('condominio-assicurazione-compagnia')?.value || '').trim(),
+        assicurazione_polizza: (document.getElementById('condominio-assicurazione-polizza')?.value || '').trim(),
+        assicurazione_scadenza: (document.getElementById('condominio-assicurazione-scadenza')?.value || '').trim(),
+        note_fabbricato: (document.getElementById('condominio-note-fabbricato')?.value || '').trim()
     };
+
     try {
         const res = await fetch('/api/condominio', {
             method: 'PUT',
@@ -2319,19 +2484,12 @@ async function handleSaveCondominio(e) {
         });
         const data = await res.json();
         if (data.success) { 
-            showToast('Dati del condominio salvati con successo!', 'success'); 
+            showToast('Scheda Anagrafica & Tecnica salvata con successo!', 'success'); 
             const headerCondo = document.getElementById('header-condo-name');
             if (headerCondo) headerCondo.textContent = payload.nome;
             const dashNome = document.getElementById('dash-condo-nome');
             if (dashNome) dashNome.textContent = payload.nome.toUpperCase();
-            const dashInd = document.getElementById('dash-condo-indirizzo');
-            if (dashInd) dashInd.textContent = payload.indirizzo || 'N/D';
-            const dashCf = document.getElementById('dash-condo-cf');
-            if (dashCf) dashCf.textContent = payload.cf || 'N/D';
-            const dashSc = document.getElementById('dash-condo-scala');
-            if (dashSc) dashSc.textContent = payload.scala || 'Unica';
-            const dashBanca = document.getElementById('dash-condo-dati-bancari');
-            if (dashBanca) dashBanca.textContent = payload.dati_bancari || 'Non specificati';
+            toggleEditScheda(false);
             loadAnagrafica();
         } else {
             showToast('Errore nel salvataggio: ' + (data.error || data.message || ''), 'error');

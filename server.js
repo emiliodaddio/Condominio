@@ -747,7 +747,7 @@ app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, 
                 </tr>
                 <tr>
                     <td class="field-name">Codice CIG (se applicabile)</td>
-                    <td class="field-value">[Dato non fornito]</td>
+                    <td class="field-value">${condo.cig || '[Dato non fornito]'}</td>
                 </tr>
                 <tr>
                     <td class="field-name">Numero di Unità Immobiliari</td>
@@ -789,7 +789,7 @@ app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, 
                 </tr>
                 <tr>
                     <td class="field-name">Email Dedicata al Condominio</td>
-                    <td class="field-value">${condo.admin_email || '[Dato non fornito]'}</td>
+                    <td class="field-value">${condo.admin_email_condominio || condo.admin_email || '[Dato non fornito]'}</td>
                 </tr>
                 <tr>
                     <td class="field-name">PEC (Posta Elettronica Certificata)</td>
@@ -820,24 +820,24 @@ app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, 
                 </tr>
                 <tr>
                     <td class="field-name">Compagnia Assicurativa (Polizza Fabbricati)</td>
-                    <td class="field-value">[Dato non fornito]</td>
+                    <td class="field-value">${condo.assicurazione_compagnia || '[Dato non fornito]'}</td>
                 </tr>
                 <tr>
                     <td class="field-name">Numero Polizza</td>
-                    <td class="field-value">[Dato non fornito]</td>
+                    <td class="field-value">${condo.assicurazione_polizza || '[Dato non fornito]'}</td>
                 </tr>
                 <tr>
                     <td class="field-name">Scadenza Polizza</td>
-                    <td class="field-value">[Dato non fornito]</td>
+                    <td class="field-value">${condo.assicurazione_scadenza || '[Dato non fornito]'}</td>
                 </tr>
             </table>
 
             <!-- 4. NOTE E SPECIFICHE AGGIUNTIVE -->
             <div class="section-header">4. NOTE E SPECIFICHE AGGIUNTIVE</div>
             <div class="notes-box">
-                ${condo.admin_ricevimento_note 
-                    ? condo.admin_ricevimento_note 
-                    : (condo.scala ? `Complesso condominiale articolato su ${condo.scala}. ` : '') + 'Piattaforma gestionale multi-tenant attiva per il monitoraggio contabile, pagamenti quote, archivio documentale e segnalazione guasti in tempo reale.'}
+                ${condo.note_fabbricato 
+                    ? condo.note_fabbricato 
+                    : (condo.admin_ricevimento_note ? condo.admin_ricevimento_note + '<br>' : '') + (condo.scala ? `Complesso condominiale articolato su ${condo.scala}. ` : '') + 'Piattaforma gestionale multi-tenant attiva per il monitoraggio contabile, pagamenti quote, archivio documentale e segnalazione guasti in tempo reale.'}
             </div>
 
             <div style="margin-top: 35px;">
@@ -1258,7 +1258,13 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'condominios', col: 'admin_studio_indirizzo', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'condominios', col: 'admin_orari_ricevimento', defMysql: 'TEXT', defSqlite: 'TEXT' },
         { table: 'condominios', col: 'admin_ricevimento_note', defMysql: 'TEXT', defSqlite: 'TEXT' },
-        { table: 'condominios', col: 'admin_collaboratori', defMysql: 'LONGTEXT', defSqlite: 'TEXT' }
+        { table: 'condominios', col: 'admin_collaboratori', defMysql: 'LONGTEXT', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'cig', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'admin_email_condominio', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'assicurazione_compagnia', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'assicurazione_polizza', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'assicurazione_scadenza', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'note_fabbricato', defMysql: 'TEXT', defSqlite: 'TEXT' }
     ];
 
     let pending = colsToEnsure.length;
@@ -3160,7 +3166,10 @@ app.put('/api/condominio', authenticateToken, requireCondominio, isAdmin, checkC
         'admin_telefono', 'admin_cellulare', 'admin_emergenze',
         'admin_email', 'admin_pec',
         'admin_orari_ricevimento', 'admin_ricevimento_note',
-        'admin_collaboratori'
+        'admin_collaboratori',
+        'cig', 'admin_email_condominio',
+        'assicurazione_compagnia', 'assicurazione_polizza', 'assicurazione_scadenza',
+        'note_fabbricato'
     ];
     let updatePairs = [];
     let params = [];
