@@ -2443,81 +2443,52 @@ function renderDashboardHome(condo) {
     }
 
     // ============================================================
-    // SUPER EVIDENZA: REPERIBILITÀ EMERGENZE
+    // DATI BANCARI (IBAN)
     // ============================================================
-    const emergenzaNum = (condo.admin_emergenze || condo.admin_cellulare || condo.admin_telefono || '348 79512689').trim();
-    const dashHeroEmg = document.getElementById('dash-hero-emg');
-    const dashHeroEmgCall = document.getElementById('dash-hero-emg-call');
-    if (dashHeroEmg) {
-        dashHeroEmg.textContent = emergenzaNum;
-    }
-    if (dashHeroEmgCall) {
-        const cleanPhone = emergenzaNum.replace(/[^0-9+]/g, '');
-        dashHeroEmgCall.href = cleanPhone ? `tel:${cleanPhone}` : '#';
-    }
+    const dashBanca = document.getElementById('dash-condo-dati-bancari');
+    if (dashBanca) dashBanca.textContent = condo.dati_bancari || 'Non specificati';
 
     // ============================================================
-    // SUPER EVIDENZA: EMAIL DEDICATA AL CONDOMINIO
+    // DATI AMMINISTRATORE & CONTATTI ORDINARI
+    // ============================================================
+    const adminFullName = ((condo.admin_titolo ? condo.admin_titolo + ' ' : '') + (condo.admin_nome || '') + ' ' + (condo.admin_cognome || '')).trim() || 'N/D';
+    const elAdminNome = document.getElementById('dash-admin-nome');
+    if (elAdminNome) elAdminNome.textContent = adminFullName;
+
+    const elAdminTel = document.getElementById('dash-admin-tel');
+    if (elAdminTel) elAdminTel.textContent = condo.admin_telefono || 'N/D';
+
+    const elAdminCell = document.getElementById('dash-admin-cell');
+    if (elAdminCell) elAdminCell.textContent = condo.admin_cellulare || 'N/D';
+
+    // ============================================================
+    // IN EVIDENZA: EMAIL DEDICATA AL CONDOMINIO
     // ============================================================
     const emailDedicata = (condo.admin_email_condominio || condo.admin_email || 'test@gmail.com').trim();
-    const dashHeroEmail = document.getElementById('dash-hero-email-dedicata');
-    const dashHeroEmailSend = document.getElementById('dash-hero-email-send');
-    if (dashHeroEmail) {
-        dashHeroEmail.textContent = emailDedicata;
-    }
-    if (dashHeroEmailSend) {
+    const elAdminEmail = document.getElementById('dash-admin-email');
+    const elAdminEmailLink = document.getElementById('dash-admin-email-link');
+    if (elAdminEmail) elAdminEmail.textContent = emailDedicata;
+    if (elAdminEmailLink) {
         const condoNameEnc = encodeURIComponent(condo.nome || 'Condominio');
-        dashHeroEmailSend.href = `mailto:${emailDedicata}?subject=Richiesta Condomino - ${condoNameEnc}`;
+        elAdminEmailLink.href = `mailto:${emailDedicata}?subject=Richiesta Condomino - ${condoNameEnc}`;
     }
 
     // ============================================================
-    // NUMERI ORDINARI STUDIO & DATI IBAN (NEL BANNER)
+    // IN MASSIMA EVIDENZA: REPERIBILITÀ EMERGENZE
     // ============================================================
-    const adminFullName = ((condo.admin_titolo ? condo.admin_titolo + ' ' : '') + (condo.admin_nome || '') + ' ' + (condo.admin_cognome || '')).trim() || 'Avv. Tizio Caio';
-    const elBannerAdminNome = document.getElementById('dash-banner-admin-nome');
-    if (elBannerAdminNome) elBannerAdminNome.textContent = adminFullName;
-
-    // Telefono Fisso
-    const telFisso = condo.admin_telefono || 'N/D';
-    const elBannerTel = document.getElementById('dash-banner-tel');
-    const elBannerTelVal = document.getElementById('dash-banner-tel-val');
-    if (elBannerTelVal) elBannerTelVal.textContent = telFisso;
-    if (elBannerTel) elBannerTel.href = telFisso !== 'N/D' ? `tel:${telFisso.replace(/[^0-9+]/g, '')}` : '#';
-
-    // Cellulare
-    const cellNum = condo.admin_cellulare || 'N/D';
-    const elBannerCell = document.getElementById('dash-banner-cell');
-    const elBannerCellVal = document.getElementById('dash-banner-cell-val');
-    if (elBannerCellVal) elBannerCellVal.textContent = cellNum;
-    if (elBannerCell) elBannerCell.href = cellNum !== 'N/D' ? `tel:${cellNum.replace(/[^0-9+]/g, '')}` : '#';
-
-    // PEC
-    const pecVal = condo.admin_pec || 'N/D';
-    const elBannerPec = document.getElementById('dash-banner-pec');
-    if (elBannerPec) {
-        elBannerPec.textContent = pecVal;
-        elBannerPec.href = pecVal !== 'N/D' ? `mailto:${pecVal}` : '#';
-    }
-
-    // Email Studio
-    const emailVal = condo.admin_email || 'N/D';
-    const elBannerEmail = document.getElementById('dash-banner-email');
-    if (elBannerEmail) {
-        elBannerEmail.textContent = emailVal;
-        elBannerEmail.href = emailVal !== 'N/D' ? `mailto:${emailVal}` : '#';
-    }
-
-    // IBAN Condominio nel Banner
-    const ibanVal = condo.dati_bancari || 'In attesa di inserimento da parte dell\'amministratore';
-    const elBannerIban = document.getElementById('dash-banner-iban');
-    if (elBannerIban) {
-        elBannerIban.textContent = ibanVal;
+    const emergenzaNum = (condo.admin_emergenze || condo.admin_cellulare || condo.admin_telefono || '348 79512689').trim();
+    const elAdminEmg = document.getElementById('dash-admin-emg');
+    const elAdminEmgLink = document.getElementById('dash-admin-emg-link');
+    if (elAdminEmg) elAdminEmg.textContent = emergenzaNum;
+    if (elAdminEmgLink) {
+        const cleanPhone = emergenzaNum.replace(/[^0-9+]/g, '');
+        elAdminEmgLink.href = cleanPhone ? `tel:${cleanPhone}` : '#';
     }
 }
 
 window.copyIbanToClipboard = function() {
-    const iban = (document.getElementById('dash-banner-iban')?.textContent || document.getElementById('dash-home-iban')?.textContent || '').trim();
-    if (iban && !iban.includes('In attesa') && !iban.includes('Non specificato') && !iban.includes('N/D')) {
+    const iban = (document.getElementById('dash-condo-dati-bancari')?.textContent || '').trim();
+    if (iban && !iban.includes('Non specificati') && !iban.includes('In attesa') && !iban.includes('N/D')) {
         navigator.clipboard.writeText(iban).then(() => {
             showToast('IBAN copiato negli appunti!', 'success');
         }).catch(() => {

@@ -959,212 +959,97 @@
             </div>
 
             <!-- Hero / Welcome Banner -->
-            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-900 p-6 sm:p-10 text-white shadow-2xl mb-8 border border-white/10">
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-900 p-8 sm:p-10 text-white shadow-2xl mb-8 border border-white/10">
                 <!-- Sfere ambient luminose -->
                 <div class="absolute -top-24 -left-24 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl anim-float-1 pointer-events-none"></div>
                 <div class="absolute -bottom-24 -right-24 w-80 h-80 bg-indigo-500/25 rounded-full blur-3xl anim-float-2 pointer-events-none"></div>
 
-                <div class="relative z-10 max-w-5xl space-y-6">
-                    <div>
-                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs text-blue-200 font-medium mb-3">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                            <span>Portale Digitale Ufficiale del Fabbricato</span>
-                        </div>
-
-                        <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2">
-                            Benvenuto nella Home Page del <br class="hidden sm:inline">
-                            <span id="dash-condo-nome" class="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 via-indigo-200 to-emerald-200 uppercase font-black">
-                                CONDOMINIO MA.CA.
-                            </span>
-                        </h1>
-                        <p class="text-sm sm:text-base text-blue-100/80 font-normal leading-relaxed">
-                            Bacheca digitale, trasparenza amministrativa, rendicontazione contabile e contatti diretti dell'amministrazione.
-                        </p>
+                <div class="relative z-10 max-w-4xl">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs text-blue-200 font-medium mb-4">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Portale Digitale del Fabbricato</span>
                     </div>
 
-                    <!-- Riga Dati Stabile (Indirizzo, C.F., Scale, CIG) -->
-                    <div class="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-white">
-                        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 backdrop-blur-md">
-                            <i class="fa-solid fa-map-location-dot text-blue-300"></i>
-                            <span id="dash-condo-indirizzo">Caricamento indirizzo...</span>
+                    <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">
+                        Benvenuto nella Home Page del <br class="hidden sm:inline">
+                        <span id="dash-condo-nome" class="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 via-indigo-200 to-emerald-200 uppercase font-black">
+                            CONDOMINIO
+                        </span>
+                    </h1>
+                    <p class="text-sm sm:text-base text-blue-100/80 font-normal leading-relaxed mb-6">
+                        Qui trovi tutte le informazioni utili, la contabilità, i verbali delle assemblee e i contatti diretti dell'amministrazione.
+                    </p>
+                    
+                    <!-- Box Dati Condominio e Amministrazione (Compatto ed Essenziale) -->
+                    <div id="dash-condo-details-box" class="flex flex-col gap-3.5 text-xs sm:text-sm text-white bg-white/10 p-5 rounded-2xl backdrop-blur-md border border-white/15 shadow-inner">
+                        <div class="flex flex-wrap items-center gap-3 sm:gap-5 font-semibold">
+                            <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">
+                                <i class="fa-solid fa-map-location-dot text-blue-300"></i>
+                                <span id="dash-condo-indirizzo">Caricamento indirizzo...</span>
+                            </div>
+                            <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">
+                                <i class="fa-solid fa-fingerprint text-blue-300"></i>
+                                <span>C.F. <b id="dash-condo-cf" class="text-white">...</b></span>
+                            </div>
+                            <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">
+                                <i class="fa-solid fa-building text-blue-300"></i>
+                                <span>Scale: <b id="dash-condo-scala" class="text-white">...</b></span>
+                            </div>
+                            <button onclick="switchTab('condominio')" class="admin-only hidden sm:ml-auto px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs flex items-center gap-1.5 backdrop-blur-sm border border-white/25 shadow-xs transition cursor-pointer" title="Modifica dati del fabbricato">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                                <span>Modifica Dati Stabile</span>
+                            </button>
                         </div>
-                        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 backdrop-blur-md">
-                            <i class="fa-solid fa-fingerprint text-blue-300"></i>
-                            <span>C.F. <b id="dash-condo-cf" class="text-white">...</b></span>
-                        </div>
-                        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 backdrop-blur-md">
-                            <i class="fa-solid fa-building text-blue-300"></i>
-                            <span>Scale: <b id="dash-condo-scala" class="text-white">...</b></span>
-                        </div>
-                        <div id="dash-condo-cig-badge" class="hidden flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 backdrop-blur-md">
-                            <i class="fa-solid fa-tag text-blue-300"></i>
-                            <span>CIG: <b id="dash-condo-cig" class="text-white">...</b></span>
-                        </div>
-                        <button onclick="switchTab('condominio')" class="admin-only hidden sm:ml-auto px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs flex items-center gap-1.5 backdrop-blur-sm border border-white/25 shadow-xs transition cursor-pointer" title="Modifica dati del fabbricato">
-                            <i class="fa-solid fa-pen-to-square"></i>
-                            <span>Modifica Dati Stabile</span>
-                        </button>
-                    </div>
 
-                    <!-- ============================================================ -->
-                    <!-- CONTATTI IN MASSIMA EVIDENZA: NUMERO EMERGENZE & EMAIL DEDICATA -->
-                    <!-- ============================================================ -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                        <!-- 1. NUMERO EMERGENZE (ROSSO ACCESO AD ALTO IMPATTO) -->
-                        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-950/90 via-red-900/85 to-rose-900/75 p-5 border-2 border-rose-400/60 shadow-xl shadow-rose-950/50 flex flex-col justify-between gap-4">
-                            <div class="flex items-start justify-between gap-3">
-                                <div>
-                                    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/30 border border-rose-400/50 text-[10px] font-black uppercase tracking-wider text-rose-200 mb-2">
-                                        <span class="w-2 h-2 rounded-full bg-rose-400 animate-ping"></span>
-                                        <span>Reperibilità & Emergenze 24/7</span>
-                                    </div>
-                                    <h3 class="text-sm font-extrabold text-rose-100 uppercase tracking-tight flex items-center gap-1.5">
-                                        <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
-                                        Pronto Intervento Fabbricato
-                                    </h3>
-                                    <p class="text-[11px] text-rose-200/90 mt-0.5 leading-snug">
-                                        Per allagamenti, fughe gas, ascensori bloccati, guasti elettrici o pericoli imminenti.
-                                    </p>
-                                </div>
-                                <div class="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center text-2xl shrink-0 shadow-lg shadow-rose-950/60">
-                                    <i class="fa-solid fa-phone-volume"></i>
+                        <!-- Riga Dati Bancari del Condominio -->
+                        <div id="dash-condo-banca-row" class="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-100">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <i class="fa-solid fa-building-columns text-emerald-300 text-sm shrink-0"></i>
+                                <div class="text-xs sm:text-sm">
+                                    <span class="text-emerald-200 font-bold uppercase tracking-wider text-[11px] mr-1.5">Dati Bancari:</span>
+                                    <b id="dash-condo-dati-bancari" class="text-white font-mono font-bold break-all">Non specificati</b>
                                 </div>
                             </div>
-                            <div class="pt-2 border-t border-rose-400/20">
-                                <span class="text-[10px] uppercase font-extrabold tracking-wider text-rose-300 block mb-0.5">Recapito Urgente:</span>
-                                <div class="text-2xl sm:text-3xl font-black font-mono tracking-tight text-white mb-3" id="dash-hero-emg">
-                                    348 79512689
-                                </div>
-                                <a id="dash-hero-emg-call" href="tel:34879512689" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-extrabold text-xs sm:text-sm shadow-md transition-all">
-                                    <i class="fa-solid fa-phone"></i>
-                                    <span>Chiama Subito per Emergenza</span>
+                            <button type="button" onclick="copyIbanToClipboard()" class="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/45 text-emerald-200 text-xs font-bold transition flex items-center gap-1 border border-emerald-400/30 cursor-pointer" title="Copia IBAN">
+                                <i class="fa-regular fa-copy"></i>
+                                <span>Copia</span>
+                            </button>
+                        </div>
+
+                        <!-- Riga Contatti Amministratore con EMERGENZE ed EMAIL DEDICATA IN EVIDENZA -->
+                        <div id="dash-admin-details" class="flex flex-wrap items-center gap-3 sm:gap-4 text-blue-100/90 pt-3 border-t border-white/10">
+                            <div class="flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-tie text-blue-300"></i>
+                                <span>Amministratore: <b id="dash-admin-nome" class="text-white font-bold">N/D</b></span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <i class="fa-solid fa-phone text-blue-300"></i>
+                                <span>Fisso: <span id="dash-admin-tel">N/D</span></span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <i class="fa-solid fa-mobile-screen text-blue-300"></i>
+                                <span>Cellulare: <span id="dash-admin-cell">N/D</span></span>
+                            </div>
+
+                            <!-- IN EVIDENZA: EMAIL DEDICATA AL CONDOMINIO -->
+                            <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-100 font-bold shadow-xs">
+                                <i class="fa-solid fa-envelope-circle-check text-cyan-300"></i>
+                                <span>Email Dedicata: <a id="dash-admin-email-link" href="#" class="text-white font-black hover:underline"><span id="dash-admin-email">N/D</span></a></span>
+                            </div>
+
+                            <!-- IN MASSIMA EVIDENZA: NUMERO DELLE EMERGENZE -->
+                            <div class="sm:ml-auto">
+                                <a id="dash-admin-emg-link" href="#" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 border border-rose-400/50 text-white font-black flex items-center gap-2 shadow-md shadow-rose-950/40 transition active:scale-95" title="Chiama Numero Emergenze">
+                                    <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                                    <i class="fa-solid fa-phone-volume text-rose-100"></i>
+                                    <span>Emergenze: <b id="dash-admin-emg" class="text-white font-black font-mono tracking-wider">N/D</b></span>
                                 </a>
-                            </div>
-                        </div>
-
-                        <!-- 2. EMAIL DEDICATA AL CONDOMINIO (CIANO / BLU LUMINOSO) -->
-                        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/90 via-blue-950/85 to-cyan-950/75 p-5 border-2 border-cyan-400/60 shadow-xl shadow-cyan-950/50 flex flex-col justify-between gap-4">
-                            <div class="flex items-start justify-between gap-3">
-                                <div>
-                                    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/30 border border-cyan-400/50 text-[10px] font-black uppercase tracking-wider text-cyan-200 mb-2">
-                                        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-                                        <span>Canale Diretto Fabbricato</span>
-                                    </div>
-                                    <h3 class="text-sm font-extrabold text-cyan-100 uppercase tracking-tight flex items-center gap-1.5">
-                                        <i class="fa-solid fa-envelope-circle-check text-cyan-400"></i>
-                                        Email Dedicata al Condominio
-                                    </h3>
-                                    <p class="text-[11px] text-cyan-200/90 mt-0.5 leading-snug">
-                                        Tutte le comunicazioni inviate qui sono protocollate e archiviate nello storico dello stabile.
-                                    </p>
-                                </div>
-                                <div class="w-12 h-12 rounded-2xl bg-cyan-600 text-white flex items-center justify-center text-2xl shrink-0 shadow-lg shadow-cyan-950/60">
-                                    <i class="fa-solid fa-envelope-open-text"></i>
-                                </div>
-                            </div>
-                            <div class="pt-2 border-t border-cyan-400/20">
-                                <span class="text-[10px] uppercase font-extrabold tracking-wider text-cyan-300 block mb-0.5">Indirizzo Email Dedicato:</span>
-                                <div class="text-lg sm:text-xl font-black tracking-tight text-white truncate mb-3" id="dash-hero-email-dedicata">
-                                    test@gmail.com
-                                </div>
-                                <a id="dash-hero-email-send" href="mailto:test@gmail.com" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-black text-xs sm:text-sm shadow-md transition-all">
-                                    <i class="fa-solid fa-paper-plane"></i>
-                                    <span>Invia Comunicazione Dedicata</span>
-                                </a>
-                            </div>
-                        </div>
-                    <!-- ============================================================ -->
-                    <!-- NUMERI ORDINARI STUDIO & DATI IBAN CONDOMINIO (NEL BANNER) -->
-                    <!-- ============================================================ -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
-                        <!-- BOX 1: RECAPITI ORDINARI & STUDIO -->
-                        <div class="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 p-4 sm:p-5 flex flex-col justify-between gap-3 shadow-inner">
-                            <div class="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
-                                <div class="flex items-center gap-2.5 min-w-0">
-                                    <div class="w-8 h-8 rounded-xl bg-violet-500/30 border border-violet-400/40 text-violet-200 flex items-center justify-center text-sm shrink-0">
-                                        <i class="fa-solid fa-user-tie"></i>
-                                    </div>
-                                    <div class="min-w-0">
-                                        <span class="text-[10px] uppercase font-extrabold tracking-wider text-violet-300 block">Amministrazione & Studio</span>
-                                        <b id="dash-banner-admin-nome" class="text-white text-xs sm:text-sm font-black truncate block">Avv. Tizio Caio</b>
-                                    </div>
-                                </div>
-                                <span class="text-[10px] text-blue-200/80 bg-white/10 px-2 py-0.5 rounded-md font-semibold shrink-0">Recapiti Ordinari</span>
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <!-- Telefono Fisso -->
-                                <a id="dash-banner-tel" href="tel:018890192456" class="flex items-center gap-2.5 p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white transition group" title="Chiama Telefono Fisso">
-                                    <div class="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
-                                        <i class="fa-solid fa-phone"></i>
-                                    </div>
-                                    <div class="min-w-0">
-                                        <span class="text-[9px] text-blue-200/70 uppercase font-bold block">Fisso Studio</span>
-                                        <span id="dash-banner-tel-val" class="font-bold font-mono truncate block text-xs">018890192456</span>
-                                    </div>
-                                </a>
-
-                                <!-- Cellulare -->
-                                <a id="dash-banner-cell" href="tel:3357985406" class="flex items-center gap-2.5 p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white transition group" title="Chiama Cellulare">
-                                    <div class="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
-                                        <i class="fa-solid fa-mobile-screen"></i>
-                                    </div>
-                                    <div class="min-w-0">
-                                        <span class="text-[9px] text-blue-200/70 uppercase font-bold block">Cellulare</span>
-                                        <span id="dash-banner-cell-val" class="font-bold font-mono truncate block text-xs">3357985406</span>
-                                    </div>
-                                </a>
-                            </div>
-
-                            <div class="flex items-center justify-between gap-2 text-[11px] text-blue-200/80 pt-1 border-t border-white/10">
-                                <div class="truncate">
-                                    <span class="text-blue-300 font-bold mr-1">PEC:</span>
-                                    <a id="dash-banner-pec" href="mailto:test@pec.it" class="hover:underline font-mono text-white/90">test@pec.it</a>
-                                </div>
-                                <div class="truncate">
-                                    <span class="text-blue-300 font-bold mr-1">Email:</span>
-                                    <a id="dash-banner-email" href="mailto:test@gmail.com" class="hover:underline text-white/90">test@gmail.com</a>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- BOX 2: DATI IBAN CONDOMINIO -->
-                        <div class="rounded-2xl bg-emerald-950/40 backdrop-blur-md border border-emerald-400/30 p-4 sm:p-5 flex flex-col justify-between gap-3 shadow-inner">
-                            <div class="flex items-center justify-between gap-2 border-b border-emerald-400/20 pb-2.5">
-                                <div class="flex items-center gap-2.5 min-w-0">
-                                    <div class="w-8 h-8 rounded-xl bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 flex items-center justify-center text-sm shrink-0">
-                                        <i class="fa-solid fa-building-columns"></i>
-                                    </div>
-                                    <div class="min-w-0">
-                                        <span class="text-[10px] uppercase font-extrabold tracking-wider text-emerald-300 block">Dati Bancari Ufficiali</span>
-                                        <span class="text-white text-xs sm:text-sm font-black truncate block">Conto Corrente Condominio</span>
-                                    </div>
-                                </div>
-                                <span class="text-[10px] text-emerald-300 bg-emerald-500/20 border border-emerald-400/30 px-2 py-0.5 rounded-md font-extrabold shrink-0">Quote & Spese</span>
-                            </div>
-
-                            <div class="flex items-center justify-between gap-3 bg-black/35 px-3.5 py-2.5 rounded-xl border border-emerald-400/30">
-                                <div class="min-w-0">
-                                    <span class="text-[9px] uppercase font-extrabold tracking-wider text-emerald-300/80 block">IBAN Condominiale per Bonifici:</span>
-                                    <b id="dash-banner-iban" class="text-xs sm:text-sm font-black font-mono text-emerald-100 tracking-wider truncate block">
-                                        In attesa di inserimento
-                                    </b>
-                                </div>
-                                <button type="button" onclick="copyIbanToClipboard()" class="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shadow-md cursor-pointer active:scale-95" title="Copia codice IBAN negli appunti">
-                                    <i class="fa-regular fa-copy"></i>
-                                    <span>Copia</span>
-                                </button>
-                            </div>
-
-                            <div class="flex items-center justify-between text-[11px] text-emerald-200/80 pt-1 border-t border-emerald-400/20">
-                                <span>Intestato al Condominio</span>
-                                <span class="italic text-[10px] text-emerald-300/70">Inserire causale con N° Unità o Interno</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Elemento decorativo iconico di sfondo -->
+                <!-- Elemento decorativo iconico -->
                 <div class="absolute -bottom-8 -right-8 opacity-10 pointer-events-none text-white hidden md:block">
                     <i class="fa-solid fa-building text-[240px]"></i>
                 </div>
