@@ -1952,10 +1952,16 @@
                         </div>
                         <p class="text-xs sm:text-sm text-slate-500 mt-1">Recapiti ufficiali dell'Amministratore, sede dello Studio, orari di ricevimento e referenti collaboratori.</p>
                     </div>
-                    <button id="btn-edit-admin" onclick="toggleEditAdmin(true)" class="hidden admin-only self-start sm:self-auto px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all flex items-center gap-2">
-                        <i class="fa-solid fa-pen-to-square"></i>
-                        <span>Modifica Dati & Studio</span>
-                    </button>
+                    <div class="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+                        <button type="button" onclick="downloadSchedaTecnicaPdf()" class="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-file-pdf text-rose-400"></i>
+                            <span>Scarica Scheda Tecnica (PDF)</span>
+                        </button>
+                        <button id="btn-edit-admin" onclick="toggleEditAdmin(true)" class="hidden admin-only px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                            <span>Modifica Dati & Studio</span>
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Vista in Sola Lettura -->
@@ -2211,7 +2217,11 @@
                         <h2 class="text-2xl font-black text-slate-900 tracking-tight">Dati Generali del Condominio</h2>
                         <p class="text-sm text-slate-500 mt-1">Configurazione della denominazione ufficiale, indirizzo, codice fiscale e struttura dello stabile.</p>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button type="button" onclick="downloadSchedaTecnicaPdf()" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md">
+                            <i class="fa-solid fa-file-pdf text-rose-400"></i>
+                            <span>Scarica Scheda Anagrafica & Tecnica (PDF)</span>
+                        </button>
                         <button type="button" onclick="switchTab('anagrafica')" class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs">
                             <i class="fa-solid fa-users text-emerald-600"></i>
                             <span>Vai ad Anagrafica Condòmini</span>

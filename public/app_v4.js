@@ -2748,6 +2748,34 @@ function printJournal() {
     window.print();
 }
 
+async function downloadSchedaTecnicaPdf() {
+    showToast("Generazione PDF Scheda Anagrafica & Tecnica in corso...", "info");
+    try {
+        const res = await fetch('/api/export/scheda-tecnica-pdf', { headers: getAuthHeaders() });
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const condoName = (state.activeCondominio && state.activeCondominio.nome) 
+                ? state.activeCondominio.nome.replace(/[^a-zA-Z0-9_\-]/g, '_') 
+                : 'Condominio';
+            a.download = `Scheda_Anagrafica_Tecnica_${condoName}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            showToast("Scheda Anagrafica & Tecnica scaricata con successo!", "success");
+            return;
+        } else {
+            const err = await res.json().catch(() => ({}));
+            showToast(err.message || "Errore nella generazione del PDF", "error");
+        }
+    } catch(e) {
+        console.error("Errore download scheda tecnica PDF:", e);
+        showToast("Errore di connessione durante la generazione del PDF", "error");
+    }
+}
+
 async function downloadJournalPdf() {
     if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
         showToast("Operazione limitata: il condominio è in modalità Sola Lettura.", "warning");

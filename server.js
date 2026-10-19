@@ -43,6 +43,26 @@ const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
 const puppeteer = require('puppeteer');
 
+function getPuppeteerLaunchOptions() {
+    const defaultArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+    const options = {
+        headless: 'new',
+        args: defaultArgs
+    };
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        options.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    } else if (process.platform === 'win32') {
+        const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+        const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+        if (fs.existsSync(chromePath)) {
+            options.executablePath = chromePath;
+        } else if (fs.existsSync(edgePath)) {
+            options.executablePath = edgePath;
+        }
+    }
+    return options;
+}
+
 let transporter = null;
 nodemailer.createTestAccount().then(testAccount => {
     transporter = nodemailer.createTransport({
@@ -504,10 +524,7 @@ app.get('/api/export/journal-pdf', authenticateToken, requireCondominio, async (
         </html>
         `;
 
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
+        browser = await puppeteer.launch(getPuppeteerLaunchOptions());
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         const pdfBuffer = await page.pdf({
@@ -529,6 +546,339 @@ app.get('/api/export/journal-pdf', authenticateToken, requireCondominio, async (
         }
         console.error('Errore generazione PDF Libro Giornale:', err);
         res.status(500).json({ success: false, message: 'Errore durante la generazione del PDF: ' + err.message, stack: err.stack });
+    }
+});
+
+// EXPORT SCHEDA ANAGRAFICA E TECNICA CONDOMINIO (PDF)
+app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, async (req, res) => {
+    let browser;
+    try {
+        const condo = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT c.*, 
+                    (SELECT COUNT(*) FROM unita_immobiliari WHERE condominio_id = c.id) as units_count,
+                    (SELECT iban FROM bank_accounts WHERE condominio_id = c.id LIMIT 1) as bank_iban,
+                    (SELECT banca FROM bank_accounts WHERE condominio_id = c.id LIMIT 1) as bank_name,
+                    (SELECT intestazione FROM bank_accounts WHERE condominio_id = c.id LIMIT 1) as bank_intestazione
+                FROM condominios c 
+                WHERE c.id = ?
+            `, [req.condominio_id], (err, row) => {
+                if (err) reject(err); else resolve(row);
+            });
+        });
+
+        if (!condo) {
+            return res.status(404).json({ success: false, message: 'Condominio non trovato.' });
+        }
+
+        let collaboratori = [];
+        if (condo.admin_collaboratori) {
+            try {
+                collaboratori = typeof condo.admin_collaboratori === 'string'
+                    ? JSON.parse(condo.admin_collaboratori)
+                    : condo.admin_collaboratori;
+                if (!Array.isArray(collaboratori)) collaboratori = [];
+            } catch (_) {
+                collaboratori = [];
+            }
+        }
+
+        const currentDateStr = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
+        const adminFullName = ((condo.admin_titolo ? condo.admin_titolo + ' ' : '') + (condo.admin_nome || '') + ' ' + (condo.admin_cognome || '')).trim() || '[Dato non fornito]';
+        const studioDenom = condo.admin_studio_nome || (condo.admin_nome ? `Studio Amministrativo ${adminFullName}` : '[Dato non fornito]');
+        const ibanDisplay = condo.bank_iban || (condo.dati_bancari ? condo.dati_bancari : '[Dato non fornito]');
+        const bancaDisplay = condo.bank_name || '[Dato non fornito]';
+
+        let collabsHtml = '';
+        if (collaboratori.length > 0) {
+            collabsHtml = `
+                <div style="margin-top: 15px;">
+                    <div style="font-size: 11px; font-weight: bold; color: #334155; text-transform: uppercase; margin-bottom: 6px;">Collaboratori & Referenti di Studio</div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                        <thead>
+                            <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                                <th style="padding: 6px 10px; text-align: left; color: #475569;">Nominativo</th>
+                                <th style="padding: 6px 10px; text-align: left; color: #475569;">Ruolo / Reparto</th>
+                                <th style="padding: 6px 10px; text-align: left; color: #475569;">Telefono</th>
+                                <th style="padding: 6px 10px; text-align: left; color: #475569;">Email</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${collaboratori.map((c, i) => `
+                                <tr style="border-bottom: 1px solid #e2e8f0; background: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                                    <td style="padding: 6px 10px; font-weight: bold; color: #1e293b;">${(c.titolo ? c.titolo + ' ' : '') + (c.nome || '')}</td>
+                                    <td style="padding: 6px 10px; color: #475569;">${c.ruolo || '-'}</td>
+                                    <td style="padding: 6px 10px; color: #475569;">${c.telefono || '-'}</td>
+                                    <td style="padding: 6px 10px; color: #475569;">${c.email || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+            <meta charset="UTF-8">
+            <title>Scheda Anagrafica e Tecnica - ${condo.nome || 'Condominio'}</title>
+            <style>
+                @page { size: A4 portrait; margin: 12mm 15mm 15mm 15mm; }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    color: #0f172a;
+                    margin: 0;
+                    padding: 0;
+                    background: #ffffff;
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
+                .header-table {
+                    width: 100%;
+                    border-bottom: 3px solid #0284c7;
+                    padding-bottom: 12px;
+                    margin-bottom: 20px;
+                }
+                .title {
+                    font-size: 20px;
+                    font-weight: 800;
+                    color: #0f172a;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    margin: 0;
+                }
+                .subtitle {
+                    font-size: 11px;
+                    color: #64748b;
+                    margin-top: 3px;
+                    font-weight: 500;
+                }
+                .section-header {
+                    font-size: 12px;
+                    font-weight: 800;
+                    color: #0369a1;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    margin-top: 18px;
+                    margin-bottom: 8px;
+                    padding-bottom: 4px;
+                    border-bottom: 1.5px solid #e0f2fe;
+                }
+                .data-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 8px;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 6px;
+                    overflow: hidden;
+                }
+                .data-table tr {
+                    border-bottom: 1px solid #e2e8f0;
+                }
+                .data-table tr:last-child {
+                    border-bottom: none;
+                }
+                .data-table td.field-name {
+                    width: 38%;
+                    background-color: #f8fafc;
+                    padding: 7px 12px;
+                    font-weight: 700;
+                    color: #334155;
+                    font-size: 11px;
+                    border-right: 1px solid #e2e8f0;
+                }
+                .data-table td.field-value {
+                    width: 62%;
+                    padding: 7px 12px;
+                    color: #0f172a;
+                    font-size: 11px;
+                    font-weight: 500;
+                }
+                .notes-box {
+                    background: #f8fafc;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 6px;
+                    padding: 10px 14px;
+                    font-size: 11px;
+                    color: #334155;
+                    margin-top: 6px;
+                }
+                .footer {
+                    margin-top: 25px;
+                    padding-top: 12px;
+                    border-top: 1px solid #e2e8f0;
+                    font-size: 10px;
+                    color: #94a3b8;
+                    display: flex;
+                    justify-content: space-between;
+                }
+            </style>
+        </head>
+        <body>
+            <table class="header-table">
+                <tr>
+                    <td>
+                        <h1 class="title">Scheda Anagrafica e Tecnica</h1>
+                        <div class="subtitle">Fascicolo Ufficiale del Fabbricato &bull; Riferimenti Amministrativi</div>
+                    </td>
+                    <td style="text-align: right; vertical-align: bottom;">
+                        <div style="font-size: 10px; color: #64748b;">Data di emissione</div>
+                        <div style="font-size: 12px; font-weight: bold; color: #0f172a;">${currentDateStr}</div>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- 1. DATI GENERALI DEL CONDOMINIO -->
+            <div class="section-header">1. DATI GENERALI DEL CONDOMINIO</div>
+            <table class="data-table">
+                <tr>
+                    <td class="field-name">Denominazione Condominio</td>
+                    <td class="field-value"><b>${condo.nome || '[Dato non fornito]'}</b></td>
+                </tr>
+                <tr>
+                    <td class="field-name">Indirizzo Completo</td>
+                    <td class="field-value">${condo.indirizzo || '[Dato non fornito]'}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Codice Fiscale Condominio</td>
+                    <td class="field-value"><b>${condo.cf || '[Dato non fornito]'}</b></td>
+                </tr>
+                <tr>
+                    <td class="field-name">Codice CIG (se applicabile)</td>
+                    <td class="field-value">[Dato non fornito]</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Numero di Unità Immobiliari</td>
+                    <td class="field-value">${condo.units_count && condo.units_count > 0 ? condo.units_count + ' unità censite' : '[Dato non fornito]'}</td>
+                </tr>
+                ${condo.scala ? `
+                <tr>
+                    <td class="field-name">Articolazione Stabile (Scale / Piani)</td>
+                    <td class="field-value">${condo.scala}</td>
+                </tr>` : ''}
+            </table>
+
+            <!-- 2. STUDIO & DATI AMMINISTRATORE -->
+            <div class="section-header">2. STUDIO & DATI AMMINISTRATORE</div>
+            <table class="data-table">
+                <tr>
+                    <td class="field-name">Nome Studio / Amministratore</td>
+                    <td class="field-value"><b>${studioDenom}</b></td>
+                </tr>
+                <tr>
+                    <td class="field-name">Responsabile / Referente</td>
+                    <td class="field-value">${adminFullName}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Indirizzo Studio</td>
+                    <td class="field-value">${condo.admin_studio_indirizzo || '[Dato non fornito]'}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Telefono Fisso</td>
+                    <td class="field-value">${condo.admin_telefono || '[Dato non fornito]'}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Cellulare di Urgenza / Emergenze</td>
+                    <td class="field-value"><b style="color: #b91c1c;">${condo.admin_emergenze || condo.admin_cellulare || '[Dato non fornito]'}</b></td>
+                </tr>
+                <tr>
+                    <td class="field-name">Email Studio</td>
+                    <td class="field-value">${condo.admin_email || '[Dato non fornito]'}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Email Dedicata al Condominio</td>
+                    <td class="field-value">${condo.admin_email || '[Dato non fornito]'}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">PEC (Posta Elettronica Certificata)</td>
+                    <td class="field-value">${condo.admin_pec || '[Dato non fornito]'}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Sito Web / Portale Condomini</td>
+                    <td class="field-value">Piattaforma Web Condominio Trasparente</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Orari di Apertura / Reperibilità</td>
+                    <td class="field-value">${condo.admin_orari_ricevimento || (condo.admin_emergenze ? 'Reperibilità urgenze attiva al recapito dedicato' : '[Dato non fornito]')}</td>
+                </tr>
+            </table>
+
+            ${collabsHtml}
+
+            <!-- 3. DATI BANCARI & ASSICURATIVI -->
+            <div class="section-header">3. DATI BANCARI & ASSICURATIVI</div>
+            <table class="data-table">
+                <tr>
+                    <td class="field-name">Istituto Bancario</td>
+                    <td class="field-value">${bancaDisplay}</td>
+                </tr>
+                <tr>
+                    <td class="field-name">IBAN del Condominio</td>
+                    <td class="field-value"><b style="font-family: monospace; font-size: 11px;">${ibanDisplay}</b></td>
+                </tr>
+                <tr>
+                    <td class="field-name">Compagnia Assicurativa (Polizza Fabbricati)</td>
+                    <td class="field-value">[Dato non fornito]</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Numero Polizza</td>
+                    <td class="field-value">[Dato non fornito]</td>
+                </tr>
+                <tr>
+                    <td class="field-name">Scadenza Polizza</td>
+                    <td class="field-value">[Dato non fornito]</td>
+                </tr>
+            </table>
+
+            <!-- 4. NOTE E SPECIFICHE AGGIUNTIVE -->
+            <div class="section-header">4. NOTE E SPECIFICHE AGGIUNTIVE</div>
+            <div class="notes-box">
+                ${condo.admin_ricevimento_note 
+                    ? condo.admin_ricevimento_note 
+                    : (condo.scala ? `Complesso condominiale articolato su ${condo.scala}. ` : '') + 'Piattaforma gestionale multi-tenant attiva per il monitoraggio contabile, pagamenti quote, archivio documentale e segnalazione guasti in tempo reale.'}
+            </div>
+
+            <div style="margin-top: 35px;">
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="width: 60%; font-size: 10px; color: #64748b; vertical-align: bottom;">
+                            Documento generato telematicamente tramite Condominio Trasparente &bull; ${currentDateStr}
+                        </td>
+                        <td style="width: 40%; text-align: center;">
+                            <div style="font-size: 11px; font-weight: bold; color: #1e293b; margin-bottom: 35px;">Timbro e Firma dell'Amministratore</div>
+                            <div style="border-bottom: 1px dotted #94a3b8; width: 80%; margin: 0 auto;"></div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </body>
+        </html>
+        `;
+
+        browser = await puppeteer.launch(getPuppeteerLaunchOptions());
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            landscape: false,
+            printBackground: true,
+            margin: { top: '12mm', bottom: '12mm', left: '15mm', right: '15mm' }
+        });
+        await browser.close();
+        browser = null;
+
+        const safeCondoName = (condo.nome || 'Condominio').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Scheda_Tecnica_${safeCondoName}.pdf"`);
+        res.send(pdfBuffer);
+    } catch(err) {
+        if (browser) {
+            try { await browser.close(); } catch(_) {}
+        }
+        console.error('Errore generazione PDF Scheda Tecnica:', err);
+        res.status(500).json({ success: false, message: 'Errore durante la generazione del PDF: ' + err.message });
     }
 });
 
@@ -2994,7 +3344,7 @@ app.post('/api/assemblies/send-convocation', authenticateToken, requireCondomini
         if (!transporter) throw new Error("Servizio email non pronto");
         
         console.log("Generazione PDF in corso...");
-        browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+        browser = await puppeteer.launch(getPuppeteerLaunchOptions());
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         const pdfBuffer = await page.pdf({ 
@@ -3119,7 +3469,7 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
             
             let browser;
             try {
-                browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+                browser = await puppeteer.launch(getPuppeteerLaunchOptions());
                 const page = await browser.newPage();
                 
                 const htmlContent = `
@@ -3194,7 +3544,7 @@ app.post('/api/quotes/:id/send-reminder', authenticateToken, requireCondominio, 
             
             let browser;
             try {
-                browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+                browser = await puppeteer.launch(getPuppeteerLaunchOptions());
                 const page = await browser.newPage();
                 
                 const htmlContent = `
@@ -3293,7 +3643,7 @@ app.post('/api/communications/send', authenticateToken, requireCondominio, isAdm
 
             let browser;
             try {
-                browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+                browser = await puppeteer.launch(getPuppeteerLaunchOptions());
                 
                 // Formatta il messaggio con br per l'HTML
                 const formattedMessage = message.replace(/\n/g, '<br>');
