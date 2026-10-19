@@ -394,11 +394,11 @@
     <div id="modal-reset-pwd" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative">
             <div class="p-6">
-                <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-xl mb-4 shadow-sm">
+                <div id="reset-modal-icon" class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-xl mb-4 shadow-sm">
                     <i class="fa-solid fa-lock"></i>
                 </div>
-                <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Crea Nuova Password</h3>
-                <p class="text-xs sm:text-sm text-slate-500 mb-4 leading-relaxed">
+                <h3 id="reset-modal-title" class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Crea Nuova Password</h3>
+                <p id="reset-modal-subtitle" class="text-xs sm:text-sm text-slate-500 mb-4 leading-relaxed">
                     Scegli una password forte e sicura per proteggere il tuo account.
                 </p>
 
@@ -554,8 +554,33 @@
             }
             
             const token = urlParams.get('token');
+            const flow = urlParams.get('flow');
             if (token) {
                 document.getElementById('reset-token').value = token;
+
+                const titleEl = document.getElementById('reset-modal-title');
+                const subtitleEl = document.getElementById('reset-modal-subtitle');
+                const btnSubmit = document.getElementById('btn-reset-submit');
+                const iconEl = document.getElementById('reset-modal-icon');
+
+                if (flow === 'onboarding') {
+                    if (titleEl) titleEl.textContent = 'Attiva il tuo Profilo & Imposta Password';
+                    if (subtitleEl) subtitleEl.textContent = 'Benvenuto su CondoTransparent! Imposta la tua password personale per completare l\'accesso in totale sicurezza.';
+                    if (btnSubmit) btnSubmit.innerHTML = '<i class="fa-solid fa-user-check"></i> <span>Attiva Profilo e Accedi</span>';
+                    if (iconEl) {
+                        iconEl.className = 'w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xl mb-4 shadow-sm';
+                        iconEl.innerHTML = '<i class="fa-solid fa-user-check"></i>';
+                    }
+                } else {
+                    if (titleEl) titleEl.textContent = 'Reimposta Password';
+                    if (subtitleEl) subtitleEl.textContent = 'Scegli una password forte e sicura per proteggere il tuo account.';
+                    if (btnSubmit) btnSubmit.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Salva Nuova Password</span>';
+                    if (iconEl) {
+                        iconEl.className = 'w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-xl mb-4 shadow-sm';
+                        iconEl.innerHTML = '<i class="fa-solid fa-lock"></i>';
+                    }
+                }
+
                 document.getElementById('modal-reset-pwd').classList.remove('hidden');
                 history.replaceState(null, null, window.location.pathname);
             }

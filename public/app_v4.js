@@ -5767,7 +5767,10 @@ function renderRubricaTable() {
                     </span>
                 </td>
                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
-                    <button onclick="openNewQuoteModalForPersona(${p.id})" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Calcola Quota per Millesimi per questo Condòmino">
+                    <button onclick="sendOnboardingInviteForPersona(${p.id}, '${safeNome}')" class="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors" title="Invia Invito e Primo Accesso (Flusso Onboarding 72h)">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                    <button onclick="openNewQuoteModalForPersona(${p.id})" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors ml-1" title="Calcola Quota per Millesimi per questo Condòmino">
                         <i class="fa-solid fa-calculator"></i>
                     </button>
                     <button onclick="openPersonaModal(${p.id})" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors ml-1" title="Modifica Scheda">
@@ -5941,6 +5944,41 @@ async function deletePersona(id, nominativo) {
         showToast("Errore di rete", "error");
     }
 }
+
+// ============================================================================
+// FLUSSO A: INVITO E PRIMO ACCESSO (ONBOARDING) DA RUBRICA
+// ============================================================================
+window.sendOnboardingInviteForPersona = async function(id, nominativo) {
+    if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
+        showToast("Operazione bloccata: il condominio è in modalità Sola Lettura.", "warning");
+        return;
+    }
+    if (!confirm(`Desideri inviare l'email di Invito e Primo Accesso (onboarding sicuro, valido 72 ore) a "${nominativo}"?`)) {
+        return;
+    }
+
+    showToast(`Invio invito a ${nominativo} in corso...`, "info");
+
+    try {
+        const res = await fetch(`/api/anagrafica-persone/${id}/send-invite`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showToast(data.message || `Invito inviato con successo a ${nominativo}!`, "success");
+            if (data.previewUrl) {
+                console.log(`🔗 [Test Ethereal] Invito primo accesso inviato: ${data.previewUrl}`);
+            }
+        } else {
+            showToast(data.message || "Errore durante l'invio dell'invito.", "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di comunicazione con il server.", "error");
+    }
+};
 
 // ============================================================================
 // SUPERUSER / PROPRIETARIO CONTROLLER (Cabina di Regia)

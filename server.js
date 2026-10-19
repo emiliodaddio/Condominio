@@ -41,6 +41,7 @@ const ExcelJS = require('exceljs');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
+const emailService = require('./emailService');
 const puppeteer = require('puppeteer');
 
 function getPuppeteerLaunchOptions() {
@@ -1714,37 +1715,33 @@ app.post('/api/auth/login', (req, res) => {
             return issueToken(user, res);
         }
 
-        // Genera OTP di 6 cifre
+        // FLUSSO B: Codice di Sicurezza 2FA (Accesso Confermato) - Validità 10 minuti
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpires = Date.now() + 10 * 60 * 1000; // 10 minuti
 
         db.run('UPDATE users SET otp_code = ?, otp_expires = ? WHERE id = ?', [otpCode, otpExpires, user.id], async (err) => {
-            if (err) return res.status(500).json({ success: false, message: 'Errore di sistema' });
+            if (err) {
+                console.error('Errore salvataggio OTP:', err);
+                return res.status(500).json({ success: false, message: 'Errore salvataggio OTP: ' + err.message });
+            }
 
             try {
-                let testAccount = await nodemailer.createTestAccount();
-                let transporter = nodemailer.createTransport({
-                    host: "smtp.ethereal.email",
-                    port: 587,
-                    secure: false,
-                    auth: { user: testAccount.user, pass: testAccount.pass },
+                const { previewUrl } = await emailService.sendTwoFactorOtpEmail({
+                    email: user.email,
+                    nome: user.nome,
+                    otpCode
                 });
 
-                let info = await transporter.sendMail({
-                    from: '"CondoTransparent" <no-reply@condominio.it>',
-                    to: user.email,
-                    subject: "Codice di Accesso (OTP)",
-                    text: `Il tuo codice di accesso è: ${otpCode}\nScade in 10 minuti.`,
-                    html: `<h3>Codice di Accesso 2FA</h3><p>Il tuo codice è: <b>${otpCode}</b></p><p>Scade in 10 minuti.</p>`,
+                logAudit(user.id, null, 'Richiesta OTP Login (2FA)', 'users', user.id, null, req.ip);
+                return res.json({ 
+                    success: true, 
+                    requireOTP: true, 
+                    userId: user.id, 
+                    email: user.email, 
+                    previewUrl 
                 });
-
-                const previewUrl = nodemailer.getTestMessageUrl(info);
-                console.log("OTP Email sent to", user.email, "- Preview:", previewUrl);
-
-                logAudit(user.id, null, 'Richiesta OTP Login', 'users', user.id, null, req.ip);
-                return res.json({ success: true, requireOTP: true, userId: user.id, email: user.email, previewUrl: previewUrl });
             } catch (e) {
-                console.error(e);
+                console.error('Errore invio email OTP:', e);
                 return res.status(500).json({ success: false, message: 'Errore invio email OTP' });
             }
         });
@@ -1760,7 +1757,8 @@ app.post('/api/auth/login/verify-otp', (req, res) => {
         if (user.otp_code !== otp) {
             return res.status(401).json({ success: false, message: 'Codice errato.' });
         }
-        if (Date.now() > user.otp_expires) {
+        const expiresTime = user.otp_expires instanceof Date ? user.otp_expires.getTime() : Number(user.otp_expires);
+        if (Date.now() > expiresTime) {
             return res.status(401).json({ success: false, message: 'Codice scaduto.' });
         }
 
@@ -1937,73 +1935,142 @@ app.post('/api/auth/activate-request', (req, res) => {
     });
 });
 
+// ============================================================================
+// FLUSSO A: INVITO E PRIMO ACCESSO (ONBOARDING) - Validità 72 ore
+// ============================================================================
+async function sendOnboardingInviteForPersonaId(personaId, condominioId, host, protocol = 'http') {
+    return new Promise((resolve, reject) => {
+        const query = `
+            SELECT ap.*, c.nome as condo_nome 
+            FROM anagrafica_persone ap 
+            LEFT JOIN condominios c ON ap.condominio_id = c.id 
+            WHERE ap.id = ? AND (ap.condominio_id = ? OR ? IS NULL)
+        `;
+        db.get(query, [personaId, condominioId, condominioId || null], async (err, persona) => {
+            if (err) return reject(err);
+            if (!persona) return reject(new Error('Scheda anagrafica non trovata.'));
+            if (!persona.email || !persona.email.trim()) {
+                return reject(new Error(`Nessun indirizzo email specificato per ${persona.nome} ${persona.cognome}.`));
+            }
+
+            const cleanEmail = persona.email.trim().toLowerCase();
+            const fullName = `${persona.nome} ${persona.cognome}`.trim();
+            const condoName = persona.condo_nome || 'Condominio';
+
+            db.get('SELECT id, nome, email FROM users WHERE LOWER(email) = ?', [cleanEmail], async (errU, existingUser) => {
+                if (errU) return reject(errU);
+
+                const dispatchToken = async (userId) => {
+                    const crypto = require('crypto');
+                    const token = crypto.randomBytes(32).toString('hex');
+                    const expires = Date.now() + 72 * 3600 * 1000; // 72 ORE
+
+                    db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, userId], async (errUpd) => {
+                        if (errUpd) return reject(errUpd);
+
+                        try {
+                            const { previewUrl } = await emailService.sendOnboardingInviteEmail({
+                                email: cleanEmail,
+                                nome: fullName,
+                                condoNome: condoName,
+                                token,
+                                host,
+                                protocol
+                            });
+
+                            db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', 
+                                [userId, `Invito di onboarding inviato a ${cleanEmail} (Condominio ${condoName})`]);
+
+                            resolve({
+                                success: true,
+                                userId,
+                                email: cleanEmail,
+                                nome: fullName,
+                                condoNome: condoName,
+                                previewUrl
+                            });
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                };
+
+                if (existingUser) {
+                    if (persona.condominio_id) {
+                        db.get('SELECT id FROM user_condominios WHERE user_id = ? AND condominio_id = ?', [existingUser.id, persona.condominio_id], (errUc, uc) => {
+                            if (!uc) {
+                                db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)',
+                                    [existingUser.id, persona.condominio_id, 'condomino', 'Da anagrafica'], () => {});
+                            }
+                        });
+                    }
+                    await dispatchToken(existingUser.id);
+                } else {
+                    const crypto = require('crypto');
+                    const tempPassword = crypto.randomBytes(16).toString('hex');
+                    const hash = bcrypt.hashSync(tempPassword, 10);
+
+                    db.run(
+                        'INSERT INTO users (nome, email, password_hash, telefono) VALUES (?, ?, ?, ?)',
+                        [fullName, cleanEmail, hash, persona.cellulare || persona.telefono || null],
+                        function (errIns) {
+                            if (errIns) return reject(errIns);
+                            const newUserId = this.lastID;
+
+                            if (persona.condominio_id) {
+                                db.run('INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)',
+                                    [newUserId, persona.condominio_id, 'condomino', 'Da anagrafica'], () => {
+                                        db.run('UPDATE unita_immobiliari SET user_id = ? WHERE condominio_id = ? AND (proprietario_id = ? OR conduttore_id = ?)',
+                                            [newUserId, persona.condominio_id, persona.id, persona.id], () => {});
+                                    });
+                            }
+
+                            dispatchToken(newUserId);
+                        }
+                    );
+                }
+            });
+        });
+    });
+}
+
 function deliverActivationEmail(userId, email, nome, condoNome, req, res) {
     const crypto = require('crypto');
     const token = crypto.randomBytes(32).toString('hex');
-    const expires = Date.now() + 86400000; // 24 ore
+    const expires = Date.now() + 72 * 3600 * 1000; // 72 ORE
 
-    db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, userId], (err) => {
+    db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, userId], async (err) => {
         if (err) return res.status(500).json({ success: false, message: 'Errore salvataggio credenziali di primo accesso.' });
 
         const host = req.get('host');
         const protocol = req.protocol || 'http';
-        const activationLink = `${protocol}://${host}/login.html?token=${token}`;
 
-        const mailOptions = {
-            from: '"CondoTransparent" <no-reply@condominio.it>',
-            to: email,
-            subject: `Attivazione Account / Primo Accesso - ${condoNome}`,
-            text: `Gentile ${nome},\n\nLa tua anagrafica è stata verificata per ${condoNome}.\nPer impostare la tua password e accedere all'area personale, clicca sul link seguente:\n${activationLink}\n\nIl link sarà valido per 24 ore.`,
-            html: `
-                <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-                    <div style="text-align: center; margin-bottom: 24px;">
-                        <h2 style="color: #1e293b; margin: 0; font-size: 22px;">CondoTransparent</h2>
-                        <span style="color: #64748b; font-size: 13px;">Portale Digitale Condominiale</span>
-                    </div>
-                    <p style="color: #334155; font-size: 15px;">Gentile <strong>${nome}</strong>,</p>
-                    <p style="color: #475569; font-size: 14px; line-height: 1.6;">
-                        La tua anagrafica è stata verificata con successo nel registro condominiale per <strong>${condoNome}</strong>.
-                    </p>
-                    <p style="color: #475569; font-size: 14px; line-height: 1.6;">
-                        Clicca sul pulsante sottostante per impostare la tua password personale ed effettuare il primo accesso:
-                    </p>
-                    <div style="text-align: center; margin: 28px 0;">
-                        <a href="${activationLink}" style="background: linear-gradient(135deg, #2563eb, #4f46e5); color: #ffffff; padding: 13px 32px; text-decoration: none; font-weight: bold; font-size: 14px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(37,99,235,0.25);">
-                            Imposta Password e Attiva Account
-                        </a>
-                    </div>
-                    <p style="color: #94a3b8; font-size: 12px; line-height: 1.5; border-top: 1px solid #f1f5f9; padding-top: 16px;">
-                        Questo link rimarrà valido per 24 ore. In caso di problemi con il pulsante, copia questo indirizzo nel tuo browser:<br>
-                        <a href="${activationLink}" style="color: #2563eb; word-break: break-all;">${activationLink}</a>
-                    </p>
-                </div>
-            `
-        };
-
-        let previewUrl = null;
-        if (transporter) {
-            transporter.sendMail(mailOptions, (errMail, info) => {
-                if (errMail) {
-                    console.error('Errore invio mail attivazione:', errMail);
-                } else {
-                    const nodemailer = require('nodemailer');
-                    previewUrl = nodemailer.getTestMessageUrl(info);
-                    console.log('🔗 Mail di Attivazione inviata! Anteprima:', previewUrl);
-                    db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', 
-                        [userId, `Email attivazione inviata a ${email} (Anteprima: <a href="${previewUrl}" target="_blank" class="text-blue-500 underline">Apri Email</a>)`]);
-                }
+        try {
+            const { previewUrl } = await emailService.sendOnboardingInviteEmail({
+                email,
+                nome,
+                condoNome,
+                token,
+                host,
+                protocol
             });
+
+            db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', 
+                [userId, `Email attivazione inviata a ${email} (Scadenza: 72 ore)`]);
+
+            const parts = email.split('@');
+            const maskedUser = parts[0].length > 2 ? parts[0][0] + '***' + parts[0].slice(-1) : '***';
+            const maskedEmail = `${maskedUser}@${parts[1] || ''}`;
+
+            return res.json({
+                success: true,
+                message: `Anagrafica verificata! Abbiamo inviato un link sicuro all'indirizzo email associato (${maskedEmail}) per impostare la password.`,
+                previewUrl
+            });
+        } catch (e) {
+            console.error('Errore invio email attivazione:', e);
+            return res.status(500).json({ success: false, message: 'Errore durante l\'invio dell\'email di attivazione.' });
         }
-
-        const parts = email.split('@');
-        const maskedUser = parts[0].length > 2 ? parts[0][0] + '***' + parts[0].slice(-1) : '***';
-        const maskedEmail = `${maskedUser}@${parts[1] || ''}`;
-
-        return res.json({
-            success: true,
-            message: `Anagrafica verificata! Abbiamo inviato un link sicuro all'indirizzo email associato (${maskedEmail}) per impostare la password.`,
-            previewUrl
-        });
     });
 }
 
@@ -2303,6 +2370,18 @@ app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmi
                     dati_catastali: unita_dati_catastali
                 }, (errSync) => {
                     logAudit(req.user.id, req.condominio_id, 'Creata Persona in Anagrafica', 'anagrafica_persone', personaId, null, req.ip);
+
+                    // FLUSSO A: Trigger automatico invito primo accesso (validità 72h)
+                    if (email && email.trim()) {
+                        sendOnboardingInviteForPersonaId(personaId, req.condominio_id, req.get('host'), req.protocol || 'http')
+                            .then(invResult => {
+                                console.log(`✉️ [Flusso A Onboarding] Invito automatico inviato a ${invResult.email} (Anteprima: ${invResult.previewUrl || 'N/A'})`);
+                            })
+                            .catch(invErr => {
+                                console.warn(`⚠️ [Flusso A Onboarding] Invio automatico non riuscito per #${personaId}:`, invErr.message);
+                            });
+                    }
+
                     res.json({ success: true, id: personaId });
                 });
         });
@@ -2369,6 +2448,23 @@ app.delete('/api/anagrafica-persone/:id', authenticateToken, requireCondominio, 
             });
         });
     });
+});
+
+// ============================================================================
+// FLUSSO A: Invio Manuale Invito & Primo Accesso da Pannello Amministratore
+// ============================================================================
+app.post('/api/anagrafica-persone/:id/send-invite', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
+    try {
+        const result = await sendOnboardingInviteForPersonaId(req.params.id, req.condominio_id, req.get('host'), req.protocol || 'http');
+        res.json({
+            success: true,
+            message: `Invito di primo accesso inviato con successo a ${result.nome} (${result.email}).`,
+            previewUrl: result.previewUrl
+        });
+    } catch (err) {
+        console.error('Errore invio manuale invito:', err);
+        res.status(400).json({ success: false, message: err.message || 'Errore durante l\'invio dell\'invito.' });
+    }
 });
 
 app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
@@ -3403,48 +3499,47 @@ app.get('/api/audit-log', authenticateToken, requireCondominio, isAdmin, (req, r
     });
 });
 
-// --- PASSWORD RECOVERY ROUTES ---
+// --- PASSWORD RECOVERY ROUTES (FLUSSO C - Validità 2 ore) ---
 app.post('/api/auth/forgot-password', (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, message: 'Email obbligatoria' });
 
-    db.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [email.trim()], (err, user) => {
+    db.get('SELECT id, nome, email FROM users WHERE LOWER(email) = LOWER(?)', [email.trim()], (err, user) => {
         if (err || !user) {
-            return res.json({ success: true, message: 'Se l\'email esiste nel sistema, riceverai un link per il reset.' });
+            return res.json({ success: true, message: 'Se l\'email esiste nel sistema, riceverai un link sicuro per reimpostare la tua password.' });
         }
 
         const crypto = require('crypto');
         const token = crypto.randomBytes(32).toString('hex');
-        const expires = Date.now() + 3600000;
+        const expires = Date.now() + 2 * 3600 * 1000; // 2 ore come richiesto dal Flusso C
 
-        db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, user.id], (err) => {
+        db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, user.id], async (err) => {
             if (err) return res.status(500).json({ success: false, message: 'Errore interno' });
 
             const host = req.get('host');
             const protocol = req.protocol || 'http';
-            const resetLink = `${protocol}://${host}/login.html?token=${token}`;
 
-            const mailOptions = {
-                from: '"Gestione Condominio" <no-reply@condominio.it>',
-                to: email,
-                subject: 'Recupero Password - Gestione Condominio',
-                text: `Hai richiesto il reset della password.\nClicca qui per reimpostarla: ${resetLink}\nIl link scade tra 1 ora.`,
-                html: `<p>Hai richiesto il reset della password.</p><p><a href="${resetLink}">Clicca qui per reimpostarla</a></p><p>Il link scade tra 1 ora.</p>`
-            };
-
-            if (transporter) {
-                transporter.sendMail(mailOptions, (err, info) => {
-                    if (err) console.error('Errore invio mail reset:', err);
-                    else {
-                        const nodemailer = require('nodemailer');
-                        const url = nodemailer.getTestMessageUrl(info);
-                        console.log('🔗 Mail di Reset Password inviata! Anteprima:', url);
-                        db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', 
-                            [user.id, `Richiesta reset (Email di test inviata: <a href="${url}" target="_blank" class="text-blue-500 underline">Apri Email</a>)`]);
-                    }
+            try {
+                const { previewUrl } = await emailService.sendPasswordResetEmail({
+                    email: user.email || email.trim(),
+                    nome: user.nome,
+                    token,
+                    host,
+                    protocol
                 });
+
+                db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', 
+                    [user.id, `Richiesta reset password inviata a ${user.email} (Scadenza: 2 ore)`]);
+
+                res.json({ 
+                    success: true, 
+                    message: 'Hai richiesto il ripristino della password per il tuo account CondoTransparent. Controlla la tua casella di posta.',
+                    previewUrl 
+                });
+            } catch (errMail) {
+                console.error('Errore invio mail reset:', errMail);
+                res.status(500).json({ success: false, message: 'Errore durante l\'invio dell\'email di ripristino password.' });
             }
-            res.json({ success: true, message: 'Se l\'email esiste nel sistema, riceverai un link per il reset.' });
         });
     });
 });
