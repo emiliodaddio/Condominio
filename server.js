@@ -1844,6 +1844,170 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 // ==========================================
+// NUOVO ENDPOINT: Attivazione Account / Primo Accesso da Anagrafica
+// ==========================================
+app.post('/api/auth/activate-request', (req, res) => {
+    const { identifier } = req.body;
+    if (!identifier || !identifier.trim()) {
+        return res.status(400).json({ success: false, message: 'Inserisci il tuo Codice Fiscale o la tua Email.' });
+    }
+
+    const clean = identifier.trim();
+    const cleanLower = clean.toLowerCase();
+    const cleanUpper = clean.toUpperCase();
+
+    // Cerca in anagrafica_persone per email o codice fiscale
+    const query = `
+        SELECT ap.*, c.nome as condo_nome 
+        FROM anagrafica_persone ap 
+        LEFT JOIN condominios c ON ap.condominio_id = c.id 
+        WHERE LOWER(ap.email) = ? OR UPPER(ap.codice_fiscale) = ?
+        ORDER BY ap.id DESC LIMIT 1
+    `;
+
+    db.get(query, [cleanLower, cleanUpper], (err, persona) => {
+        if (err) {
+            console.error('Errore verifica anagrafica:', err);
+            return res.status(500).json({ success: false, message: 'Errore interno del server durante la verifica.' });
+        }
+
+        // Se non trovato in anagrafica_persone, controlla se esiste in users
+        if (!persona) {
+            return db.get('SELECT id, email, nome FROM users WHERE LOWER(email) = ?', [cleanLower], (errU, user) => {
+                if (errU || !user) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Nessuna anagrafica corrispondente trovata. Contatta lo studio di amministrazione per verificare la registrazione dei tuoi dati.'
+                    });
+                }
+                deliverActivationEmail(user.id, user.email, user.nome, 'CondoTransparent', req, res);
+            });
+        }
+
+        // Persona trovata in anagrafica_persone
+        const targetEmail = (persona.email && persona.email.trim()) ? persona.email.trim() : (clean.includes('@') ? cleanLower : null);
+
+        if (!targetEmail) {
+            return res.status(400).json({
+                success: false,
+                message: `Anagrafica di ${persona.nome} ${persona.cognome} individuata, ma non risulta associata un'email. Comunica il tuo indirizzo email all'amministratore per attivare l'accesso.`
+            });
+        }
+
+        // Controlla se esiste già un account utente per questa email
+        db.get('SELECT id, email, nome FROM users WHERE LOWER(email) = ?', [targetEmail.toLowerCase()], (errUser, existingUser) => {
+            if (errUser) return res.status(500).json({ success: false, message: 'Errore durante la verifica dell\'utenza.' });
+
+            const condoTitle = persona.condo_nome || 'CondoTransparent';
+            const fullName = `${persona.nome} ${persona.cognome}`.trim();
+
+            if (existingUser) {
+                deliverActivationEmail(existingUser.id, targetEmail, existingUser.nome || fullName, condoTitle, req, res);
+            } else {
+                // Crea l'utenza partendo dai dati ufficiali dell'anagrafica
+                const crypto = require('crypto');
+                const tempPassword = crypto.randomBytes(16).toString('hex');
+                const hash = bcrypt.hashSync(tempPassword, 10);
+
+                db.run(
+                    'INSERT INTO users (nome, email, password_hash, telefono) VALUES (?, ?, ?, ?)',
+                    [fullName, targetEmail.toLowerCase(), hash, persona.cellulare || persona.telefono || null],
+                    function (errIns) {
+                        if (errIns) {
+                            console.error('Errore creazione utente da anagrafica:', errIns);
+                            return res.status(500).json({ success: false, message: 'Errore durante la creazione del profilo utente.' });
+                        }
+                        const newUserId = this.lastID;
+
+                        // Associazione automatica al condominio dell'anagrafica
+                        db.run(
+                            'INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)',
+                            [newUserId, persona.condominio_id, 'condomino', 'Da anagrafica'],
+                            () => {
+                                db.run('UPDATE unita_immobiliari SET user_id = ? WHERE condominio_id = ? AND (proprietario_id = ? OR conduttore_id = ?)',
+                                    [newUserId, persona.condominio_id, persona.id, persona.id], () => {});
+                            }
+                        );
+
+                        deliverActivationEmail(newUserId, targetEmail, fullName, condoTitle, req, res);
+                    }
+                );
+            }
+        });
+    });
+});
+
+function deliverActivationEmail(userId, email, nome, condoNome, req, res) {
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = Date.now() + 86400000; // 24 ore
+
+    db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, userId], (err) => {
+        if (err) return res.status(500).json({ success: false, message: 'Errore salvataggio credenziali di primo accesso.' });
+
+        const host = req.get('host');
+        const protocol = req.protocol || 'http';
+        const activationLink = `${protocol}://${host}/login.html?token=${token}`;
+
+        const mailOptions = {
+            from: '"CondoTransparent" <no-reply@condominio.it>',
+            to: email,
+            subject: `Attivazione Account / Primo Accesso - ${condoNome}`,
+            text: `Gentile ${nome},\n\nLa tua anagrafica è stata verificata per ${condoNome}.\nPer impostare la tua password e accedere all'area personale, clicca sul link seguente:\n${activationLink}\n\nIl link sarà valido per 24 ore.`,
+            html: `
+                <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <h2 style="color: #1e293b; margin: 0; font-size: 22px;">CondoTransparent</h2>
+                        <span style="color: #64748b; font-size: 13px;">Portale Digitale Condominiale</span>
+                    </div>
+                    <p style="color: #334155; font-size: 15px;">Gentile <strong>${nome}</strong>,</p>
+                    <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+                        La tua anagrafica è stata verificata con successo nel registro condominiale per <strong>${condoNome}</strong>.
+                    </p>
+                    <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+                        Clicca sul pulsante sottostante per impostare la tua password personale ed effettuare il primo accesso:
+                    </p>
+                    <div style="text-align: center; margin: 28px 0;">
+                        <a href="${activationLink}" style="background: linear-gradient(135deg, #2563eb, #4f46e5); color: #ffffff; padding: 13px 32px; text-decoration: none; font-weight: bold; font-size: 14px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(37,99,235,0.25);">
+                            Imposta Password e Attiva Account
+                        </a>
+                    </div>
+                    <p style="color: #94a3b8; font-size: 12px; line-height: 1.5; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                        Questo link rimarrà valido per 24 ore. In caso di problemi con il pulsante, copia questo indirizzo nel tuo browser:<br>
+                        <a href="${activationLink}" style="color: #2563eb; word-break: break-all;">${activationLink}</a>
+                    </p>
+                </div>
+            `
+        };
+
+        let previewUrl = null;
+        if (transporter) {
+            transporter.sendMail(mailOptions, (errMail, info) => {
+                if (errMail) {
+                    console.error('Errore invio mail attivazione:', errMail);
+                } else {
+                    const nodemailer = require('nodemailer');
+                    previewUrl = nodemailer.getTestMessageUrl(info);
+                    console.log('🔗 Mail di Attivazione inviata! Anteprima:', previewUrl);
+                    db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', 
+                        [userId, `Email attivazione inviata a ${email} (Anteprima: <a href="${previewUrl}" target="_blank" class="text-blue-500 underline">Apri Email</a>)`]);
+                }
+            });
+        }
+
+        const parts = email.split('@');
+        const maskedUser = parts[0].length > 2 ? parts[0][0] + '***' + parts[0].slice(-1) : '***';
+        const maskedEmail = `${maskedUser}@${parts[1] || ''}`;
+
+        return res.json({
+            success: true,
+            message: `Anagrafica verificata! Abbiamo inviato un link sicuro all'indirizzo email associato (${maskedEmail}) per impostare la password.`,
+            previewUrl
+        });
+    });
+}
+
+// ==========================================
 // RESTORED: /api/auth/me
 // ==========================================
 app.get('/api/auth/me', authenticateToken, (req, res) => {
