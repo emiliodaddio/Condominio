@@ -1073,158 +1073,100 @@
                                 </a>
                             </div>
                         </div>
+                    <!-- ============================================================ -->
+                    <!-- NUMERI ORDINARI STUDIO & DATI IBAN CONDOMINIO (NEL BANNER) -->
+                    <!-- ============================================================ -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
+                        <!-- BOX 1: RECAPITI ORDINARI & STUDIO -->
+                        <div class="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 p-4 sm:p-5 flex flex-col justify-between gap-3 shadow-inner">
+                            <div class="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                    <div class="w-8 h-8 rounded-xl bg-violet-500/30 border border-violet-400/40 text-violet-200 flex items-center justify-center text-sm shrink-0">
+                                        <i class="fa-solid fa-user-tie"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <span class="text-[10px] uppercase font-extrabold tracking-wider text-violet-300 block">Amministrazione & Studio</span>
+                                        <b id="dash-banner-admin-nome" class="text-white text-xs sm:text-sm font-black truncate block">Avv. Tizio Caio</b>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] text-blue-200/80 bg-white/10 px-2 py-0.5 rounded-md font-semibold shrink-0">Recapiti Ordinari</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                <!-- Telefono Fisso -->
+                                <a id="dash-banner-tel" href="tel:018890192456" class="flex items-center gap-2.5 p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white transition group" title="Chiama Telefono Fisso">
+                                    <div class="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
+                                        <i class="fa-solid fa-phone"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <span class="text-[9px] text-blue-200/70 uppercase font-bold block">Fisso Studio</span>
+                                        <span id="dash-banner-tel-val" class="font-bold font-mono truncate block text-xs">018890192456</span>
+                                    </div>
+                                </a>
+
+                                <!-- Cellulare -->
+                                <a id="dash-banner-cell" href="tel:3357985406" class="flex items-center gap-2.5 p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white transition group" title="Chiama Cellulare">
+                                    <div class="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
+                                        <i class="fa-solid fa-mobile-screen"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <span class="text-[9px] text-blue-200/70 uppercase font-bold block">Cellulare</span>
+                                        <span id="dash-banner-cell-val" class="font-bold font-mono truncate block text-xs">3357985406</span>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <div class="flex items-center justify-between gap-2 text-[11px] text-blue-200/80 pt-1 border-t border-white/10">
+                                <div class="truncate">
+                                    <span class="text-blue-300 font-bold mr-1">PEC:</span>
+                                    <a id="dash-banner-pec" href="mailto:test@pec.it" class="hover:underline font-mono text-white/90">test@pec.it</a>
+                                </div>
+                                <div class="truncate">
+                                    <span class="text-blue-300 font-bold mr-1">Email:</span>
+                                    <a id="dash-banner-email" href="mailto:test@gmail.com" class="hover:underline text-white/90">test@gmail.com</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BOX 2: DATI IBAN CONDOMINIO -->
+                        <div class="rounded-2xl bg-emerald-950/40 backdrop-blur-md border border-emerald-400/30 p-4 sm:p-5 flex flex-col justify-between gap-3 shadow-inner">
+                            <div class="flex items-center justify-between gap-2 border-b border-emerald-400/20 pb-2.5">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                    <div class="w-8 h-8 rounded-xl bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 flex items-center justify-center text-sm shrink-0">
+                                        <i class="fa-solid fa-building-columns"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <span class="text-[10px] uppercase font-extrabold tracking-wider text-emerald-300 block">Dati Bancari Ufficiali</span>
+                                        <span class="text-white text-xs sm:text-sm font-black truncate block">Conto Corrente Condominio</span>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] text-emerald-300 bg-emerald-500/20 border border-emerald-400/30 px-2 py-0.5 rounded-md font-extrabold shrink-0">Quote & Spese</span>
+                            </div>
+
+                            <div class="flex items-center justify-between gap-3 bg-black/35 px-3.5 py-2.5 rounded-xl border border-emerald-400/30">
+                                <div class="min-w-0">
+                                    <span class="text-[9px] uppercase font-extrabold tracking-wider text-emerald-300/80 block">IBAN Condominiale per Bonifici:</span>
+                                    <b id="dash-banner-iban" class="text-xs sm:text-sm font-black font-mono text-emerald-100 tracking-wider truncate block">
+                                        In attesa di inserimento
+                                    </b>
+                                </div>
+                                <button type="button" onclick="copyIbanToClipboard()" class="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shadow-md cursor-pointer active:scale-95" title="Copia codice IBAN negli appunti">
+                                    <i class="fa-regular fa-copy"></i>
+                                    <span>Copia</span>
+                                </button>
+                            </div>
+
+                            <div class="flex items-center justify-between text-[11px] text-emerald-200/80 pt-1 border-t border-emerald-400/20">
+                                <span>Intestato al Condominio</span>
+                                <span class="italic text-[10px] text-emerald-300/70">Inserire causale con N° Unità o Interno</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Elemento decorativo iconico di sfondo -->
                 <div class="absolute -bottom-8 -right-8 opacity-10 pointer-events-none text-white hidden md:block">
                     <i class="fa-solid fa-building text-[240px]"></i>
-                </div>
-            </div>
-
-            <!-- ==================================================================== -->
-            <!-- SCHEDA STUDIO & DATI AMMINISTRATORE (INTEGRATA IN HOME PAGE) -->
-            <!-- ==================================================================== -->
-            <div id="dash-section-studio" class="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm space-y-6 mb-8">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-                    <div class="flex items-center gap-3.5">
-                        <div class="w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center text-2xl shrink-0">
-                            <i class="fa-solid fa-id-card-clip"></i>
-                        </div>
-                        <div>
-                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-violet-600">Amministrazione & Gestione Ufficiale</span>
-                            <h2 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Studio & Dati Amministratore</h2>
-                            <p class="text-xs text-slate-500">Recapiti completi dello studio, orari di ricevimento, collaboratori e coordinate bancarie.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <button type="button" onclick="switchTab('condominio')" class="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 text-xs font-bold transition flex items-center gap-1.5 border border-amber-200">
-                            <i class="fa-solid fa-table-list"></i>
-                            <span>Scheda Completa (4 Tabelle)</span>
-                        </button>
-                        <button type="button" onclick="downloadSchedaTecnicaPdf()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs">
-                            <i class="fa-solid fa-file-pdf text-rose-400"></i>
-                            <span>Scarica PDF</span>
-                        </button>
-                        <button type="button" onclick="switchTab('admin-profile'); toggleEditAdmin(true);" class="admin-only hidden px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs">
-                            <i class="fa-solid fa-pen-to-square"></i>
-                            <span>Modifica Dati Studio</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Griglia a 3 Aree: Studio & Referente, Recapiti Ordinari, Orari Ricevimento -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <!-- 1. Studio e Sede -->
-                    <div class="p-5 rounded-2xl bg-slate-50 border border-slate-200/60 flex flex-col justify-between space-y-3">
-                        <div class="space-y-1.5">
-                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                                <i class="fa-solid fa-building-columns text-violet-600"></i> Denominazione & Sede
-                            </span>
-                            <h4 id="dash-home-studio-nome" class="text-base font-extrabold text-slate-900">Studio Amministrativo</h4>
-                            <p class="text-xs font-bold text-violet-700" id="dash-home-admin-nome">Avv. Tizio Caio</p>
-                            <p class="text-xs text-slate-600 flex items-start gap-1.5 pt-1" id="dash-home-studio-indirizzo">
-                                <i class="fa-solid fa-location-dot text-violet-500 mt-0.5 shrink-0"></i>
-                                <span>[Sede Studio non fornita]</span>
-                            </p>
-                        </div>
-                        <div class="pt-2 border-t border-slate-200/60 text-xs">
-                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PEC Ufficiale:</span>
-                            <a id="dash-home-admin-pec" href="mailto:test@pec.it" class="font-mono text-xs font-bold text-violet-700 hover:underline break-all">test@pec.it</a>
-                        </div>
-                    </div>
-
-                    <!-- 2. Recapiti Telefonici ed Email -->
-                    <div class="p-5 rounded-2xl bg-slate-50 border border-slate-200/60 space-y-3">
-                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                            <i class="fa-solid fa-phone text-blue-600"></i> Recapiti & Contatti
-                        </span>
-                        <div class="space-y-2 text-xs">
-                            <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border border-slate-200/60">
-                                <span class="text-slate-500 font-medium">Telefono Fisso:</span>
-                                <a id="dash-home-admin-tel" href="tel:018890192456" class="font-bold text-slate-800 hover:text-blue-600">018890192456</a>
-                            </div>
-                            <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border border-slate-200/60">
-                                <span class="text-slate-500 font-medium">Cellulare:</span>
-                                <a id="dash-home-admin-cell" href="tel:3357985406" class="font-bold text-slate-800 hover:text-blue-600">3357985406</a>
-                            </div>
-                            <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border border-slate-200/60">
-                                <span class="text-slate-500 font-medium">Email Studio:</span>
-                                <a id="dash-home-admin-email" href="mailto:test@gmail.com" class="font-bold text-slate-800 hover:text-blue-600 truncate max-w-[170px]">test@gmail.com</a>
-                            </div>
-                            <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-rose-50 border border-rose-200">
-                                <span class="text-rose-700 font-bold flex items-center gap-1"><i class="fa-solid fa-phone-volume"></i> Urgenze:</span>
-                                <a id="dash-home-admin-emg" href="tel:34879512689" class="font-black text-rose-800 hover:underline">34879512689</a>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 3. Ricevimento & Orari -->
-                    <div class="p-5 rounded-2xl bg-amber-50/50 border border-amber-200/60 space-y-3 flex flex-col justify-between">
-                        <div class="space-y-2">
-                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1">
-                                <i class="fa-solid fa-clock text-amber-600"></i> Orari di Ricevimento
-                            </span>
-                            <div class="p-3 bg-white rounded-xl border border-amber-200/60 text-xs text-slate-800 font-semibold" id="dash-home-orari">
-                                [Orari non specificati]
-                            </div>
-                            <div class="text-[11px] text-slate-600" id="dash-home-orari-note">
-                                <i class="fa-solid fa-circle-info text-amber-600 mr-1"></i> Si riceve preferibilmente previo appuntamento concordato.
-                            </div>
-                        </div>
-                        <div class="text-[11px] text-amber-900 bg-amber-100/60 p-2 rounded-xl border border-amber-200/60 flex items-center gap-1.5">
-                            <i class="fa-solid fa-headset text-amber-700"></i>
-                            <span>Reperibilità garantita per i condòmini</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Collaboratori dello Studio (se presenti) -->
-                <div id="dash-home-collab-section" class="hidden pt-3 border-t border-slate-100 space-y-3">
-                    <div class="flex items-center justify-between">
-                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                            <i class="fa-solid fa-users-gear text-indigo-600"></i> Collaboratori & Referenti di Studio
-                        </h4>
-                    </div>
-                    <div id="dash-home-collab-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <!-- Popolato dinamicamente via JS -->
-                    </div>
-                </div>
-
-                <!-- Box Bancario & Assicurativo del Condominio -->
-                <div class="pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- IBAN -->
-                    <div class="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between gap-3">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0">
-                                <i class="fa-solid fa-building-columns"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 block">IBAN Condominio per Versamenti</span>
-                                <div id="dash-home-iban" class="font-mono font-bold text-xs sm:text-sm text-slate-900 truncate">[Non specificato]</div>
-                            </div>
-                        </div>
-                        <button type="button" onclick="copyIbanToClipboard()" class="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1" title="Copia IBAN">
-                            <i class="fa-regular fa-copy"></i>
-                            <span class="hidden sm:inline">Copia</span>
-                        </button>
-                    </div>
-
-                    <!-- Assicurazione -->
-                    <div class="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center text-lg shrink-0">
-                            <i class="fa-solid fa-shield-halved"></i>
-                        </div>
-                        <div class="min-w-0">
-                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-sky-800 block">Polizza Globale Fabbricati</span>
-                            <div id="dash-home-assicurazione" class="font-bold text-xs sm:text-sm text-slate-900 truncate">
-                                [Compagnia non specificata]
-                            </div>
-                            <div id="dash-home-scadenza-polizza" class="text-[11px] text-sky-700 mt-0.5">
-                                Scadenza: [Dato non specificato]
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 

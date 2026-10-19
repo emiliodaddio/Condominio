@@ -2471,129 +2471,53 @@ function renderDashboardHome(condo) {
     }
 
     // ============================================================
-    // SCHEDA STUDIO & DATI AMMINISTRATORE (HOME PAGE)
+    // NUMERI ORDINARI STUDIO & DATI IBAN (NEL BANNER)
     // ============================================================
     const adminFullName = ((condo.admin_titolo ? condo.admin_titolo + ' ' : '') + (condo.admin_nome || '') + ' ' + (condo.admin_cognome || '')).trim() || 'Avv. Tizio Caio';
-    const studioNome = condo.admin_studio_nome || ('Studio ' + adminFullName);
-    const studioIndirizzo = condo.admin_studio_indirizzo || condo.indirizzo || '[Sede non comunicata]';
+    const elBannerAdminNome = document.getElementById('dash-banner-admin-nome');
+    if (elBannerAdminNome) elBannerAdminNome.textContent = adminFullName;
 
-    const elStudioNome = document.getElementById('dash-home-studio-nome');
-    if (elStudioNome) elStudioNome.textContent = studioNome;
+    // Telefono Fisso
+    const telFisso = condo.admin_telefono || 'N/D';
+    const elBannerTel = document.getElementById('dash-banner-tel');
+    const elBannerTelVal = document.getElementById('dash-banner-tel-val');
+    if (elBannerTelVal) elBannerTelVal.textContent = telFisso;
+    if (elBannerTel) elBannerTel.href = telFisso !== 'N/D' ? `tel:${telFisso.replace(/[^0-9+]/g, '')}` : '#';
 
-    const elAdminNome = document.getElementById('dash-home-admin-nome');
-    if (elAdminNome) elAdminNome.textContent = adminFullName;
+    // Cellulare
+    const cellNum = condo.admin_cellulare || 'N/D';
+    const elBannerCell = document.getElementById('dash-banner-cell');
+    const elBannerCellVal = document.getElementById('dash-banner-cell-val');
+    if (elBannerCellVal) elBannerCellVal.textContent = cellNum;
+    if (elBannerCell) elBannerCell.href = cellNum !== 'N/D' ? `tel:${cellNum.replace(/[^0-9+]/g, '')}` : '#';
 
-    const elStudioIndirizzo = document.getElementById('dash-home-studio-indirizzo');
-    if (elStudioIndirizzo) {
-        elStudioIndirizzo.innerHTML = `<i class="fa-solid fa-location-dot text-violet-500 mt-0.5 shrink-0"></i> <span>${studioIndirizzo}</span>`;
+    // PEC
+    const pecVal = condo.admin_pec || 'N/D';
+    const elBannerPec = document.getElementById('dash-banner-pec');
+    if (elBannerPec) {
+        elBannerPec.textContent = pecVal;
+        elBannerPec.href = pecVal !== 'N/D' ? `mailto:${pecVal}` : '#';
     }
 
-    const elAdminPec = document.getElementById('dash-home-admin-pec');
-    if (elAdminPec) {
-        if (condo.admin_pec) {
-            elAdminPec.textContent = condo.admin_pec;
-            elAdminPec.href = `mailto:${condo.admin_pec}`;
-        } else {
-            elAdminPec.textContent = '[PEC non comunicata]';
-            elAdminPec.removeAttribute('href');
-        }
+    // Email Studio
+    const emailVal = condo.admin_email || 'N/D';
+    const elBannerEmail = document.getElementById('dash-banner-email');
+    if (elBannerEmail) {
+        elBannerEmail.textContent = emailVal;
+        elBannerEmail.href = emailVal !== 'N/D' ? `mailto:${emailVal}` : '#';
     }
 
-    const elAdminTel = document.getElementById('dash-home-admin-tel');
-    if (elAdminTel) {
-        const tel = condo.admin_telefono || 'N/D';
-        elAdminTel.textContent = tel;
-        elAdminTel.href = tel !== 'N/D' ? `tel:${tel.replace(/[^0-9+]/g, '')}` : '#';
-    }
-
-    const elAdminCell = document.getElementById('dash-home-admin-cell');
-    if (elAdminCell) {
-        const cell = condo.admin_cellulare || 'N/D';
-        elAdminCell.textContent = cell;
-        elAdminCell.href = cell !== 'N/D' ? `tel:${cell.replace(/[^0-9+]/g, '')}` : '#';
-    }
-
-    const elAdminEmail = document.getElementById('dash-home-admin-email');
-    if (elAdminEmail) {
-        const mail = condo.admin_email || 'N/D';
-        elAdminEmail.textContent = mail;
-        elAdminEmail.href = mail !== 'N/D' ? `mailto:${mail}` : '#';
-    }
-
-    const elAdminEmg = document.getElementById('dash-home-admin-emg');
-    if (elAdminEmg) {
-        elAdminEmg.textContent = emergenzaNum;
-        elAdminEmg.href = `tel:${emergenzaNum.replace(/[^0-9+]/g, '')}`;
-    }
-
-    const elOrari = document.getElementById('dash-home-orari');
-    if (elOrari) {
-        elOrari.textContent = condo.admin_orari_ricevimento || 'Lunedì - Venerdì: 09:00 - 13:00 / 15:30 - 19:00';
-    }
-
-    const elOrariNote = document.getElementById('dash-home-orari-note');
-    if (elOrariNote) {
-        elOrariNote.innerHTML = `<i class="fa-solid fa-circle-info text-amber-600 mr-1"></i> ${condo.admin_ricevimento_note || 'Si riceve preferibilmente previo appuntamento concordato con lo studio.'}`;
-    }
-
-    // Collaboratori
-    const collabSection = document.getElementById('dash-home-collab-section');
-    const collabGrid = document.getElementById('dash-home-collab-grid');
-    if (collabSection && collabGrid) {
-        let collabs = [];
-        if (condo.admin_collaboratori) {
-            try {
-                collabs = typeof condo.admin_collaboratori === 'string' ? JSON.parse(condo.admin_collaboratori) : condo.admin_collaboratori;
-                if (!Array.isArray(collabs)) collabs = [];
-            } catch (_) { collabs = []; }
-        }
-        if (collabs.length > 0) {
-            collabSection.classList.remove('hidden');
-            collabGrid.innerHTML = collabs.map(c => `
-                <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3">
-                    <div class="min-w-0">
-                        <div class="font-bold text-xs text-slate-900 truncate">${(c.titolo ? c.titolo + ' ' : '') + (c.nome || 'Collaboratore')}</div>
-                        <div class="text-[11px] text-indigo-600 font-semibold truncate">${c.ruolo || 'Referente Studio'}</div>
-                        ${c.telefono ? `<div class="text-[11px] text-slate-600 mt-0.5"><a href="tel:${c.telefono.replace(/[^0-9+]/g, '')}" class="hover:underline font-mono">${c.telefono}</a></div>` : ''}
-                        ${c.email ? `<div class="text-[11px] text-slate-500 truncate"><a href="mailto:${c.email}" class="hover:underline">${c.email}</a></div>` : ''}
-                    </div>
-                    <div class="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm shrink-0">
-                        <i class="fa-solid fa-user-check"></i>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            collabSection.classList.add('hidden');
-        }
-    }
-
-    // IBAN & Assicurazione
-    const elIban = document.getElementById('dash-home-iban');
-    if (elIban) {
-        elIban.textContent = condo.dati_bancari || 'In attesa di inserimento da parte dell\'amministratore';
-    }
-
-    const elAssic = document.getElementById('dash-home-assicurazione');
-    const elScadenzaAssic = document.getElementById('dash-home-scadenza-polizza');
-    if (elAssic) {
-        if (condo.assicurazione_compagnia || condo.assicurazione_polizza) {
-            elAssic.textContent = `${condo.assicurazione_compagnia || 'Compagnia Assicurativa'} ${condo.assicurazione_polizza ? '- Polizza n° ' + condo.assicurazione_polizza : ''}`;
-        } else {
-            elAssic.textContent = 'Polizza Fabbricati in fase di registrazione';
-        }
-    }
-    if (elScadenzaAssic) {
-        if (condo.assicurazione_scadenza) {
-            elScadenzaAssic.innerHTML = `Scadenza: <b class="text-sky-950 font-bold">${condo.assicurazione_scadenza}</b>`;
-        } else {
-            elScadenzaAssic.textContent = 'Scadenza non specificata';
-        }
+    // IBAN Condominio nel Banner
+    const ibanVal = condo.dati_bancari || 'In attesa di inserimento da parte dell\'amministratore';
+    const elBannerIban = document.getElementById('dash-banner-iban');
+    if (elBannerIban) {
+        elBannerIban.textContent = ibanVal;
     }
 }
 
 window.copyIbanToClipboard = function() {
-    const iban = document.getElementById('dash-home-iban')?.textContent?.trim();
-    if (iban && !iban.includes('In attesa') && !iban.includes('Non specificato')) {
+    const iban = (document.getElementById('dash-banner-iban')?.textContent || document.getElementById('dash-home-iban')?.textContent || '').trim();
+    if (iban && !iban.includes('In attesa') && !iban.includes('Non specificato') && !iban.includes('N/D')) {
         navigator.clipboard.writeText(iban).then(() => {
             showToast('IBAN copiato negli appunti!', 'success');
         }).catch(() => {
