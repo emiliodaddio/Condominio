@@ -99,7 +99,7 @@ app.get('/api/health-email', (req, res) => {
     });
 });
 
-app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, checkCondoLicenseWrite, async (req, res) => {
+app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     try {
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'CondoTransparent';
@@ -2322,8 +2322,9 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
 }
 
 app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, res) => {
+    const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
     const fetchList = (isRetry = false) => {
-        const sql = `
+        let sql = `
             SELECT p.*,
                    (SELECT id FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_id,
                    (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_identificativo,
@@ -2336,9 +2337,25 @@ app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, r
                    (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_asc,
                    (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_dati_catastali
             FROM anagrafica_persone p
-            WHERE p.condominio_id = ?
-            ORDER BY p.cognome ASC, p.nome ASC`;
-        db.all(sql, [req.condominio_id], (err, rows) => {
+            WHERE p.condominio_id = ?`;
+        const params = [req.condominio_id];
+
+        if (!isAdminUser) {
+            // Isolamento rigoroso per condomino (GDPR)
+            sql += ` AND (
+                (p.email IS NOT NULL AND LOWER(TRIM(p.email)) = LOWER(TRIM(?)))
+                OR p.id IN (
+                    SELECT proprietario_id FROM unita_immobiliari WHERE user_id = ? AND condominio_id = ? AND proprietario_id IS NOT NULL
+                    UNION
+                    SELECT conduttore_id FROM unita_immobiliari WHERE user_id = ? AND condominio_id = ? AND conduttore_id IS NOT NULL
+                )
+            )`;
+            params.push(req.user.email || '', req.user.id, req.condominio_id, req.user.id, req.condominio_id);
+        }
+
+        sql += ` ORDER BY p.cognome ASC, p.nome ASC`;
+
+        db.all(sql, params, (err, rows) => {
             if (err) {
                 if (!isRetry && (err.code === 'ER_BAD_FIELD_ERROR' || (err.message && err.message.includes('Unknown column')))) {
                     console.log('🔄 Rilevate colonne mancanti in GET anagrafica, esecuzione migrazione fail-safe...');
@@ -2488,7 +2505,8 @@ app.post('/api/anagrafica-persone/:id/send-invite', authenticateToken, requireCo
 });
 
 app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
-    db.all(`SELECT u.*, 
+    const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
+    let sql = `SELECT u.*, 
             us.nome as condomino_nome, us.email as condomino_email,
             p.nome as prop_nome, p.cognome as prop_cognome,
             c.nome as cond_nome, c.cognome as cond_cognome
@@ -2496,8 +2514,19 @@ app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
             LEFT JOIN users us ON u.user_id = us.id 
             LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id 
             LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
-            WHERE u.condominio_id = ? AND (p.id IS NOT NULL OR c.id IS NOT NULL)
-            ORDER BY u.identificativo ASC`, [req.condominio_id], (err, rows) => {
+            WHERE u.condominio_id = ? AND (p.id IS NOT NULL OR c.id IS NOT NULL)`;
+    const params = [req.condominio_id];
+
+    if (!isAdminUser) {
+        // Isolamento rigoroso: solo le unità del condomino autenticato
+        sql += ` AND (u.user_id = ? OR (p.email IS NOT NULL AND LOWER(TRIM(p.email)) = LOWER(TRIM(?))) OR (c.email IS NOT NULL AND LOWER(TRIM(c.email)) = LOWER(TRIM(?))))`;
+        params.push(req.user.id, req.user.email || '', req.user.email || '');
+    }
+
+    sql += ` ORDER BY u.identificativo ASC`;
+
+    db.all(sql, params, (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: err.message });
         res.json({ success: true, data: rows || [] });
     });
 });
@@ -2553,6 +2582,14 @@ app.get('/api/condominios', authenticateToken, (req, res) => {
 
 // Quote e Receivables (Crediti) con ANONIMIZZAZIONE, SALDO PARZIALE e allineamento rigoroso ad Anagrafica Condominio
 app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => {
+    const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
+    if (!isAdminUser) {
+        return res.status(403).json({
+            success: false,
+            message: 'Accesso negato: l\'elenco analitico dei debitori è riservato esclusivamente all\'amministratore a tutela della privacy dei condòmini (GDPR).'
+        });
+    }
+
     realignDatabaseToAnagrafica(req.condominio_id, () => {
         db.all(`SELECT q.*, 
                        p.nome as persona_nome, p.cognome as persona_cognome,
@@ -2566,44 +2603,29 @@ app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => 
                  ORDER BY q.due_date ASC, q.id DESC`, 
         [req.condominio_id], (err, rows) => {
             if (err) return res.status(500).json({success: false, message: err.message});
-            if (req.role_in_condominio === 'admin') {
-                res.json({ success: true, data: rows.map(r => {
-                    const total = parseFloat(r.amount) || 0;
-                    const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
-                    const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
-                    const debName = `${r.persona_cognome || ''} ${r.persona_nome || ''}`.trim();
-                    const locParts = [];
-                    if (r.unita_scala) locParts.push(`Sc. ${r.unita_scala}`);
-                    if (r.unita_piano) locParts.push(`P. ${r.unita_piano}`);
-                    if (r.unita_interno) locParts.push(`Int. ${r.unita_interno}`);
-                    const unitaDisplay = locParts.length > 0 ? locParts.join(' | ') : (r.unita || '-');
-                    return {
-                        ...r,
-                        debitore: debName,
-                        unita: unitaDisplay,
-                        titolo_quota: r.title,
-                        importo_totale: total,
-                        importo_versato: paid,
-                        importo: residual,
-                        residual: residual,
-                        scadenza: r.due_date,
-                        status: r.status
-                    };
-                }) });
-            } else {
-                // Anonimizzazione
-                let i = 1;
-                const data = rows.map(r => {
-                    const total = parseFloat(r.amount) || 0;
-                    const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
-                    const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
-                    return {
-                        id: r.id, is_my_quote: false, type: r.type, importo: residual, importo_totale: total, importo_versato: paid, residual: residual, scadenza: r.due_date, titolo_quota: r.title, status: r.status,
-                        debitore: 'Condòmino #' + (i++), unita: 'Unità Riservata'
-                    };
-                });
-                res.json({ success: true, data });
-            }
+            res.json({ success: true, data: (rows || []).map(r => {
+                const total = parseFloat(r.amount) || 0;
+                const paid = (r.paid_amount !== undefined && r.paid_amount !== null) ? parseFloat(r.paid_amount) : 0;
+                const residual = Math.max(0, Math.round((total - paid) * 100) / 100);
+                const debName = `${r.persona_cognome || ''} ${r.persona_nome || ''}`.trim();
+                const locParts = [];
+                if (r.unita_scala) locParts.push(`Sc. ${r.unita_scala}`);
+                if (r.unita_piano) locParts.push(`P. ${r.unita_piano}`);
+                if (r.unita_interno) locParts.push(`Int. ${r.unita_interno}`);
+                const unitaDisplay = locParts.length > 0 ? locParts.join(' | ') : (r.unita || '-');
+                return {
+                    ...r,
+                    debitore: debName,
+                    unita: unitaDisplay,
+                    titolo_quota: r.title,
+                    importo_totale: total,
+                    importo_versato: paid,
+                    importo: residual,
+                    residual: residual,
+                    scadenza: r.due_date,
+                    status: r.status
+                };
+            }) });
         });
     });
 });
@@ -2611,7 +2633,9 @@ app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => 
 
 app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
     realignDatabaseToAnagrafica(req.condominio_id, () => {
-        db.all(`SELECT q.*, 
+        const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
+        
+        let query = `SELECT q.*, 
                        p.nome as persona_nome, p.cognome as persona_cognome,
                        (SELECT identificativo FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as condomino_unita,
                        (SELECT scala FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_scala,
@@ -2619,11 +2643,29 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
                        (SELECT interno FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_interno
                  FROM quotes q 
                  INNER JOIN anagrafica_persone p ON q.persona_id = p.id AND p.condominio_id = q.condominio_id
-                 WHERE q.condominio_id = ? ORDER BY q.due_date ASC, q.id DESC`, 
-        [req.condominio_id], (err, rows) => {
+                 WHERE q.condominio_id = ?`;
+        const params = [req.condominio_id];
+
+        if (!isAdminUser) {
+            // Isolamento rigoroso per condomino (GDPR): visualizza esclusivamente le proprie quote personali
+            query += ` AND (
+                (p.email IS NOT NULL AND LOWER(TRIM(p.email)) = LOWER(TRIM(?)))
+                OR q.unita_id IN (SELECT id FROM unita_immobiliari WHERE user_id = ? AND condominio_id = ?)
+                OR q.persona_id IN (
+                    SELECT proprietario_id FROM unita_immobiliari WHERE user_id = ? AND condominio_id = ? AND proprietario_id IS NOT NULL
+                    UNION
+                    SELECT conduttore_id FROM unita_immobiliari WHERE user_id = ? AND condominio_id = ? AND conduttore_id IS NOT NULL
+                )
+            )`;
+            params.push(req.user.email || '', req.user.id, req.condominio_id, req.user.id, req.condominio_id, req.user.id, req.condominio_id);
+        }
+
+        query += ` ORDER BY q.due_date ASC, q.id DESC`;
+
+        db.all(query, params, (err, rows) => {
             if (err) return res.status(500).json({success: false, message: err.message});
             // Remap to match what frontend expects
-            const mapped = rows.map(r => {
+            const mapped = (rows || []).map(r => {
                 const total = parseFloat(r.amount) || 0;
                 const paid = (r.paid_amount !== undefined && r.paid_amount !== null)
                     ? parseFloat(r.paid_amount)
@@ -3245,6 +3287,84 @@ app.get('/api/accounting-summary', authenticateToken, requireCondominio, (req, r
                 totalSuppliersDebt: parseFloat(rowSuppliers && rowSuppliers.totalSuppliersDebt) || 0
             };
             res.json({ success: true, data });
+        });
+    });
+});
+
+// Endpoint di sintesi finanziaria aggregata a tutela della privacy (GDPR Compliant)
+// Fornisce SOLO funzioni aggregate SUM/COUNT per card e indicatori senza identificativi individuali
+app.get('/api/condominio/financial-health', authenticateToken, requireCondominio, (req, res) => {
+    const condoId = req.condominio_id;
+    const todaySql = (db && db.type === 'sqlite') ? "date('now')" : "CURDATE()";
+
+    const qQuotes = `
+        SELECT 
+            COALESCE(SUM(amount), 0) AS totale_emesso,
+            COALESCE(SUM(COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totale_incassato,
+            COALESCE(SUM(CASE WHEN due_date < ${todaySql} AND (amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)) > 0 
+                THEN (amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)) ELSE 0 END), 0) AS totale_insoluti_scaduti,
+            COALESCE(SUM(amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totale_quote_da_riscuotere
+        FROM quotes 
+        WHERE condominio_id = ?
+    `;
+
+    const qSuppliers = `
+        SELECT 
+            COALESCE(SUM(COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totale_fornitori_pagati,
+            COALESCE(SUM(amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)), 0) AS totale_fornitori_debito,
+            COALESCE(SUM(CASE WHEN payment_date < ${todaySql} AND (amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)) > 0 
+                THEN (amount - COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0 END)) ELSE 0 END), 0) AS totale_fornitori_scaduti
+        FROM supplier_payments 
+        WHERE condominio_id = ?
+    `;
+
+    db.get(qQuotes, [condoId], (err1, qRow) => {
+        if (err1) return res.status(500).json({ success: false, message: err1.message });
+        db.get(qSuppliers, [condoId], (err2, sRow) => {
+            if (err2) return res.status(500).json({ success: false, message: err2.message });
+
+            const totEmesso = parseFloat(qRow && qRow.totale_emesso) || 0;
+            const totIncassato = parseFloat(qRow && qRow.totale_incassato) || 0;
+            const totInsolutiScaduti = parseFloat(qRow && qRow.totale_insoluti_scaduti) || 0;
+            const totDaRiscuotere = parseFloat(qRow && qRow.totale_quote_da_riscuotere) || 0;
+
+            const fornitoriPagati = parseFloat(sRow && sRow.totale_fornitori_pagati) || 0;
+            const fornitoriDebito = parseFloat(sRow && sRow.totale_fornitori_debito) || 0;
+            const fornitoriScaduti = parseFloat(sRow && sRow.totale_fornitori_scaduti) || 0;
+
+            const percIncasso = totEmesso > 0 ? Math.min(100, Math.round((totIncassato / totEmesso) * 100)) : 100;
+
+            let cassaStatus = 'ottimo';
+            let cassaMessage = 'Gestione finanziaria in regola: i fondi incassati coprono le uscite programmate.';
+            if (fornitoriDebito > 0 && totInsolutiScaduti > 0) {
+                if (fornitoriScaduti > 0) {
+                    cassaStatus = 'attenzione';
+                    cassaMessage = 'Attenzione: presenti fatture fornitori in attesa di liquidazione a causa di quote di gestione non ancora incassate.';
+                } else {
+                    cassaStatus = 'regolare';
+                    cassaMessage = 'Fatture fornitori nei termini ordinari di pagamento.';
+                }
+            } else if (totInsolutiScaduti > 0) {
+                cassaStatus = 'buono';
+                cassaMessage = 'Fornitori in regola. Presenza di quote di gestione con scadenza superata.';
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    totale_emesso: totEmesso,
+                    totale_incassato: totIncassato,
+                    percentuale_incasso: percIncasso,
+                    totale_insoluti_scaduti: totInsolutiScaduti,
+                    totale_quote_da_riscuotere: totDaRiscuotere,
+                    fornitori_pagati: fornitoriPagati,
+                    fornitori_debito: fornitoriDebito,
+                    fornitori_scaduti: fornitoriScaduti,
+                    cassa_status: cassaStatus,
+                    cassa_message: cassaMessage,
+                    privacy_note: 'Dato aggregato a livello di gestione condominiale ai sensi del Regolamento UE 2016/679 (GDPR). Nessun dato personale o identificativo di unità esposto.'
+                }
+            });
         });
     });
 });
@@ -5431,3 +5551,5 @@ app.listen(PORT, () => {
     console.log(`🚀 Server in ascolto su: http://localhost:${PORT}`);
     console.log(`====================================================`);
 });
+
+module.exports = app;

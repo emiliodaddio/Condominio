@@ -1,3 +1,22 @@
+# Obiettivi Sessione (Privacy by Design, GDPR & Segregazione Dati Condòmini) - 20 Ottobre 2026 ✅
+
+- [x] **Filtro di Isolamento Rigoroso per Singolo Condòmino (Backend Zero-Trust)**:
+  - In [`server.js`](file:///C:/Users/UTENTE/Desktop/Gestione/server.js): endpoint `GET /api/quotes` filtrato dinamicamente. Se l'utente autenticato è un condòmino, visualizza esclusivamente le proprie quote e scadenze personali (tramite binding su `user_id`, email anagrafica e unità immobiliare).
+  - Isolamento esteso su `GET /api/anagrafica-persone` e `GET /api/unita`: il condòmino riceve solo il proprio profilo e le proprie unità, prevenendo l'accesso ai dati anagrafici, fiscali e millesimali degli altri residenti.
+  - Chiuso l'endpoint di esportazione massiva Excel `GET /api/export/accounting-excel` con middleware `isAdmin`.
+- [x] **Blocco Categorico Drill-Down Debitori (Anti-Gogna Condominiale GDPR)**:
+  - L'endpoint `GET /api/receivables` è riservato in via esclusiva all'amministratore. Per qualsiasi condòmino restituisce tassativamente errore `403 Forbidden` (`Accesso negato: l'elenco analitico dei debitori è riservato all'amministratore a tutela della privacy dei condòmini (GDPR)`).
+  - Nel frontend [`public/index.html`](file:///C:/Users/UTENTE/Desktop/Gestione/public/index.html): la sezione tabellare dei crediti/morosità è marcata come `admin-only hidden`. Nessun elenco o pseudonimo è mostrato ai condòmini.
+- [x] **Card di Riepilogo Finanziario Aggregato & Salute del Fabbricato**:
+  - Creato nuovo endpoint sicuro `GET /api/condominio/financial-health` basato esclusivamente su funzioni aggregate SQL (`SUM()`, `COUNT()`) senza raggruppamento per unità o nominativo.
+  - Nuova card responsive in [`public/index.html`](file:///C:/Users/UTENTE/Desktop/Gestione/public/index.html) e [`public/app_v4.js`](file:///C:/Users/UTENTE/Desktop/Gestione/public/app_v4.js) con:
+    - **Barra di avanzamento (Progress Bar)** con percentuale incassi esercizio (colori semaforici smeraldo/ambra/rosa).
+    - **Totale insoluti condominiali complessivo di gestione** (nessun drill-down, nessun dettaglio nominativo).
+    - **Stato di Copertura Fornitori & Cassa** (segnalazione visiva trasparente se le quote incassate coprono gli impegni verso fornitori).
+    - **Badge e Footer di Conformità GDPR (Art. 25 Reg. UE 2016/679)**.
+- [x] **Collaudo Automatizzato Suite Privacy**:
+  - Creato ed eseguito script di test end-to-end [`test_privacy_gdpr.js`](file:///C:/Users/UTENTE/Desktop/Gestione/test_privacy_gdpr.js): superati con esito positivo al 100% tutti i test di isolamento quote, blocco 403 su lista debitori, aggregazione card e protezione anagrafica.
+
 # Obiettivi Sessione (Sistema Email Transazionale, Autenticazione Dominio & Sicurezza) - 20 Ottobre 2026 ✅
 
 - [x] **Configurazione Ufficiale Dominio e Casella Aruba**:

@@ -284,7 +284,7 @@ function setupUIForRole() {
         bannerIcon.className = 'w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs';
         bannerIcon.innerHTML = '<i class="fa-solid fa-lock"></i>';
         bannerTitle.textContent = 'Area Riservata Condòmino';
-        bannerDesc.textContent = 'Visualizzazione trasparente e protetta delle tue quote e delle scadenze condominiali.';
+        bannerDesc.textContent = 'Trasparenza a tutela della privacy (GDPR): visualizzi le tue quote personali e lo stato di salute finanziario aggregato del condominio.';
 
         document.getElementById('quotes-table-title').innerHTML = '<i class="fa-solid fa-wallet text-emerald-600"></i> Le Mie Quote Personali';
         document.getElementById('quotes-table-subtitle').textContent = `Quote ordinarie e straordinarie intestate a ${user.nome} (${user.unita})`;
@@ -376,19 +376,27 @@ function switchTab(tabId) {
 async function loadAccountingData() {
     loadSupplierRegistry();
     try {
-        const [sumRes, quotesRes, recRes, supRes] = await Promise.all([
+        const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+
+        // 1. Fetch concorrente: l'elenco analitico debitori viene chiamato SOLO dall'amministratore
+        // Per tutti gli utenti viene invece interrogato l'endpoint aggregato di sintesi finanziaria
+        const fetches = [
             fetch('/api/accounting-summary', { headers: getAuthHeaders() }),
             fetch('/api/quotes', { headers: getAuthHeaders() }),
-            fetch('/api/receivables', { headers: getAuthHeaders() }),
-            fetch('/api/supplier-payments', { headers: getAuthHeaders() })
-        ]);
+            isAdmin ? fetch('/api/receivables', { headers: getAuthHeaders() }) : Promise.resolve({ ok: true, json: async () => ({ success: false, data: [] }) }),
+            fetch('/api/supplier-payments', { headers: getAuthHeaders() }),
+            fetch('/api/condominio/financial-health', { headers: getAuthHeaders() })
+        ];
+
+        const [sumRes, quotesRes, recRes, supRes, healthRes] = await Promise.all(fetches);
 
         const sumData = await sumRes.json();
         const quotesData = await quotesRes.json();
         const recData = await recRes.json();
         const supData = await supRes.json();
+        const healthData = await healthRes.json();
 
-        // 1. KPI Cards: calcola con fallback in tempo reale basato sulle quote e fatture caricate
+        // 2. Calcolo totale quote caricate (per il condomino sono esclusivamente le sue personali)
         let calcReceived = 0;
         let calcReceivables = 0;
         if (quotesData.success && Array.isArray(quotesData.data)) {
@@ -404,7 +412,7 @@ async function loadAccountingData() {
                 const paid = parseFloat(q.paid_amount) || 0;
                 return acc + Math.max(0, Math.round((amt - paid) * 100) / 100);
             }, 0);
-        } else if (recData.success && Array.isArray(recData.data)) {
+        } else if (isAdmin && recData.success && Array.isArray(recData.data)) {
             calcReceivables = recData.data.reduce((acc, r) => acc + (parseFloat(r.importo || r.amount) || 0), 0);
         }
 
@@ -425,40 +433,124 @@ async function loadAccountingData() {
             }, 0);
         }
 
-        const totReceived = (sumData.success && sumData.data && sumData.data.totalReceived !== undefined)
-            ? Number(sumData.data.totalReceived)
-            : calcReceived;
-
-        const totReceivables = (sumData.success && sumData.data && sumData.data.totalReceivables !== undefined)
-            ? Number(sumData.data.totalReceivables)
-            : calcReceivables;
-
+        // Totali globali condominio
+        const totCondoReceived = (sumData.success && sumData.data && sumData.data.totalReceived !== undefined)
+            ? Number(sumData.data.totalReceived) : calcReceived;
+        const totCondoReceivables = (sumData.success && sumData.data && sumData.data.totalReceivables !== undefined)
+            ? Number(sumData.data.totalReceivables) : calcReceivables;
         const totSuppPaid = (sumData.success && sumData.data && sumData.data.totalSuppliersPaid !== undefined)
-            ? Number(sumData.data.totalSuppliersPaid)
-            : calcSuppPaid;
-
+            ? Number(sumData.data.totalSuppliersPaid) : calcSuppPaid;
         const totSuppDebt = (sumData.success && sumData.data && sumData.data.totalSuppliersDebt !== undefined)
-            ? Number(sumData.data.totalSuppliersDebt)
-            : calcSuppDebt;
+            ? Number(sumData.data.totalSuppliersDebt) : calcSuppDebt;
 
-        document.getElementById('kpi-total-received').textContent = formatCurrency(totReceived);
-        document.getElementById('kpi-total-receivables').textContent = formatCurrency(totReceivables);
+        // Aggiorna KPI in testa alla pagina
+        const lblRec = document.getElementById('kpi-label-received');
+        const subRec = document.getElementById('kpi-sub-received');
+        const lblReceivables = document.getElementById('kpi-label-receivables');
+        const subReceivables = document.getElementById('kpi-sub-receivables');
+
+        if (isAdmin) {
+            if (lblRec) lblRec.textContent = 'Quote Incassate (Tutte)';
+            if (subRec) subRec.textContent = 'Quote saldate fabbricato';
+            if (lblReceivables) lblReceivables.textContent = 'Crediti da Riscuotere';
+            if (subReceivables) subReceivables.textContent = 'Quote in sospeso fabbricato';
+            document.getElementById('kpi-total-received').textContent = formatCurrency(totCondoReceived);
+            document.getElementById('kpi-total-receivables').textContent = formatCurrency(totCondoReceivables);
+        } else {
+            if (lblRec) lblRec.textContent = 'Le Mie Quote Versate';
+            if (subRec) subRec.textContent = 'I tuoi versamenti registrati';
+            if (lblReceivables) lblReceivables.textContent = 'Il Mio Saldo da Versare';
+            if (subReceivables) subReceivables.textContent = 'Le tue quote in sospeso';
+            document.getElementById('kpi-total-received').textContent = formatCurrency(calcReceived);
+            document.getElementById('kpi-total-receivables').textContent = formatCurrency(calcReceivables);
+        }
+
         document.getElementById('kpi-suppliers-paid').textContent = formatCurrency(totSuppPaid);
         document.getElementById('kpi-suppliers-debt').textContent = formatCurrency(totSuppDebt);
 
-        // 2. Tabella Quote (filtrata automaticamente dal backend in base al ruolo)
+        // 3. Popolamento Sezione Salute Finanziaria Aggregata (Privacy-First GDPR)
+        if (healthData.success && healthData.data) {
+            const h = healthData.data;
+            const perc = Math.max(0, Math.min(100, Math.round(h.percentuale_incasso || 0)));
+            
+            const elPerc = document.getElementById('fh-perc-incasso');
+            const elBar = document.getElementById('fh-progress-bar');
+            const elTotInc = document.getElementById('fh-tot-incassato');
+            const elTotEm = document.getElementById('fh-tot-emesso');
+            const elTotIns = document.getElementById('fh-tot-insoluti');
+            const elBadgeInc = document.getElementById('fh-incasso-badge');
+
+            if (elPerc) elPerc.textContent = perc + '%';
+            if (elBar) {
+                elBar.style.width = perc + '%';
+                if (perc >= 85) {
+                    elBar.className = 'h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-700';
+                } else if (perc >= 70) {
+                    elBar.className = 'h-full bg-gradient-to-r from-amber-500 to-yellow-500 rounded-full transition-all duration-700';
+                } else {
+                    elBar.className = 'h-full bg-gradient-to-r from-rose-500 to-red-500 rounded-full transition-all duration-700';
+                }
+            }
+            if (elTotInc) elTotInc.textContent = formatCurrency(h.totale_incassato);
+            if (elTotEm) elTotEm.textContent = formatCurrency(h.totale_emesso);
+            if (elTotIns) elTotIns.textContent = formatCurrency(h.totale_insoluti_scaduti);
+
+            if (elBadgeInc) {
+                if (perc >= 95) {
+                    elBadgeInc.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200';
+                    elBadgeInc.textContent = 'Ottimo (95%+)';
+                } else if (perc >= 80) {
+                    elBadgeInc.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200';
+                    elBadgeInc.textContent = 'Regolare';
+                } else {
+                    elBadgeInc.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200';
+                    elBadgeInc.textContent = 'In Riscossione';
+                }
+            }
+
+            // Box Fornitori & Cassa
+            const elTitleForn = document.getElementById('fh-fornitori-status-title');
+            const elDescForn = document.getElementById('fh-fornitori-status-desc');
+            const elPagForn = document.getElementById('fh-fornitori-pagati');
+            const elDebForn = document.getElementById('fh-fornitori-debito');
+            const elBadgeCassa = document.getElementById('fh-cassa-badge');
+
+            if (elTitleForn) {
+                if (h.cassa_status === 'ottimo') {
+                    elTitleForn.innerHTML = '<span class="text-emerald-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Gestione in Regola</span>';
+                } else if (h.cassa_status === 'buono' || h.cassa_status === 'regolare') {
+                    elTitleForn.innerHTML = '<span class="text-teal-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-info"></i> Fornitori nei Termini</span>';
+                } else {
+                    elTitleForn.innerHTML = '<span class="text-amber-600 flex items-center gap-1.5"><i class="fa-solid fa-triangle-exclamation"></i> Quote Mancanti per Copertura</span>';
+                }
+            }
+            if (elDescForn) elDescForn.textContent = h.cassa_message || '';
+            if (elPagForn) elPagForn.textContent = formatCurrency(h.fornitori_pagati);
+            if (elDebForn) elDebForn.textContent = formatCurrency(h.fornitori_debito);
+            if (elBadgeCassa) {
+                if (h.fornitori_debito === 0) {
+                    elBadgeCassa.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200';
+                    elBadgeCassa.textContent = '0 Fatture Pendenti';
+                } else {
+                    elBadgeCassa.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200';
+                    elBadgeCassa.textContent = `${formatCurrency(h.fornitori_debito)} da Liquidare`;
+                }
+            }
+        }
+
+        // 4. Tabella Quote (filtrata automaticamente dal backend in base al ruolo)
         if (quotesData.success) {
             state.quotes = quotesData.data;
             renderQuotesTable();
         }
 
-        // 3. Tabella Crediti Condominiali (con nomi oscurati se condomino)
-        if (recData.success) {
+        // 5. Tabella Crediti Condominiali: SOLO Amministratore
+        if (isAdmin && recData.success) {
             state.receivables = recData.data;
             renderReceivablesTable(recData);
         }
 
-        // 4. Tabella Fornitori (Contabilità Generale)
+        // 6. Tabella Fornitori (Contabilità Generale)
         if (supData.success) {
             state.suppliers = supData.data;
             renderSuppliersTable();
@@ -865,6 +957,9 @@ function updateReceivablesFilterButtons() {
 }
 
 function renderReceivablesTable(recData) {
+    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+    if (!isAdmin) return;
+
     if (recData && recData.data) {
         state.receivables = recData.data;
     } else if (Array.isArray(recData)) {
@@ -875,7 +970,6 @@ function renderReceivablesTable(recData) {
     const tfoot = document.getElementById('receivables-table-footer');
     const header = document.getElementById('receivables-table-header');
     const badgeContainer = document.getElementById('privacy-badge-container');
-    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
 
     if (!tbody) return;
 
