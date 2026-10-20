@@ -47,7 +47,7 @@ function initEmailTransporter() {
         return;
     }
 
-    // 3. Brevo, AWS SES o SMTP generico
+    // 3. Brevo, AWS SES, Aruba o SMTP generico (con timeout anti-hang)
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
         transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
@@ -56,7 +56,10 @@ function initEmailTransporter() {
             auth: {
                 user: process.env.SMTP_USER,
                 pass: process.env.SMTP_PASS
-            }
+            },
+            connectionTimeout: 8000,
+            greetingTimeout: 8000,
+            socketTimeout: 10000
         });
         console.log(`📧 Email Service: Collegato con successo a SMTP (${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 587}).`);
         return;
@@ -196,10 +199,84 @@ function buildEmailHtml({ headline, introText, ctaText, ctaUrl, otpCode, extraNo
     `;
 }
 
+async function sendViaBrevoApi(mailOptions) {
+    const fromAddress = process.env.MAIL_FROM || 'CondoTransparent <noreply@condominiotrasparente.com>';
+    let senderName = 'CondoTransparent';
+    let senderEmail = 'noreply@condominiotrasparente.com';
+    const match = fromAddress.match(/"?([^"<]+)"?\s*<([^>]+)>/);
+    if (match) {
+        senderName = match[1].trim();
+        senderEmail = match[2].trim();
+    } else if (fromAddress.includes('@')) {
+        senderEmail = fromAddress.trim();
+    }
+
+    const payload = {
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: mailOptions.to }],
+        subject: mailOptions.subject,
+        htmlContent: mailOptions.html,
+        textContent: mailOptions.text
+    };
+
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+            'api-key': process.env.BREVO_API_KEY,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.message || `Brevo API HTTP ${res.status}`);
+    }
+    console.log('✅ Email inviata con successo via Brevo REST API (HTTPS).');
+    return { info: data, previewUrl: null };
+}
+
+async function sendViaResendApi(mailOptions) {
+    const fromAddress = process.env.MAIL_FROM || 'CondoTransparent <noreply@condominiotrasparente.com>';
+    const payload = {
+        from: fromAddress,
+        to: [mailOptions.to],
+        subject: mailOptions.subject,
+        html: mailOptions.html,
+        text: mailOptions.text
+    };
+
+    const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.message || `Resend API HTTP ${res.status}`);
+    }
+    console.log('✅ Email inviata con successo via Resend REST API (HTTPS).');
+    return { info: data, previewUrl: null };
+}
+
 /**
- * Invia email tramite il transporter configurato (con salvataggio del preview link se Ethereal)
+ * Invia email tramite il provider configurato (API REST o SMTP con timeout)
  */
 async function sendMailWrapper(mailOptions) {
+    // 1. Invio tramite Brevo REST API (HTTPS Porta 443 - compatibile con Render Cloud Free)
+    if (process.env.BREVO_API_KEY) {
+        return sendViaBrevoApi(mailOptions);
+    }
+
+    // 2. Invio tramite Resend REST API (HTTPS Porta 443 - compatibile con Render Cloud Free)
+    if (process.env.RESEND_API_KEY) {
+        return sendViaResendApi(mailOptions);
+    }
+
     if (!transporter) {
         console.warn('⚠️ Transporter non ancora pronto, invio rimandato di 500ms...');
         await new Promise(r => setTimeout(r, 500));
