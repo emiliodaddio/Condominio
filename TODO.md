@@ -14,6 +14,10 @@
     - **Totale insoluti condominiali complessivo di gestione** (nessun drill-down, nessun dettaglio nominativo).
     - **Stato di Copertura Fornitori & Cassa** (segnalazione visiva trasparente se le quote incassate coprono gli impegni verso fornitori).
     - **Badge e Footer di Conformità GDPR (Art. 25 Reg. UE 2016/679)**.
+- [x] **Copywriting Istituzionale, Matematico & Asettico (Zero-Colpa & Diritto Condominiale)**:
+  - Eliminata qualsiasi terminologia accusatoria o sanzionatoria (*debiti, morosi, insoluti, colpevoli, ritardi*).
+  - Introdotto lessico contabile di tesoreria: *Quote Acquisite a Bilancio*, *Residui Attivi di Ripartizione (Quote in corso di riscossione)*, *Uscite Deliberate & Impegni in Erogazione*, *Equilibrio Finanziario Consolidato*.
+  - Aggiunto modale di trasparenza contabile `modal-tesoreria-info` consultabile con pulsante *"Prospetto Tesoreria"*.
 - [x] **Collaudo Automatizzato Suite Privacy**:
   - Creato ed eseguito script di test end-to-end [`test_privacy_gdpr.js`](file:///C:/Users/UTENTE/Desktop/Gestione/test_privacy_gdpr.js): superati con esito positivo al 100% tutti i test di isolamento quote, blocco 403 su lista debitori, aggregazione card e protezione anagrafica.
 

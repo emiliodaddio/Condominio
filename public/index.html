@@ -1356,7 +1356,7 @@
                 </div>
             </div>
 
-            <!-- SEZIONE: SALUTE FINANZIARIA & TRASPARENZA AGGREGATA (GDPR COMPLIANT) -->
+            <!-- SEZIONE: QUADRO FINANZIARIO & RICONCILIAZIONE CASSA (GDPR COMPLIANT) -->
             <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                     <div>
@@ -1364,29 +1364,35 @@
                             <span class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold shadow-2xs">
                                 <i class="fa-solid fa-chart-pie"></i>
                             </span>
-                            <h2 class="text-base font-bold text-slate-900">Stato di Salute Finanziaria del Condominio</h2>
+                            <h2 class="text-base font-bold text-slate-900">Quadro Finanziario di Gestione & Riconciliazione Cassa</h2>
                         </div>
-                        <p class="text-xs text-slate-500 mt-1">Riepilogo delle spese comuni e della gestione di cassa in formato aggregato</p>
+                        <p class="text-xs text-slate-500 mt-1">Stato aggregato delle entrate e delle uscite deliberate per l'esercizio in corso.</p>
                     </div>
-                    <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200/80 text-[11px] font-semibold text-slate-600">
-                        <i class="fa-solid fa-shield-halved text-emerald-600"></i>
-                        <span>GDPR Tutela Riservatezza</span>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="openTesoreriaInfoModal()" class="px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-[11px] font-semibold text-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-2xs">
+                            <i class="fa-solid fa-circle-info text-blue-600"></i>
+                            <span>Prospetto Tesoreria</span>
+                        </button>
+                        <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200/80 text-[11px] font-semibold text-slate-600">
+                            <i class="fa-solid fa-shield-halved text-emerald-600"></i>
+                            <span>GDPR Tutela Riservatezza</span>
+                        </div>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- Card 1: Avanzamento Incasso Quote di Gestione -->
+                    <!-- Card 1: Quote Acquisite a Bilancio & Residui Attivi -->
                     <div class="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/60 border border-slate-200/80 flex flex-col justify-between space-y-4">
                         <div class="flex items-start justify-between">
                             <div>
-                                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Riscossione Quote Esercizio</span>
+                                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Quote Acquisite a Bilancio</span>
                                 <h3 class="text-2xl font-black text-slate-900 mt-0.5 tracking-tight">
                                     <span id="fh-perc-incasso">0%</span>
-                                    <span class="text-xs font-semibold text-slate-500 font-normal ml-1">incassato</span>
+                                    <span class="text-xs font-semibold text-slate-500 font-normal ml-1">del piano deliberato</span>
                                 </h3>
                             </div>
                             <span id="fh-incasso-badge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                In Corso
+                                Avanzamento Regolare
                             </span>
                         </div>
 
@@ -1396,26 +1402,26 @@
                                 <div id="fh-progress-bar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-700" style="width: 0%"></div>
                             </div>
                             <div class="flex justify-between text-[11px] text-slate-500 font-medium">
-                                <span>Incassato: <b id="fh-tot-incassato" class="text-slate-700">€ 0,00</b></span>
-                                <span>Totale Emesso: <b id="fh-tot-emesso" class="text-slate-700">€ 0,00</b></span>
+                                <span>Quote Acquisite: <b id="fh-tot-incassato" class="text-slate-700">€ 0,00</b></span>
+                                <span>Piano Deliberato: <b id="fh-tot-emesso" class="text-slate-700">€ 0,00</b></span>
                             </div>
                         </div>
 
-                        <!-- Indicatore Insoluti Aggregati (NO singoli nomi, NO interni) -->
+                        <!-- Indicatore Residui Attivi di Ripartizione (NO colpevoli, NO debitori) -->
                         <div class="pt-3 border-t border-slate-200/70 flex items-center justify-between text-xs">
                             <span class="text-slate-600 font-medium flex items-center gap-1.5">
-                                <i class="fa-solid fa-circle-exclamation text-amber-500"></i>
-                                Totale insoluti condominiali a bilancio:
+                                <i class="fa-solid fa-hourglass-half text-blue-500"></i>
+                                Residui attivi di ripartizione (Quote in corso di riscossione):
                             </span>
-                            <span id="fh-tot-insoluti" class="font-extrabold text-amber-700 font-mono text-sm">€ 0,00</span>
+                            <span id="fh-tot-insoluti" class="font-extrabold text-slate-800 font-mono text-sm">€ 0,00</span>
                         </div>
                     </div>
 
-                    <!-- Card 2: Copertura Uscite Fornitori & Cassa -->
+                    <!-- Card 2: Uscite Deliberate & Impegni di Spesa -->
                     <div class="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/60 border border-slate-200/80 flex flex-col justify-between space-y-4">
                         <div class="flex items-start justify-between">
                             <div>
-                                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Copertura Spese & Fornitori</span>
+                                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Uscite Deliberate & Impegni di Spesa</span>
                                 <h3 id="fh-fornitori-status-title" class="text-lg font-black text-slate-900 mt-0.5">
                                     Verifica in corso...
                                 </h3>
@@ -1426,28 +1432,28 @@
                         </div>
 
                         <p id="fh-fornitori-status-desc" class="text-xs text-slate-600 leading-relaxed">
-                            Caricamento indicatori di cassa e liquidazione fornitori...
+                            Caricamento indicatori di tesoreria e liquidazione uscite...
                         </p>
 
-                        <!-- Dati aggregati Fornitori -->
+                        <!-- Dati aggregati Fornitori / Uscite -->
                         <div class="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200/70 text-xs">
                             <div class="p-2.5 rounded-xl bg-white border border-slate-200/60 shadow-2xs">
-                                <span class="text-[10px] uppercase font-bold text-slate-400 block">Fatture Saldate</span>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block">Partite Erogate</span>
                                 <span id="fh-fornitori-pagati" class="font-extrabold text-emerald-600 font-mono text-sm">€ 0,00</span>
                             </div>
                             <div class="p-2.5 rounded-xl bg-white border border-slate-200/60 shadow-2xs">
-                                <span class="text-[10px] uppercase font-bold text-slate-400 block">Fatture da Liquidare</span>
-                                <span id="fh-fornitori-debito" class="font-extrabold text-rose-600 font-mono text-sm">€ 0,00</span>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block">Impegni in Liquidazione</span>
+                                <span id="fh-fornitori-debito" class="font-extrabold text-blue-700 font-mono text-sm">€ 0,00</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Footer Informativo Tutela Privacy GDPR -->
-                <div class="p-3.5 rounded-xl bg-blue-50/70 border border-blue-100 text-blue-900 text-xs flex items-center gap-3">
-                    <i class="fa-solid fa-lock text-blue-600 text-sm shrink-0"></i>
+                <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-600 text-xs flex items-center gap-3">
+                    <i class="fa-solid fa-lock text-slate-500 text-sm shrink-0"></i>
                     <p class="leading-relaxed">
-                        <b>Informativa di Trasparenza Condominiale (GDPR Art. 25):</b> I dati di bilancio e gestione sono esposti in forma strettamente aggregata. Nessun nominativo, millesimo o interno relativo a quote scoperte è reso accessibile agli altri partecipanti al condominio.
+                        <b>Dati contabili espressi esclusivamente in valori aggregati a salvaguardia della riservatezza individuale (Regolamento UE 2016/679 - Privacy by Design).</b> Nessuna profilazione né esposizione di singole posizioni contabili.
                     </p>
                 </div>
             </div>
@@ -3280,6 +3286,67 @@
     </div>
 
     
+    <!-- Modale Approfondimento Contabile & Tesoreria Comune (Istituzionale & Neutro) -->
+    <div id="modal-tesoreria-info" class="fixed inset-0 z-[100] hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop bg-slate-900/80 backdrop-blur-sm" onclick="closeTesoreriaInfoModal()"></div>
+            <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100 max-h-[90vh] flex flex-col">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-2xs">
+                            <i class="fa-solid fa-scale-balanced"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg sm:text-xl font-bold text-slate-900">Riepilogo dei Flussi di Tesoreria Comune</h3>
+                            <p class="text-xs text-slate-500">Prospetto istituzionale di riconciliazione contabile</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="closeTesoreriaInfoModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition cursor-pointer">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                
+                <div class="overflow-y-auto py-5 text-sm text-slate-600 space-y-4 pr-1 leading-relaxed">
+                    <p class="font-medium text-slate-800">
+                        La presente rendicontazione offre a tutti i comproprietari una visione d'insieme della liquidità disponibile e del grado di avanzamento del piano di riparto approvato in sede assembleare.
+                    </p>
+                    
+                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                            <i class="fa-solid fa-chart-line text-blue-600"></i> Composizione dei Flussi Finanziari
+                        </h4>
+                        <p class="text-xs text-slate-600">
+                            I flussi finanziari si compongono delle quote già acquisite sul conto corrente condominiale e dei <b>residui attivi di ripartizione</b>, costituiti dalle quote la cui contabilizzazione è in corso di svolgimento secondo il piano rateale dell'esercizio.
+                        </p>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                            <i class="fa-solid fa-truck-ramp-box text-indigo-600"></i> Gestione delle Uscite Deliberate
+                        </h4>
+                        <p class="text-xs text-slate-600">
+                            Le uscite verso gli operatori di servizio e i fornitori di beni sono programmate nel rispetto delle disponibilità di cassa generate dal progressivo completamento delle riscossioni previste a preventivo.
+                        </p>
+                    </div>
+
+                    <div class="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200/70 text-blue-900 text-xs flex items-start gap-2.5">
+                        <i class="fa-solid fa-shield-halved text-blue-600 text-sm mt-0.5 shrink-0"></i>
+                        <div>
+                            <b class="block font-bold mb-0.5">Principio di Riservatezza & Trasparenza Collettiva (GDPR):</b>
+                            Il presente prospetto espone l'equilibrio monetario complessivo della gestione; per la consultazione della propria specifica posizione contabile individuale è sempre a disposizione la sezione personale del profilo utente.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="pt-4 border-t border-slate-100 flex justify-end">
+                    <button type="button" onclick="closeTesoreriaInfoModal()" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer">
+                        Ho compreso
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modale Consenso Privacy (Obbligatorio) -->
     <div id="modal-privacy" class="fixed inset-0 z-[100] hidden overflow-y-auto">
         <div class="min-h-screen px-4 flex items-center justify-center p-4">

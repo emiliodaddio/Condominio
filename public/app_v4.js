@@ -450,17 +450,17 @@ async function loadAccountingData() {
         const subReceivables = document.getElementById('kpi-sub-receivables');
 
         if (isAdmin) {
-            if (lblRec) lblRec.textContent = 'Quote Incassate (Tutte)';
-            if (subRec) subRec.textContent = 'Quote saldate fabbricato';
-            if (lblReceivables) lblReceivables.textContent = 'Crediti da Riscuotere';
-            if (subReceivables) subReceivables.textContent = 'Quote in sospeso fabbricato';
+            if (lblRec) lblRec.textContent = 'Monte Quote Acquisite';
+            if (subRec) subRec.textContent = 'Incassi complessivi di gestione';
+            if (lblReceivables) lblReceivables.textContent = 'Residui Attivi di Gestione';
+            if (subReceivables) subReceivables.textContent = 'Quote complessive in riscossione';
             document.getElementById('kpi-total-received').textContent = formatCurrency(totCondoReceived);
             document.getElementById('kpi-total-receivables').textContent = formatCurrency(totCondoReceivables);
         } else {
-            if (lblRec) lblRec.textContent = 'Le Mie Quote Versate';
-            if (subRec) subRec.textContent = 'I tuoi versamenti registrati';
-            if (lblReceivables) lblReceivables.textContent = 'Il Mio Saldo da Versare';
-            if (subReceivables) subReceivables.textContent = 'Le tue quote in sospeso';
+            if (lblRec) lblRec.textContent = 'Quote Acquisite Personali';
+            if (subRec) subRec.textContent = 'Importi contabilizzati a credito';
+            if (lblReceivables) lblReceivables.textContent = 'Residuo Ripartizione Personale';
+            if (subReceivables) subReceivables.textContent = 'Quote in corso di regolazione';
             document.getElementById('kpi-total-received').textContent = formatCurrency(calcReceived);
             document.getElementById('kpi-total-receivables').textContent = formatCurrency(calcReceivables);
         }
@@ -498,13 +498,13 @@ async function loadAccountingData() {
             if (elBadgeInc) {
                 if (perc >= 95) {
                     elBadgeInc.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200';
-                    elBadgeInc.textContent = 'Ottimo (95%+)';
+                    elBadgeInc.textContent = 'Conforme (95%+)';
                 } else if (perc >= 80) {
                     elBadgeInc.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200';
-                    elBadgeInc.textContent = 'Regolare';
+                    elBadgeInc.textContent = 'Avanzamento Regolare';
                 } else {
                     elBadgeInc.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200';
-                    elBadgeInc.textContent = 'In Riscossione';
+                    elBadgeInc.textContent = 'In Perfezionamento';
                 }
             }
 
@@ -517,11 +517,11 @@ async function loadAccountingData() {
 
             if (elTitleForn) {
                 if (h.cassa_status === 'ottimo') {
-                    elTitleForn.innerHTML = '<span class="text-emerald-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Gestione in Regola</span>';
+                    elTitleForn.innerHTML = '<span class="text-emerald-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Equilibrio Finanziario Consolidato</span>';
                 } else if (h.cassa_status === 'buono' || h.cassa_status === 'regolare') {
-                    elTitleForn.innerHTML = '<span class="text-teal-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-info"></i> Fornitori nei Termini</span>';
+                    elTitleForn.innerHTML = '<span class="text-teal-600 flex items-center gap-1.5"><i class="fa-solid fa-circle-info"></i> Uscite Programmate nei Termini Contrattuali</span>';
                 } else {
-                    elTitleForn.innerHTML = '<span class="text-amber-600 flex items-center gap-1.5"><i class="fa-solid fa-triangle-exclamation"></i> Quote Mancanti per Copertura</span>';
+                    elTitleForn.innerHTML = '<span class="text-amber-600 flex items-center gap-1.5"><i class="fa-solid fa-scale-balanced"></i> Fabbisogno Subordinato ai Residui Attivi</span>';
                 }
             }
             if (elDescForn) elDescForn.textContent = h.cassa_message || '';
@@ -530,10 +530,10 @@ async function loadAccountingData() {
             if (elBadgeCassa) {
                 if (h.fornitori_debito === 0) {
                     elBadgeCassa.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200';
-                    elBadgeCassa.textContent = '0 Fatture Pendenti';
+                    elBadgeCassa.textContent = 'Piena Copertura';
                 } else {
                     elBadgeCassa.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200';
-                    elBadgeCassa.textContent = `${formatCurrency(h.fornitori_debito)} da Liquidare`;
+                    elBadgeCassa.textContent = `${formatCurrency(h.fornitori_debito)} Impegni in Erogazione`;
                 }
             }
         }
@@ -8741,3 +8741,15 @@ window.deleteCondoDocument = async function(docId) {
 
 
 
+
+
+// Gestione Modale Approfondimento Flussi di Tesoreria
+window.openTesoreriaInfoModal = function() {
+    const m = document.getElementById('modal-tesoreria-info');
+    if (m) m.classList.remove('hidden');
+};
+
+window.closeTesoreriaInfoModal = function() {
+    const m = document.getElementById('modal-tesoreria-info');
+    if (m) m.classList.add('hidden');
+};

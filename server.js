@@ -3335,18 +3335,18 @@ app.get('/api/condominio/financial-health', authenticateToken, requireCondominio
             const percIncasso = totEmesso > 0 ? Math.min(100, Math.round((totIncassato / totEmesso) * 100)) : 100;
 
             let cassaStatus = 'ottimo';
-            let cassaMessage = 'Gestione finanziaria in regola: i fondi incassati coprono le uscite programmate.';
+            let cassaMessage = 'Il flusso di cassa generato soddisfa regolarmente la copertura degli impegni deliberati.';
             if (fornitoriDebito > 0 && totInsolutiScaduti > 0) {
                 if (fornitoriScaduti > 0) {
                     cassaStatus = 'attenzione';
-                    cassaMessage = 'Attenzione: presenti fatture fornitori in attesa di liquidazione a causa di quote di gestione non ancora incassate.';
+                    cassaMessage = 'Il fabbisogno per le uscite programmate è subordinato alla progressione dei residui attivi dell\'esercizio.';
                 } else {
                     cassaStatus = 'regolare';
-                    cassaMessage = 'Fatture fornitori nei termini ordinari di pagamento.';
+                    cassaMessage = 'Tempistiche di cassa ordinarie: partite di spesa programmate secondo scadenziario contrattuale.';
                 }
             } else if (totInsolutiScaduti > 0) {
                 cassaStatus = 'buono';
-                cassaMessage = 'Fornitori in regola. Presenza di quote di gestione con scadenza superata.';
+                cassaMessage = 'Liquidità comune attiva. Riscossione delle quote di riparto in regolare progressione.';
             }
 
             res.json({
@@ -3362,7 +3362,7 @@ app.get('/api/condominio/financial-health', authenticateToken, requireCondominio
                     fornitori_scaduti: fornitoriScaduti,
                     cassa_status: cassaStatus,
                     cassa_message: cassaMessage,
-                    privacy_note: 'Dato aggregato a livello di gestione condominiale ai sensi del Regolamento UE 2016/679 (GDPR). Nessun dato personale o identificativo di unità esposto.'
+                    privacy_note: 'Dati contabili espressi esclusivamente in valori aggregati a salvaguardia della riservatezza individuale (Regolamento UE 2016/679).'
                 }
             });
         });
