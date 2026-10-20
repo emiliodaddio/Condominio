@@ -80,6 +80,17 @@ nodemailer.createTestAccount().then(testAccount => {
 const app = express();
 app.set('trust proxy', 1);
 
+app.get('/api/health-email', (req, res) => {
+    res.json({
+        ok: true,
+        hasBrevoKey: !!process.env.BREVO_API_KEY,
+        brevoKeyPrefix: process.env.BREVO_API_KEY ? process.env.BREVO_API_KEY.slice(0, 12) + '...' : null,
+        smtpHost: process.env.SMTP_HOST || null,
+        mailFrom: process.env.MAIL_FROM || null,
+        nodeEnv: process.env.NODE_ENV || 'development'
+    });
+});
+
 app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, checkCondoLicenseWrite, async (req, res) => {
     try {
         const workbook = new ExcelJS.Workbook();
