@@ -78,6 +78,7 @@ nodemailer.createTestAccount().then(testAccount => {
 });
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, checkCondoLicenseWrite, async (req, res) => {
     try {
@@ -2043,7 +2044,7 @@ function deliverActivationEmail(userId, email, nome, condoNome, req, res) {
         if (err) return res.status(500).json({ success: false, message: 'Errore salvataggio credenziali di primo accesso.' });
 
         const host = req.get('host');
-        const protocol = req.protocol || 'http';
+        const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
 
         try {
             const { previewUrl } = await emailService.sendOnboardingInviteEmail({
@@ -3517,7 +3518,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
             if (err) return res.status(500).json({ success: false, message: 'Errore interno' });
 
             const host = req.get('host');
-            const protocol = req.protocol || 'http';
+            const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
 
             try {
                 const { previewUrl } = await emailService.sendPasswordResetEmail({
