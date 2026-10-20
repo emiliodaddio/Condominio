@@ -12,11 +12,38 @@
  */
 
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+
+// Carica variabili da .env se presente
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+    try {
+        const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+        lines.forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) {
+                const eqIdx = trimmed.indexOf('=');
+                if (eqIdx > 0) {
+                    const key = trimmed.slice(0, eqIdx).trim();
+                    const val = trimmed.slice(eqIdx + 1).trim();
+                    if (!process.env[key]) process.env[key] = val;
+                }
+            }
+        });
+    } catch (_) {}
+}
 
 let transporter = null;
 let isEthereal = false;
 
 function initEmailTransporter() {
+    // 0. Brevo REST API (HTTPS Porta 443 - Massima velocità e compatibilità cloud)
+    if (process.env.BREVO_API_KEY) {
+        console.log('📧 Email Service: Collegato con successo a Brevo REST API (HTTPS Porta 443).');
+        return;
+    }
+
     // 1. SendGrid via SMTP o API
     if (process.env.SENDGRID_API_KEY) {
         transporter = nodemailer.createTransport({
