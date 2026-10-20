@@ -15,24 +15,30 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 
-// Carica variabili da .env se presente
-const envPath = path.join(__dirname, '.env');
-if (fs.existsSync(envPath)) {
-    try {
-        const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-        lines.forEach(line => {
-            const trimmed = line.trim();
-            if (trimmed && !trimmed.startsWith('#')) {
-                const eqIdx = trimmed.indexOf('=');
-                if (eqIdx > 0) {
-                    const key = trimmed.slice(0, eqIdx).trim();
-                    const val = trimmed.slice(eqIdx + 1).trim();
-                    if (!process.env[key]) process.env[key] = val;
+// Carica variabili da .env se presente (incluso /etc/secrets/.env per Render)
+const envPaths = [
+    path.join(__dirname, '.env'),
+    '/etc/secrets/.env',
+    path.join(process.cwd(), '.env')
+];
+envPaths.forEach(envPath => {
+    if (fs.existsSync(envPath)) {
+        try {
+            const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (trimmed && !trimmed.startsWith('#')) {
+                    const eqIdx = trimmed.indexOf('=');
+                    if (eqIdx > 0) {
+                        const key = trimmed.slice(0, eqIdx).trim();
+                        const val = trimmed.slice(eqIdx + 1).trim();
+                        if (!process.env[key]) process.env[key] = val;
+                    }
                 }
-            }
-        });
-    } catch (_) {}
-}
+            });
+        } catch (_) {}
+    }
+});
 
 let transporter = null;
 let isEthereal = false;
