@@ -81,13 +81,15 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.get('/api/health-email', (req, res) => {
+    const keys = Object.keys(process.env);
     res.json({
         ok: true,
         hasBrevoKey: !!process.env.BREVO_API_KEY,
         brevoKeyPrefix: process.env.BREVO_API_KEY ? process.env.BREVO_API_KEY.slice(0, 12) + '...' : null,
         smtpHost: process.env.SMTP_HOST || null,
         mailFrom: process.env.MAIL_FROM || null,
-        nodeEnv: process.env.NODE_ENV || 'development'
+        nodeEnv: process.env.NODE_ENV || 'development',
+        envKeysFound: keys.filter(k => /brevo|smtp|mail|tidb|mysql/i.test(k))
     });
 });
 
