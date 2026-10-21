@@ -1,3 +1,27 @@
+// ============================================================================
+// SECURITY HARDENING (FASE 0) - DOMPurify Global InnerHTML Interceptor (Anti-XSS)
+// ============================================================================
+(function() {
+    if (typeof window !== 'undefined' && typeof window.DOMPurify !== 'undefined') {
+        try {
+            const originalDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+            if (originalDescriptor && originalDescriptor.set) {
+                Object.defineProperty(Element.prototype, 'innerHTML', {
+                    set: function(val) {
+                        const sanitized = (typeof val === 'string') ? DOMPurify.sanitize(val) : val;
+                        originalDescriptor.set.call(this, sanitized);
+                    },
+                    get: originalDescriptor.get,
+                    configurable: true
+                });
+                console.log('🛡️ DOMPurify: Intercettore globale Anti-XSS attivo su Element.innerHTML.');
+            }
+        } catch (e) {
+            console.warn('Avviso inizializzazione DOMPurify wrapper:', e);
+        }
+    }
+})();
+
 /**
  * ============================================================================
  * GESTIONE CondominiALE - Logica Client-Side RBAC (Vanilla JavaScript)
@@ -6083,7 +6107,69 @@ window.sendOnboardingInviteForPersona = async function(id, nominativo) {
 state.suData = null;
 state.currentSuSubTab = 'modules';
 
-window.openSuperUserDashboard = function() {
+
+async function ensureSuperuserTemplateLoaded() {
+    const mountPoint = document.getElementById('superuser-mount-point');
+    if (!mountPoint) return false;
+    let suView = document.getElementById('superuser-dashboard-view');
+    if (suView) return true;
+
+    try {
+        const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+        const res = await fetch('/api/superuser/template', {
+            headers: { 'Authorization': `Bearer ${token}` },
+            credentials: 'same-origin'
+        });
+        if (!res.ok) {
+            alert('Accesso negato: Vista riservata esclusivamente all\'utenza SuperUser (Proprietario).');
+            return false;
+        }
+        const html = await res.text();
+        mountPoint.innerHTML = html;
+
+        // Inizializza form censimento se presente
+        const formCrea = document.getElementById('form-crea-condominio');
+        if (formCrea && !formCrea.dataset.listenerAttached) {
+            formCrea.dataset.listenerAttached = 'true';
+            formCrea.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const nome = document.getElementById('condo-nome').value.trim();
+                const codice_fiscale = document.getElementById('condo-cf').value.trim();
+                const indirizzo = document.getElementById('condo-indirizzo').value.trim();
+                const amministratore_email = document.getElementById('condo-admin-email').value.trim();
+                try {
+                    const tokenInner = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+                    const resInner = await fetch('/api/superuser/crea-condominio', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokenInner}` },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ nome, codice_fiscale, indirizzo, amministratore_email })
+                    });
+                    const dataInner = await resInner.json();
+                    if (resInner.ok && dataInner.success) {
+                        alert(dataInner.message || 'Condominio creato ed amministratore abilitato con successo!');
+                        formCrea.reset();
+                        closeSuperuserPanel();
+                        loadSuperUserOverview();
+                    } else {
+                        alert('Errore: ' + (dataInner.error || dataInner.errore || 'Impossibile creare il condominio.'));
+                    }
+                } catch(err) {
+                    alert('Errore di connessione: ' + err.message);
+                }
+            });
+        }
+        return true;
+    } catch(err) {
+        console.error('Errore caricamento template superuser:', err);
+        return false;
+    }
+}
+
+window.openSuperUserDashboard = async function() {
+    const loaded = await ensureSuperuserTemplateLoaded();
+    if (!loaded) return;
+
     document.getElementById('agency-dashboard-view').classList.add('hidden');
     document.getElementById('agency-dashboard-view').classList.remove('flex');
     document.getElementById('app-core-view').classList.add('hidden');
@@ -6094,6 +6180,7 @@ window.openSuperUserDashboard = function() {
         loadSuperUserOverview();
     }
 };
+
 
 window.switchSuperUserSubTab = function(subTab) {
     state.currentSuSubTab = subTab;
@@ -8760,7 +8847,9 @@ window.closeTesoreriaInfoModal = function() {
 // ============================================================================
 // GESTIONE PANNELLO SUPERUSER (CENSIMENTO RAPIDO CONDOMINIO & ABILITAZIONE)
 // ============================================================================
-window.openSuperuserPanel = function() {
+window.openSuperuserPanel = async function() {
+    const loaded = await ensureSuperuserTemplateLoaded();
+    if (!loaded) return;
     const p = document.getElementById('superuser-panel');
     const d = document.getElementById('superuser-dashboard-view');
     const a = document.getElementById('agency-dashboard-view');

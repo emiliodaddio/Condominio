@@ -39,6 +39,9 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const express = require('express');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
@@ -85,6 +88,23 @@ nodemailer.createTestAccount().then(testAccount => {
 
 const app = express();
 app.set('trust proxy', 1);
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+}));
+app.use(cookieParser());
+
+// Rate limiter anti-bruteforce sulle rotte di autenticazione
+const authRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minuti
+    max: 50, // max 50 tentativi per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Troppe richieste di autenticazione da questo IP. Riprova tra 15 minuti.' }
+});
+app.use('/api/auth/login', authRateLimiter);
+app.use('/api/auth/login/verify-otp', authRateLimiter);
+
 
 app.get('/api/health-email', (req, res) => {
     const keys = Object.keys(process.env);
@@ -904,7 +924,10 @@ app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, 
 });
 
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = 'chiave_segreta_condominio_sicura_123!';
+const JWT_SECRET = process.env.JWT_SECRET || 'chiave_segreta_condominio_sicura_123!';
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+    console.warn('⚠️ [AVVISO SICUREZZA]: JWT_SECRET non impostato nelle variabili d\'ambiente di produzione!');
+}
 
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
@@ -1644,7 +1667,7 @@ initDatabase();
 // ==========================================
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = (req.cookies && req.cookies.auth_token) || (authHeader && authHeader.split(' ')[1]);
     if (!token) return res.status(401).json({ success: false, message: 'Token mancante.' });
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -1942,6 +1965,22 @@ app.get('/api/auth/condominios', (req, res) => {
         if (err) return res.status(500).json({ success: false, message: 'Errore recupero lista condomini' });
         res.json({ success: true, data: rows || [] });
     });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('auth_token');
+    res.json({ success: true, message: 'Disconnessione effettuata con successo.' });
+});
+
+// Endpoint protetto: restituisce il markup della cabina di regia SOLO a utenti Superuser certificati
+app.get('/api/superuser/template', authenticateToken, requireSuperAdmin, (req, res) => {
+    const tplPath = path.join(__dirname, 'views', 'superuser-view.html');
+    if (fs.existsSync(tplPath)) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.sendFile(tplPath);
+    } else {
+        res.status(404).json({ success: false, error: 'Template Superuser non presente sul server.' });
+    }
 });
 
 app.post('/api/auth/register', (req, res) => {
@@ -2295,8 +2334,24 @@ function issueToken(user, res) {
     const params = user.is_superadmin ? [] : [user.id];
 
     db.all(fetchCondosQuery, params, (err, condomini) => {
-        const tokenPayload = { id: user.id, nome: user.nome, email: user.email, is_superadmin: user.is_superadmin, privacy_accepted: user.privacy_accepted };
+        const tokenPayload = { 
+            id: user.id, 
+            nome: user.nome, 
+            email: user.email, 
+            ruolo: user.ruolo || (user.is_superadmin ? 'superuser' : 'condomino'),
+            is_superadmin: user.is_superadmin, 
+            privacy_accepted: user.privacy_accepted 
+        };
         const jwtToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+
+        // Imposta Cookie HttpOnly, Secure, SameSite per proteggere la sessione contro attacchi XSS
+        res.cookie('auth_token', jwtToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 24 * 60 * 60 * 1000
+        });
+
         res.json({ success: true, token: jwtToken, user: { ...tokenPayload, condomini: condomini || [] } });
     });
 }
