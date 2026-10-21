@@ -124,7 +124,7 @@ app.get('/api/health-email', (req, res) => {
 });
 
 // Health Checks Standard Cloud-Native (/healthz & /api/health)
-app.get(['/healthz', '/api/health'], async (req, res) => {
+const handleHealthCheck = async (req, res) => {
     let dbStatus = 'ok';
     let dbLatencyMs = 0;
     const start = Date.now();
@@ -162,7 +162,10 @@ app.get(['/healthz', '/api/health'], async (req, res) => {
             }
         }
     });
-});
+};
+
+app.get('/healthz', handleHealthCheck);
+app.get('/api/health', handleHealthCheck);
 
 app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     try {
@@ -6913,7 +6916,7 @@ app.use('/api', (req, res) => {
 
 // Fallback Frontend SPA
 app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads') && req.path !== '/healthz') {
         return res.sendFile(path.join(__dirname, 'public', 'index.html'));
     }
     next();
