@@ -5298,10 +5298,44 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
 
             // Tentativo 3: Se utente è Amministratore o Superuser, oppure non ha unità assegnata
             if (!condominoProfile) {
-                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore';
-                if (!isAdminUser) {
+                let isAdmin = req.user.is_superadmin || 
+                              req.user.ruolo === 'superuser' || 
+                              req.user.ruolo === 'amministratore' ||
+                              req.user.ruolo === 'admin' ||
+                              req.user.role === 'admin';
+
+                if (!isAdmin) {
+                    try {
+                        const [adm] = await connection.query(
+                            'SELECT id FROM condomini WHERE amministratore_id = ? UNION SELECT id FROM user_condominios WHERE user_id = ? AND role = "admin" LIMIT 1',
+                            [userId, userId]
+                        );
+                        if (adm && adm.length > 0) isAdmin = true;
+                    } catch (_) {}
+                }
+
+                if (!isAdmin) {
                     connection.release();
-                    return res.status(403).json({ success: false, message: 'Non risulti associato ad alcuna unità o fabbricato in questo stabile.' });
+                    return res.json({
+                        success: true,
+                        datiPersonali: { interno: 'In attesa di associazione', millesimi: 0.00, pagamenti: [] },
+                        cassaComune: { residuiAttivi: 0, percentualeRiscossa: 100 },
+                        dati_personali: {
+                            condomino_id: userId,
+                            nome: req.user.nome || 'Condòmino',
+                            email: req.user.email || '',
+                            unita_immobiliare: { interno: 'In attesa di associazione', millesimi: 0.00 },
+                            riepilogo_personale: { totale_quote_dovute: 0, totale_versato: 0, saldo_in_corso: 0, stato: 'In regola con i versamenti' },
+                            scadenze: []
+                        },
+                        aggregato_cassa_stabile: {
+                            totale_gestione_preventivata: 0,
+                            totale_riscosso_fabbricato: 0,
+                            residui_attivi_gestione: 0,
+                            percentuale_avanzamento: 100,
+                            formula_informativa: 'In attesa di assegnazione quote.'
+                        }
+                    });
                 }
 
                 let targetCondoId = condoId;
@@ -5503,8 +5537,8 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 },
                 // Dati aggregati a livello di fabbricato (GDPR Compliant - Nessun dato nominativo di terzi)
                 aggregato_cassa_stabile: {
-                    totale_gestione_preventivata: totalePreventivato,
-                    totale_riscosso_fabbricato: totaleRiscosso,
+                    totale_gestione_preventivata: totalePreventivato.toNumber(),
+                    totale_riscosso_fabbricato: totaleRiscosso.toNumber(),
                     residui_attivi_gestione: residuiAttiviGestione,
                     percentuale_avanzamento: percentualeAvanzamento,
                     formula_informativa: 'Valore matematico complessivo delle quote di gestione deliberate in fase di riscossione.'

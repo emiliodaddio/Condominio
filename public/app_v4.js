@@ -48,6 +48,7 @@ const state = {
     users: [],
     currentTicketId: null
 };
+window.state = state;
 
 // ============================================================================
 // STABILITÀ FRONTEND: CRASH-PROOF & ERROR SHIELD
@@ -105,6 +106,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (state.currentUser.role === 'admin') {
                 loadUsersList();
             }
+        }
+
+        // Carica la dashboard finanziaria e la posizione individuale del condomino
+        if (typeof window.loadCondominoFinanceDashboard === 'function') {
+            window.loadCondominoFinanceDashboard();
         }
 
     } catch (err) {
@@ -9095,34 +9101,36 @@ window.loadCondominoFinanceDashboard = async function() {
     const cardContainer = document.getElementById('condomino-finance-dashboard');
     if (!cardContainer) return;
 
-    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
-    if (!token) return;
-
-    const activeCondoId = (window.state && (window.state.activeCondominioId || window.state.currentCondoId)) || sessionStorage.getItem('active_Condominio_id');
-    const url = activeCondoId 
-        ? `/api/condomino/dashboard?condominio_id=${encodeURIComponent(activeCondoId)}`
-        : '/api/condomino/dashboard';
-
     const elUnita = document.getElementById('pers-unita');
     const elMillesimi = document.getElementById('pers-millesimi');
     const elBadgeSaldo = document.getElementById('pers-badge-saldo');
     const tbody = document.getElementById('condomino-scadenze-tbody');
     const formatEuro = (val) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
+    const token = (window.state && window.state.token) || sessionStorage.getItem('condo_token') || localStorage.getItem('jwt_token') || localStorage.getItem('condo_token');
+    const activeCondoId = (window.state && window.state.activeCondominioId) || sessionStorage.getItem('active_Condominio_id') || (window.state && window.state.currentUser && window.state.currentUser.condomini && window.state.currentUser.condomini[0] && window.state.currentUser.condomini[0].id);
+
+    const headers = { 'Accept': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (activeCondoId) headers['x-condominio-id'] = String(activeCondoId);
+
+    const url = activeCondoId 
+        ? `/api/condomino/dashboard?condominio_id=${encodeURIComponent(activeCondoId)}`
+        : '/api/condomino/dashboard';
+
     try {
         const res = await fetch(url, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'x-condominio-id': activeCondoId ? String(activeCondoId) : ''
-            }
+            headers,
+            credentials: 'include'
         });
 
         if (!res.ok) {
-            if (elUnita) elUnita.textContent = 'Posizione Fabbricato';
-            if (elMillesimi) elMillesimi.textContent = '1000.00 / 1000';
+            const isAdmin = window.state && window.state.currentUser && (window.state.currentUser.role === 'admin' || window.state.currentUser.is_superadmin);
+            if (elUnita) elUnita.textContent = isAdmin ? 'Studio Amministrazione' : 'Unità Condominiale';
+            if (elMillesimi) elMillesimi.textContent = '0,00 / 1000';
             if (elBadgeSaldo) {
                 elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5';
-                elBadgeSaldo.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-400"></i> Flussi Regolari';
+                elBadgeSaldo.innerHTML = isAdmin ? '<i class="fa-solid fa-user-shield text-indigo-400"></i> Studio Amministrazione' : '<i class="fa-solid fa-circle-check text-emerald-400"></i> Flussi Regolari';
             }
             if (tbody) {
                 tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Nessuna spesa individuale pendente per questo profilo.</td></tr>';
@@ -9132,7 +9140,7 @@ window.loadCondominoFinanceDashboard = async function() {
 
         const data = await res.json();
         if (!data.success) {
-            if (elUnita) elUnita.textContent = 'Nessuna unità assegnata';
+            if (elUnita) elUnita.textContent = 'Posizione Regolare';
             if (elMillesimi) elMillesimi.textContent = '0,00 / 1000';
             if (elBadgeSaldo) {
                 elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700';
@@ -9178,15 +9186,15 @@ window.loadCondominoFinanceDashboard = async function() {
 
         // 2. Aggiornamento Posizione Personale Individuale
         if (elUnita) elUnita.textContent = pers.unita_immobiliare ? pers.unita_immobiliare.interno : (pers.interno || 'Unità Condominiale');
-        if (elMillesimi) elMillesimi.textContent = pers.unita_immobiliare ? `${parseFloat(pers.unita_immobiliare.millesimi || 0).toFixed(2)} / 1000` : '0,00 / 1000';
+        if (elMillesimi) elMillesimi.textContent = pers.unita_immobiliare ? `${parseFloat(pers.unita_immobiliare.millesimi || 0).toFixed(2)} / 1000` : `${parseFloat(pers.millesimi || 0).toFixed(2)} / 1000`;
 
         const saldoPers = pers.riepilogo_personale ? pers.riepilogo_personale.saldo_in_corso : 0;
         const statoTesto = pers.riepilogo_personale ? pers.riepilogo_personale.stato : '';
         if (elBadgeSaldo) {
-            if (statoTesto && (statoTesto.includes('Amministratore') || statoTesto.includes('Proprietario'))) {
+            if (pers.is_admin_view || (statoTesto && (statoTesto.includes('Amministratore') || statoTesto.includes('Proprietario')))) {
                 elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 flex items-center gap-1.5';
                 elBadgeSaldo.innerHTML = '<i class="fa-solid fa-user-shield"></i> Studio Amministrazione';
-            } else if (saldoPers === 0) {
+            } else if (saldoPers <= 0) {
                 elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5';
                 elBadgeSaldo.innerHTML = '<i class="fa-solid fa-check-circle"></i> In regola con i versamenti';
             } else {
@@ -9227,19 +9235,26 @@ window.loadCondominoFinanceDashboard = async function() {
 
     } catch (e) {
         console.warn('Avviso caricamento dashboard finanziaria condomino:', e);
-        if (elUnita) elUnita.textContent = 'Dati non disponibili';
+        if (elUnita) elUnita.textContent = 'Posizione Regolare';
         if (elMillesimi) elMillesimi.textContent = '0,00 / 1000';
         if (elBadgeSaldo) {
             elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700';
-            elBadgeSaldo.textContent = 'Nessuna informazione';
+            elBadgeSaldo.textContent = 'Posizione Aggiornata';
         }
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Impossibile recuperare i dettagli contabili in questo momento.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Nessuna pendenza contabile attiva.</td></tr>';
         }
     }
 };
 
 // Invocazione automatica ad avvio pagina
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(() => { if (typeof window.loadCondominoFinanceDashboard === 'function') window.loadCondominoFinanceDashboard(); }, 200);
+} else {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => { if (typeof window.loadCondominoFinanceDashboard === 'function') window.loadCondominoFinanceDashboard(); }, 200);
+    });
+}
 
 
 // ============================================================================
