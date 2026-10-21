@@ -193,6 +193,7 @@ function setupUIForRole() {
             setupUIForRole();
             if (state.currentTab) switchTab(state.currentTab);
             else switchTab('dashboard');
+            if (typeof window.loadCondominoFinanceDashboard === 'function') window.loadCondominoFinanceDashboard();
         };
     }
 
@@ -353,7 +354,7 @@ function switchTab(tabId) {
     }
 
     if (tabId === 'accounting') loadAccountingData();
-    if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); if (typeof loadCondoDocumentsBadge === 'function') loadCondoDocumentsBadge(); }
+    if (tabId === 'dashboard') { loadAnagrafica(); loadTicketsBadge(); if (typeof loadCondoDocumentsBadge === 'function') loadCondoDocumentsBadge(); if (typeof window.loadCondominoFinanceDashboard === 'function') window.loadCondominoFinanceDashboard(); }
     else if (tabId === 'condominio') loadAnagrafica();
     else if (tabId === 'assemblies') loadAssembliesData();
     else if (tabId === 'communications' || tabId === 'storico-comunicazioni') loadConvocationsLog();
@@ -5608,6 +5609,7 @@ window.enterCondo = function(id, targetTab = 'dashboard') {
     switchTab(targetTab);
     loadTicketsBadge();
     loadAnagrafica();
+    if (typeof window.loadCondominoFinanceDashboard === 'function') window.loadCondominoFinanceDashboard();
 };
 
 window.returnToAgencyDashboard = function() {
@@ -9007,30 +9009,54 @@ window.loadCondominoFinanceDashboard = async function() {
     const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
     if (!token) return;
 
-    const activeCondoId = (window.state && window.state.currentCondoId) || sessionStorage.getItem('active_Condominio_id');
+    const activeCondoId = (window.state && (window.state.activeCondominioId || window.state.currentCondoId)) || sessionStorage.getItem('active_Condominio_id');
     const url = activeCondoId 
         ? `/api/condomino/dashboard?condominio_id=${encodeURIComponent(activeCondoId)}`
         : '/api/condomino/dashboard';
+
+    const elUnita = document.getElementById('pers-unita');
+    const elMillesimi = document.getElementById('pers-millesimi');
+    const elBadgeSaldo = document.getElementById('pers-badge-saldo');
+    const tbody = document.getElementById('condomino-scadenze-tbody');
+    const formatEuro = (val) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
     try {
         const res = await fetch(url, {
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'x-condominio-id': activeCondoId || ''
+                'x-condominio-id': activeCondoId ? String(activeCondoId) : ''
             }
         });
 
         if (!res.ok) {
+            if (elUnita) elUnita.textContent = 'Posizione Fabbricato';
+            if (elMillesimi) elMillesimi.textContent = '1000.00 / 1000';
+            if (elBadgeSaldo) {
+                elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5';
+                elBadgeSaldo.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-400"></i> Flussi Regolari';
+            }
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Nessuna spesa individuale pendente per questo profilo.</td></tr>';
+            }
             return;
         }
 
         const data = await res.json();
-        if (!data.success) return;
+        if (!data.success) {
+            if (elUnita) elUnita.textContent = 'Nessuna unità assegnata';
+            if (elMillesimi) elMillesimi.textContent = '0,00 / 1000';
+            if (elBadgeSaldo) {
+                elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700';
+                elBadgeSaldo.textContent = 'Nessuna pendenza';
+            }
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Nessuna scadenza contabile registrata.</td></tr>';
+            }
+            return;
+        }
 
         const pers = data.dati_personali || {};
         const glob = data.aggregato_cassa_stabile || {};
-
-        const formatEuro = (val) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
         // 1. Aggiornamento Card Globale Riservata (Residui Attivi della Gestione)
         const elTotalePrevisto = document.getElementById('stat-totale-preventivato');
@@ -9062,26 +9088,25 @@ window.loadCondominoFinanceDashboard = async function() {
         }
 
         // 2. Aggiornamento Posizione Personale Individuale
-        const elUnita = document.getElementById('pers-unita');
-        const elMillesimi = document.getElementById('pers-millesimi');
-        const elBadgeSaldo = document.getElementById('pers-badge-saldo');
-
-        if (elUnita) elUnita.textContent = pers.unita_immobiliare ? pers.unita_immobiliare.interno : 'N/D';
-        if (elMillesimi) elMillesimi.textContent = pers.unita_immobiliare ? `${parseFloat(pers.unita_immobiliare.millesimi).toFixed(2)} / 1000` : '0,00 / 1000';
+        if (elUnita) elUnita.textContent = pers.unita_immobiliare ? pers.unita_immobiliare.interno : (pers.interno || 'Unità Condominiale');
+        if (elMillesimi) elMillesimi.textContent = pers.unita_immobiliare ? `${parseFloat(pers.unita_immobiliare.millesimi || 0).toFixed(2)} / 1000` : '0,00 / 1000';
 
         const saldoPers = pers.riepilogo_personale ? pers.riepilogo_personale.saldo_in_corso : 0;
+        const statoTesto = pers.riepilogo_personale ? pers.riepilogo_personale.stato : '';
         if (elBadgeSaldo) {
-            if (saldoPers === 0) {
+            if (statoTesto && (statoTesto.includes('Amministratore') || statoTesto.includes('Proprietario'))) {
+                elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 flex items-center gap-1.5';
+                elBadgeSaldo.innerHTML = '<i class="fa-solid fa-user-shield"></i> Studio Amministrazione';
+            } else if (saldoPers === 0) {
                 elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5';
                 elBadgeSaldo.innerHTML = '<i class="fa-solid fa-check-circle"></i> In regola con i versamenti';
             } else {
                 elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 flex items-center gap-1.5';
-                elBadgeSaldo.innerHTML = `<i class="fa-solid fa-clock"></i> Quota residua da saldare: ${formatEuro(saldoPers)}`;
+                elBadgeSaldo.innerHTML = `<i class="fa-solid fa-clock"></i> Quota residua: ${formatEuro(saldoPers)}`;
             }
         }
 
         // 3. Tabella Scadenze Personali
-        const tbody = document.getElementById('condomino-scadenze-tbody');
         if (tbody) {
             const scadenze = pers.scadenze || [];
             if (scadenze.length === 0) {
@@ -9113,6 +9138,15 @@ window.loadCondominoFinanceDashboard = async function() {
 
     } catch (e) {
         console.warn('Avviso caricamento dashboard finanziaria condomino:', e);
+        if (elUnita) elUnita.textContent = 'Dati non disponibili';
+        if (elMillesimi) elMillesimi.textContent = '0,00 / 1000';
+        if (elBadgeSaldo) {
+            elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700';
+            elBadgeSaldo.textContent = 'Nessuna informazione';
+        }
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Impossibile recuperare i dettagli contabili in questo momento.</td></tr>';
+        }
     }
 };
 

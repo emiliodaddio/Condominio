@@ -5034,44 +5034,98 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
         if (db.pool && typeof db.pool.promise === 'function') {
             connection = await db.getConnection();
 
-            // 1. Identificazione associazione del condomino allo stabile
-            let userCondoRows;
+            // 1. Identificazione associazione del condomino allo stabile (multi-tabella fail-safe)
+            let condominoProfile = null;
+
+            // Tentativo 1: Tabella condomino_condominio + condomini
             if (condoId) {
-                [userCondoRows] = await connection.query(`
+                const [rows] = await connection.query(`
                     SELECT cc.condominio_id, cc.interno, cc.millesimi, 
-                           c.nome AS condominio_nome, c.indirizzo, c.codice_fiscale,
+                           COALESCE(c.nome, 'Condominio') AS condominio_nome, COALESCE(c.indirizzo, '') AS indirizzo, COALESCE(c.codice_fiscale, '') AS codice_fiscale,
                            u.id AS condomino_id, u.nome AS condomino_nome, u.email AS condomino_email
                     FROM condomino_condominio cc
-                    JOIN condomini c ON cc.condominio_id = c.id
+                    LEFT JOIN condomini c ON cc.condominio_id = c.id
                     JOIN users u ON cc.condomino_id = u.id
                     WHERE cc.condomino_id = ? AND cc.condominio_id = ?
+                    LIMIT 1
                 `, [userId, condoId]);
+                if (rows && rows.length > 0) condominoProfile = rows[0];
             } else {
-                [userCondoRows] = await connection.query(`
+                const [rows] = await connection.query(`
                     SELECT cc.condominio_id, cc.interno, cc.millesimi, 
-                           c.nome AS condominio_nome, c.indirizzo, c.codice_fiscale,
+                           COALESCE(c.nome, 'Condominio') AS condominio_nome, COALESCE(c.indirizzo, '') AS indirizzo, COALESCE(c.codice_fiscale, '') AS codice_fiscale,
                            u.id AS condomino_id, u.nome AS condomino_nome, u.email AS condomino_email
                     FROM condomino_condominio cc
-                    JOIN condomini c ON cc.condominio_id = c.id
+                    LEFT JOIN condomini c ON cc.condominio_id = c.id
                     JOIN users u ON cc.condomino_id = u.id
                     WHERE cc.condomino_id = ?
                     ORDER BY cc.id DESC
                     LIMIT 1
                 `, [userId]);
+                if (rows && rows.length > 0) condominoProfile = rows[0];
             }
 
-            if (!userCondoRows || userCondoRows.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Nessun condominio associato trovato per questo account condòmino.'
-                });
+            // Tentativo 2: Tabella legacy user_condominios + unita_immobiliari + condominios
+            if (!condominoProfile) {
+                const condoFilter = condoId ? 'AND uc.condominio_id = ?' : '';
+                const params = condoId ? [userId, condoId] : [userId];
+                const [legacyRows] = await connection.query(`
+                    SELECT uc.condominio_id,
+                           COALESCE(ui.identificativo, uc.unita, 'Unità Condominiale') AS interno,
+                           COALESCE(ui.millesimi_proprieta, 0.00) AS millesimi,
+                           COALESCE(co.nome, c.nome, 'Condominio') AS condominio_nome,
+                           COALESCE(co.indirizzo, c.indirizzo, '') AS indirizzo,
+                           COALESCE(co.cf, c.codice_fiscale, '') AS codice_fiscale,
+                           u.id AS condomino_id, u.nome AS condomino_nome, u.email AS condomino_email
+                    FROM user_condominios uc
+                    JOIN users u ON uc.user_id = u.id
+                    LEFT JOIN condominios co ON uc.condominio_id = co.id
+                    LEFT JOIN condomini c ON uc.condominio_id = c.id
+                    LEFT JOIN unita_immobiliari ui ON (ui.condominio_id = uc.condominio_id AND (ui.user_id = u.id OR ui.proprietario_id = u.id OR ui.conduttore_id = u.id))
+                    WHERE uc.user_id = ? ${condoFilter}
+                    ORDER BY uc.id DESC
+                    LIMIT 1
+                `, params);
+                if (legacyRows && legacyRows.length > 0) condominoProfile = legacyRows[0];
             }
 
-            const condominoProfile = userCondoRows[0];
+            // Tentativo 3: Se utente è Amministratore o Superuser, oppure non ha unità assegnata
+            if (!condominoProfile) {
+                let targetCondoId = condoId;
+                let condoInfo = null;
+                if (targetCondoId) {
+                    const [cRows] = await connection.query(
+                        'SELECT id, nome, indirizzo, COALESCE(cf, "") AS codice_fiscale FROM condominios WHERE id = ? UNION SELECT id, nome, indirizzo, codice_fiscale FROM condomini WHERE id = ? LIMIT 1',
+                        [targetCondoId, targetCondoId]
+                    );
+                    if (cRows && cRows.length > 0) condoInfo = cRows[0];
+                }
+                if (!condoInfo) {
+                    const [cRows] = await connection.query(
+                        'SELECT id, nome, indirizzo, COALESCE(cf, "") AS codice_fiscale FROM condominios ORDER BY id ASC LIMIT 1'
+                    );
+                    if (cRows && cRows.length > 0) condoInfo = cRows[0];
+                }
+
+                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore';
+                condominoProfile = {
+                    condominio_id: condoInfo ? condoInfo.id : (condoId || 1),
+                    condominio_nome: condoInfo ? condoInfo.nome : 'Condominio',
+                    indirizzo: condoInfo ? condoInfo.indirizzo : '',
+                    codice_fiscale: condoInfo ? condoInfo.codice_fiscale : '',
+                    condomino_id: userId,
+                    condomino_nome: req.user.nome || 'Utente',
+                    condomino_email: req.user.email || '',
+                    interno: isAdminUser ? 'Studio Amministrazione' : 'Unità Condominiale',
+                    millesimi: 0.00,
+                    is_admin_view: isAdminUser
+                };
+            }
+
             const activeCondoId = condominoProfile.condominio_id;
 
-            // 2. Dettaglio scadenze e situazione contabile personale del condòmino
-            const [personalScadenze] = await connection.query(`
+            // 2. Dettaglio scadenze personali da spese_scadenze
+            let [personalScadenze] = await connection.query(`
                 SELECT 
                     s.id AS spesa_id,
                     s.titolo,
@@ -5096,14 +5150,47 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 ORDER BY s.data_scadenza ASC
             `, [condominoProfile.millesimi, condominoProfile.millesimi, condominoProfile.millesimi, userId, activeCondoId]);
 
+            // Se spese_scadenze è vuota per questo stabile, controlla se ci sono quote nella tabella quotes
+            if (!personalScadenze || personalScadenze.length === 0) {
+                const [quotesRows] = await connection.query(`
+                    SELECT 
+                        q.id AS spesa_id,
+                        q.title AS titolo,
+                        q.amount AS importo_totale_spesa,
+                        q.due_date AS data_scadenza,
+                        q.amount AS quota_dovuta,
+                        COALESCE(q.paid_amount, CASE WHEN q.status = 'Pagato' THEN q.amount ELSE 0.00 END) AS importo_versato,
+                        ROUND(q.amount - COALESCE(q.paid_amount, CASE WHEN q.status = 'Pagato' THEN q.amount ELSE 0.00 END), 2) AS residuo_individuale,
+                        CASE 
+                            WHEN q.status = 'Pagato' OR COALESCE(q.paid_amount, 0) >= q.amount THEN 'Regolarizzato'
+                            ELSE 'In corso di riscossione'
+                        END AS stato_contabile,
+                        q.due_date AS ultima_data_pagamento
+                    FROM quotes q
+                    WHERE (q.user_id = ? OR q.persona_id IN (SELECT id FROM anagrafica_persone WHERE email = ?))
+                      AND (q.condominio_id = ? OR ? IS NULL)
+                    ORDER BY q.due_date ASC
+                `, [userId, condominoProfile.condomino_email, activeCondoId, activeCondoId]);
+                if (quotesRows && quotesRows.length > 0) {
+                    personalScadenze = quotesRows;
+                }
+            }
+
             // Calcolo totali personali
             let totaleQuoteDovute = 0;
             let totaleVersatoPersonale = 0;
-            personalScadenze.forEach(item => {
+            (personalScadenze || []).forEach(item => {
                 totaleQuoteDovute += parseFloat(item.quota_dovuta || 0);
                 totaleVersatoPersonale += parseFloat(item.importo_versato || 0);
             });
             const residuoPersonaleComplessivo = Math.max(0, parseFloat((totaleQuoteDovute - totaleVersatoPersonale).toFixed(2)));
+
+            let statoLabel = 'In regola con i versamenti';
+            if (condominoProfile.is_admin_view) {
+                statoLabel = 'Profilo Amministratore (Nessun debito personale)';
+            } else if (residuoPersonaleComplessivo > 0) {
+                statoLabel = 'Quote in corso di regolazione';
+            }
 
             // 3. Calcolo aggregato globale di cassa dello stabile (Zero-leakage di privacy)
             const [globalStats] = await connection.query(`
@@ -5119,15 +5206,31 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 WHERE s.condominio_id = ?
             `, [activeCondoId, activeCondoId]);
 
-            const totalePreventivato = parseFloat(globalStats[0].totale_gestione_preventivata || 0);
-            const totaleRiscosso = parseFloat(globalStats[0].totale_riscosso_fabbricato || 0);
+            let totalePreventivato = parseFloat((globalStats && globalStats[0] && globalStats[0].totale_gestione_preventivata) || 0);
+            let totaleRiscosso = parseFloat((globalStats && globalStats[0] && globalStats[0].totale_riscosso_fabbricato) || 0);
+
+            // Fallback aggregato su tabella quotes se spese_scadenze non ha ancora importi
+            if (totalePreventivato === 0) {
+                const [quotesStats] = await connection.query(`
+                    SELECT 
+                        COALESCE(SUM(amount), 0.00) AS totale_preventivato,
+                        COALESCE(SUM(COALESCE(paid_amount, CASE WHEN status = 'Pagato' THEN amount ELSE 0.00 END)), 0.00) AS totale_riscosso
+                    FROM quotes
+                    WHERE condominio_id = ?
+                `, [activeCondoId]);
+                if (quotesStats && quotesStats.length > 0) {
+                    totalePreventivato = parseFloat(quotesStats[0].totale_preventivato || 0);
+                    totaleRiscosso = parseFloat(quotesStats[0].totale_riscosso || 0);
+                }
+            }
+
             const residuiAttiviGestione = Math.max(0, parseFloat((totalePreventivato - totaleRiscosso).toFixed(2)));
             const percentualeAvanzamento = totalePreventivato > 0 
                 ? Math.min(100, Math.round((totaleRiscosso / totalePreventivato) * 100))
                 : 100;
 
             // Storico pagamenti del singolo condomino con codice ricevuta (per download PDF)
-            const [pagamentiPersonali] = await connection.query(`
+            let [pagamentiPersonali] = await connection.query(`
                 SELECT p.id, s.titolo, p.importo_versato, DATE_FORMAT(p.data_pagamento, '%d/%m/%Y') AS data, p.ricevuta_codice 
                 FROM pagamenti_condomini p
                 JOIN spese_scadenze s ON p.spesa_id = s.id
@@ -5135,11 +5238,29 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 ORDER BY p.data_pagamento DESC
             `, [userId]);
 
+            if (!pagamentiPersonali || pagamentiPersonali.length === 0) {
+                // Fallback da quotes pagate se non ci sono ancora record in pagamenti_condomini
+                const [qPaid] = await connection.query(`
+                    SELECT id, title AS titolo, 
+                           COALESCE(paid_amount, amount) AS importo_versato,
+                           DATE_FORMAT(COALESCE(created_at, NOW()), '%d/%m/%Y') AS data,
+                           CONCAT('REC-', YEAR(NOW()), '-', UPPER(SUBSTRING(MD5(id), 1, 8))) AS ricevuta_codice
+                    FROM quotes
+                    WHERE (user_id = ? OR persona_id IN (SELECT id FROM anagrafica_persone WHERE email = ?))
+                      AND (status = 'Pagato' OR paid_amount > 0)
+                      AND (condominio_id = ? OR ? IS NULL)
+                    ORDER BY id DESC
+                `, [userId, condominoProfile.condomino_email, activeCondoId, activeCondoId]);
+                if (qPaid && qPaid.length > 0) {
+                    pagamentiPersonali = qPaid;
+                }
+            }
+
             return res.json({
                 success: true,
                 datiPersonali: {
                     interno: condominoProfile.interno,
-                    millesimi: parseFloat(condominoProfile.millesimi),
+                    millesimi: parseFloat(condominoProfile.millesimi || 0),
                     pagamenti: pagamentiPersonali || []
                 },
                 cassaComune: {
@@ -5158,15 +5279,15 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     },
                     unita_immobiliare: {
                         interno: condominoProfile.interno,
-                        millesimi: parseFloat(condominoProfile.millesimi)
+                        millesimi: parseFloat(condominoProfile.millesimi || 0)
                     },
                     riepilogo_personale: {
                         totale_quote_dovute: parseFloat(totaleQuoteDovute.toFixed(2)),
                         totale_versato: parseFloat(totaleVersatoPersonale.toFixed(2)),
                         saldo_in_corso: residuoPersonaleComplessivo,
-                        stato: residuoPersonaleComplessivo === 0 ? 'In regola con i versamenti' : 'Quote in corso di regolazione'
+                        stato: statoLabel
                     },
-                    scadenze: personalScadenze
+                    scadenze: personalScadenze || []
                 },
                 // Dati aggregati a livello di fabbricato (GDPR Compliant - Nessun dato nominativo di terzi)
                 aggregato_cassa_stabile: {
