@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+npm-debug.log
+storage/uploads/*
+!storage/uploads/.gitkeep
+public/uploads/*
+!public/uploads/.gitkeep
+*.log
+.env
+.env.*
+!*.example
+test*
+*.md
+.DS_Store
+Thumbs.db

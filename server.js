@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // Carica variabili da .env (supporta sia locale che Secret Files di Render in /etc/secrets/.env)
 const envPaths = [
@@ -119,6 +120,47 @@ app.get('/api/health-email', (req, res) => {
         mailFrom: process.env.MAIL_FROM || null,
         nodeEnv: process.env.NODE_ENV || 'development',
         envKeysFound: keys.filter(k => /brevo|smtp|mail|tidb|mysql/i.test(k))
+    });
+});
+
+// Health Checks Standard Cloud-Native (/healthz & /api/health)
+app.get(['/healthz', '/api/health'], async (req, res) => {
+    let dbStatus = 'ok';
+    let dbLatencyMs = 0;
+    const start = Date.now();
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            await db.pool.promise().query('SELECT 1');
+            dbLatencyMs = Date.now() - start;
+        }
+    } catch (e) {
+        dbStatus = 'degraded: ' + e.message;
+    }
+
+    const mem = process.memoryUsage();
+    const isHealthy = !dbStatus.startsWith('degraded');
+
+    res.status(isHealthy ? 200 : 503).json({
+        status: isHealthy ? 'pass' : 'fail',
+        service: 'condo-transparent-saas',
+        timestamp: new Date().toISOString(),
+        uptime_seconds: Math.floor(process.uptime()),
+        checks: {
+            database: {
+                status: dbStatus,
+                latency_ms: dbLatencyMs,
+                type: db.type || 'mysql'
+            },
+            storage: {
+                status: 'ok',
+                type: storageService.isS3Configured() ? 's3' : 'local'
+            },
+            memory: {
+                rss_mb: Math.round(mem.rss / 1024 / 1024),
+                heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+                heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024)
+            }
+        }
     });
 });
 
@@ -927,9 +969,14 @@ app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, 
 });
 
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'chiave_segreta_condominio_sicura_123!';
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-    console.warn('⚠️ [AVVISO SICUREZZA]: JWT_SECRET non impostato nelle variabili d\'ambiente di produzione!');
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+        console.warn('⚠️ [AVVISO SICUREZZA]: JWT_SECRET non impostato nelle variabili d\'ambiente di produzione. Generazione chiave temporanea a 256-bit.');
+        JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    } else {
+        JWT_SECRET = 'dev_chiave_segreta_condominio_sicura_123!';
+    }
 }
 
 app.use(cors());
@@ -6851,11 +6898,54 @@ app.use((err, req, res, next) => {
 
 
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`====================================================`);
-    console.log(`🏢 MULTI-TENANT CONDO ONLINE (SaaS) - STEP 1 & 2`);
+    console.log(`🏢 MULTI-TENANT CONDO ONLINE (SaaS) - PRODUCTION CLOUD READY`);
     console.log(`🚀 Server in ascolto su: http://localhost:${PORT}`);
     console.log(`====================================================`);
 });
+
+// ============================================================================
+// STATELESS GRACEFUL SHUTDOWN (SIGTERM / SIGINT)
+// ============================================================================
+let isShuttingDown = false;
+
+function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`🛑 [Shutdown] Ricevuto segnale ${signal}. Avvio procedura di chiusura controllata...`);
+
+    // Timeout di sicurezza forzato (15 secondi)
+    const forceExitTimer = setTimeout(() => {
+        console.error('⚠️ [Shutdown] Timeout superato (15s), forzatura terminazione processo.');
+        process.exit(1);
+    }, 15000);
+    forceExitTimer.unref();
+
+    server.close((err) => {
+        if (err) {
+            console.error('❌ [Shutdown] Errore durante la chiusura del server HTTP:', err);
+        } else {
+            console.log('✅ [Shutdown] Server HTTP chiuso. Nessuna nuova richiesta accettata.');
+        }
+
+        // Chiusura connessione database
+        try {
+            if (db && typeof db.close === 'function') {
+                db.close(() => {
+                    console.log('✅ [Shutdown] Pool database chiuso correttamente.');
+                    process.exit(0);
+                });
+                return;
+            }
+        } catch (dbErr) {
+            console.warn('⚠️ [Shutdown] Avviso chiusura DB:', dbErr.message);
+        }
+        process.exit(0);
+    });
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = app;
