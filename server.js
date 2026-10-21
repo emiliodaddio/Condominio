@@ -52,6 +52,8 @@ const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
 const emailService = require('./emailService');
 const puppeteer = require('puppeteer');
+const Decimal = require('decimal.js');
+const storageService = require('./storageService');
 
 function getPuppeteerLaunchOptions() {
     const defaultArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
@@ -942,6 +944,14 @@ app.use((req, res, next) => {
     next();
 });
 
+// Protezione Zero-Leakage: Blocca qualsiasi accesso diretto pubblico alla cartella degli upload
+app.all('/uploads*', (req, res) => {
+    return res.status(403).json({
+        success: false,
+        message: 'Accesso diretto negato. I documenti condominiali sono archiviati in modo protetto con autorizzazione RBAC.'
+    });
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
     etag: false,
     lastModified: false,
@@ -1367,7 +1377,11 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'condominios', col: 'assicurazione_compagnia', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'condominios', col: 'assicurazione_polizza', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
         { table: 'condominios', col: 'assicurazione_scadenza', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
-        { table: 'condominios', col: 'note_fabbricato', defMysql: 'TEXT', defSqlite: 'TEXT' }
+        { table: 'condominios', col: 'note_fabbricato', defMysql: 'TEXT', defSqlite: 'TEXT' },
+        { table: 'condo_documents', col: 'file_key', defMysql: 'VARCHAR(500)', defSqlite: 'TEXT' },
+        { table: 'condo_documents', col: 'storage_type', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'condomini', col: 'cf', defMysql: 'VARCHAR(20)', defSqlite: 'TEXT' },
+        { table: 'condominios', col: 'amministratore_id', defMysql: 'INT', defSqlite: 'INTEGER' }
     ];
 
     let pending = colsToEnsure.length;
@@ -1437,6 +1451,9 @@ function ensureAnagraficaAndUnitaColumns(callback) {
 
     // Riallineamento rigoroso a "Anagrafica Condominio & Tabelle Millesimali" (anagrafica_persone)
     realignDatabaseToAnagrafica();
+
+    // Sincronizzazione automatica tabelle parallele (condomini vs condominios, condomino_condominio vs user_condominios)
+    syncDualDatabaseEntities();
 }
 
 function realignDatabaseToAnagrafica(condominioId = null, callback = null) {
@@ -1629,6 +1646,63 @@ function ensurePartialPaymentColumns() {
                 }
             }
         });
+    }
+}
+
+async function syncDualDatabaseEntities() {
+    if (db.type !== 'mysql') return;
+    let conn;
+    try {
+        conn = await db.getConnection();
+        // 1. Sincronizzazione condominios -> condomini
+        await conn.query(`
+            INSERT INTO condomini (id, nome, indirizzo, codice_fiscale, creato_il)
+            SELECT c.id, c.nome, c.indirizzo,
+                   COALESCE(NULLIF(TRIM(c.cf), ''), CONCAT('CF-TEMP-', c.id)),
+                   COALESCE(c.created_at, NOW())
+            FROM condominios c
+            LEFT JOIN condomini cd ON c.id = cd.id
+            WHERE cd.id IS NULL
+            ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo)
+        `).catch(() => {});
+
+        // 2. Sincronizzazione condomini -> condominios
+        await conn.query(`
+            INSERT INTO condominios (id, nome, indirizzo, cf, created_at)
+            SELECT cd.id, cd.nome, cd.indirizzo, cd.codice_fiscale, COALESCE(cd.creato_il, NOW())
+            FROM condomini cd
+            LEFT JOIN condominios c ON cd.id = c.id
+            WHERE c.id IS NULL
+            ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo), cf = VALUES(cf)
+        `).catch(() => {});
+
+        // 3. Sincronizzazione user_condominios -> condomino_condominio
+        await conn.query(`
+            INSERT INTO condomino_condominio (condomino_id, condominio_id, interno, millesimi, associato_il)
+            SELECT uc.user_id, uc.condominio_id, COALESCE(NULLIF(TRIM(uc.unita), ''), 'Int. 1'), 0.00, NOW()
+            FROM user_condominios uc
+            LEFT JOIN condomino_condominio cc ON uc.user_id = cc.condomino_id AND uc.condominio_id = cc.condominio_id
+            WHERE cc.id IS NULL AND uc.role = 'condomino'
+            ON DUPLICATE KEY UPDATE interno = VALUES(interno)
+        `).catch(() => {});
+
+        // 4. Sincronizzazione condomino_condominio -> user_condominios
+        await conn.query(`
+            INSERT INTO user_condominios (user_id, condominio_id, role, unita)
+            SELECT cc.condomino_id, cc.condominio_id, 'condomino', cc.interno
+            FROM condomino_condominio cc
+            LEFT JOIN user_condominios uc ON cc.condomino_id = uc.user_id AND cc.condominio_id = uc.condominio_id
+            WHERE uc.id IS NULL
+            ON DUPLICATE KEY UPDATE role = 'condomino', unita = VALUES(unita)
+        `).catch(() => {});
+
+        console.log('✅ [Dual-DB Sync] Allineamento bidirezionale condomini/condominios e condomino_condominio/user_condominios completato.');
+    } catch (e) {
+        console.warn('⚠️ [Dual-DB Sync] Avviso durante sincronizzazione:', e.message);
+    } finally {
+        if (conn) {
+            try { conn.release(); } catch (_) {}
+        }
     }
 }
 
@@ -2928,62 +3002,62 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCond
     );
 });
 
-app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const { type, title, due_date, items } = req.body;
     if (!title || !due_date || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ success: false, message: 'Titolo, data di scadenza ed elenco quote sono obbligatori.' });
     }
 
-    let inserted = 0;
-    let errors = 0;
-    let pending = items.length;
+    let conn;
+    try {
+        conn = await db.getConnection();
+        await conn.beginTransaction();
 
-    items.forEach(item => {
-        const personaVal = (item.persona_id !== undefined && item.persona_id !== '' && item.persona_id !== null) ? parseInt(item.persona_id, 10) : null;
-        const unitaVal = (item.unita_id !== undefined && item.unita_id !== '' && item.unita_id !== null) ? parseInt(item.unita_id, 10) : null;
-        const amountVal = Math.round((parseFloat(item.amount) || 0) * 100) / 100;
-        const descVal = item.description || null;
-        const itemTitle = item.title || title;
+        let inserted = 0;
+        for (const item of items) {
+            const personaVal = (item.persona_id !== undefined && item.persona_id !== '' && item.persona_id !== null) ? parseInt(item.persona_id, 10) : null;
+            const unitaVal = (item.unita_id !== undefined && item.unita_id !== '' && item.unita_id !== null) ? parseInt(item.unita_id, 10) : null;
+            const amountDec = new Decimal(item.amount || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+            const descVal = item.description || null;
+            const itemTitle = item.title || title;
 
-        if (amountVal <= 0) {
-            pending--;
-            if (pending === 0) {
-                logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
-                return res.json({ success: true, inserted, errors });
-            }
-            return;
+            if (amountDec.lte(0)) continue;
+
+            await conn.query(
+                'INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description) VALUES (?, ?, ?, ?, ?, ?, 0, ?, "In sospeso", ?)',
+                [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountDec.toFixed(2), due_date, descVal]
+            );
+            inserted++;
         }
 
-        db.run(
-            `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'In sospeso', ?)`,
-            [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountVal, due_date, descVal],
-            function(err) {
-                if (err) errors++;
-                else inserted++;
-                pending--;
-                if (pending === 0) {
-                    logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
-                    res.json({ success: true, inserted, errors });
-                }
-            }
-        );
-    });
+        await conn.commit();
+        conn.release();
+
+        logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
+        return res.json({ success: true, inserted, errors: 0 });
+    } catch (err) {
+        if (conn) {
+            try { await conn.rollback(); } catch (_) {}
+            try { conn.release(); } catch (_) {}
+        }
+        return res.status(500).json({ success: false, message: 'Errore generazione massiva quote: ' + err.message });
+    }
 });
 
 app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     const { amount, due_date, status, paid_amount } = req.body;
-    const amountVal = parseFloat(amount) || 0;
+    const amountVal = new Decimal(amount || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const paidVal = (paid_amount !== undefined && paid_amount !== null)
-        ? parseFloat(paid_amount)
-        : (status === 'Pagato' ? amountVal : 0);
+        ? new Decimal(paid_amount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+        : (status === 'Pagato' ? amountVal : new Decimal(0));
     let payment_date = null;
     if (status === 'Pagato') {
         payment_date = new Date().toISOString().split('T')[0];
     }
     db.run(
         `UPDATE quotes SET amount = ?, paid_amount = ?, due_date = ?, status = ?, payment_date = COALESCE(payment_date, ?) WHERE id = ? AND condominio_id = ?`,
-        [amountVal, paidVal, due_date, status, payment_date, id, req.condominio_id],
+        [amountVal.toFixed(2), paidVal.toFixed(2), due_date, status, payment_date, id, req.condominio_id],
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             res.json({ success: true });
@@ -2991,30 +3065,53 @@ app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkC
     );
 });
 
-// Registrazione Saldo / Acconto Quota Condominiale
-app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+// Registrazione Saldo / Acconto Quota Condominiale (Transazione ACID con Decimal.js e Lock Pessimistico)
+app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const { id } = req.params;
     let { amount_paying, payment_amount, amount, payment_date, payment_method, note, notes, add_to_journal, create_journal_entry } = req.body || {};
     const inputPaying = (payment_amount !== undefined && payment_amount !== null) ? payment_amount : ((amount_paying !== undefined && amount_paying !== null) ? amount_paying : amount);
     const inputNote = notes || note;
     const shouldAddToJournal = (create_journal_entry !== undefined) ? create_journal_entry : (add_to_journal !== false && add_to_journal !== undefined ? add_to_journal : true);
 
-    db.get('SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome FROM quotes q LEFT JOIN anagrafica_persone p ON q.persona_id = p.id WHERE q.id = ? AND q.condominio_id = ?', [id, req.condominio_id], (err, quote) => {
-        if (err || !quote) return res.status(404).json({ success: false, message: 'Quota non trovata' });
+    let conn;
+    try {
+        conn = await db.getConnection();
+        await conn.beginTransaction();
 
-        const totalAmount = parseFloat(quote.amount) || 0;
-        const alreadyPaid = (quote.paid_amount !== undefined && quote.paid_amount !== null)
-            ? parseFloat(quote.paid_amount)
-            : (quote.status === 'Pagato' ? totalAmount : 0);
-        const currentResidual = Math.max(0, Math.round((totalAmount - alreadyPaid) * 100) / 100);
+        const [rows] = await conn.query(
+            'SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome FROM quotes q LEFT JOIN anagrafica_persone p ON q.persona_id = p.id WHERE q.id = ? AND q.condominio_id = ? FOR UPDATE',
+            [id, req.condominio_id]
+        );
+        const quote = rows && rows[0];
+        if (!quote) {
+            await conn.rollback();
+            conn.release();
+            return res.status(404).json({ success: false, message: 'Quota non trovata' });
+        }
 
-        let paying = parseFloat(inputPaying);
-        if (isNaN(paying) || paying <= 0) paying = currentResidual;
-        if (paying > currentResidual) paying = currentResidual;
-        paying = Math.round(paying * 100) / 100;
+        const totalAmount = new Decimal(quote.amount || 0);
+        const alreadyPaid = new Decimal(
+            (quote.paid_amount !== undefined && quote.paid_amount !== null)
+                ? quote.paid_amount
+                : (quote.status === 'Pagato' ? quote.amount : 0)
+        );
+        const currentResidual = Decimal.max(0, totalAmount.minus(alreadyPaid));
 
-        const newPaidAmount = Math.min(totalAmount, Math.round((alreadyPaid + paying) * 100) / 100);
-        const newStatus = newPaidAmount >= (totalAmount - 0.009) ? 'Pagato' : 'Parziale';
+        let paying = (inputPaying !== undefined && inputPaying !== null && String(inputPaying).trim() !== '')
+            ? new Decimal(inputPaying)
+            : currentResidual;
+
+        if (paying.isNaN() || paying.lte(0)) {
+            paying = currentResidual;
+        }
+        if (paying.gt(currentResidual)) {
+            paying = currentResidual;
+        }
+        paying = paying.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+        const newPaidAmount = Decimal.min(totalAmount, alreadyPaid.plus(paying)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const residualAfter = Decimal.max(0, totalAmount.minus(newPaidAmount)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const newStatus = residualAfter.lte(0.00) ? 'Pagato' : 'Parziale';
         const pDate = payment_date || new Date().toISOString().split('T')[0];
         const pMethod = payment_method || 'Bonifico Bancario';
         const pNote = inputNote || (newStatus === 'Pagato' ? 'Saldo Quota' : 'Acconto Quota');
@@ -3026,49 +3123,45 @@ app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, c
         history.push({
             id: Date.now(),
             date: pDate,
-            amount: paying,
+            amount: paying.toNumber(),
             method: pMethod,
             note: pNote,
             registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
         });
 
-        db.run(
-            `UPDATE quotes SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?`,
-            [newPaidAmount, newStatus, pDate, JSON.stringify(history), id, req.condominio_id],
-            function(updErr) {
-                if (updErr) return res.status(500).json({ success: false, message: updErr.message });
-
-                logAudit(req.user.id, req.condominio_id, `Registrato Incasso Quota (€ ${paying.toFixed(2)} - ${newStatus})`, 'quotes', id, null, req.ip);
-
-                // Registrazione automatica nel Libro Giornale (se richiesta)
-                if (shouldAddToJournal) {
-                    const desc = `Incasso Quota (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${quote.title}${pNote ? ' - ' + pNote : ''}`;
-                    const nominativo = quote.persona_cognome ? `${quote.persona_cognome} ${quote.persona_nome}` : 'Condòmino';
-                    db.run(
-                        `INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [req.condominio_id, pDate, 'AUTO', 'Incasso Quota', desc, paying, 0, nominativo],
-                        function() {
-                            res.json({
-                                success: true,
-                                message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
-                                newStatus,
-                                paid_amount: newPaidAmount,
-                                residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
-                            });
-                        }
-                    );
-                } else {
-                    res.json({
-                        success: true,
-                        message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
-                        newStatus,
-                        paid_amount: newPaidAmount,
-                        residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
-                    });
-                }
-            }
+        await conn.query(
+            'UPDATE quotes SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?',
+            [newPaidAmount.toFixed(2), newStatus, pDate, JSON.stringify(history), id, req.condominio_id]
         );
-    });
+
+        if (shouldAddToJournal) {
+            const desc = `Incasso Quota (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${quote.title}${pNote ? ' - ' + pNote : ''}`;
+            const nominativo = quote.persona_cognome ? `${quote.persona_cognome} ${quote.persona_nome}` : 'Condòmino';
+            await conn.query(
+                'INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [req.condominio_id, pDate, 'AUTO', 'Incasso Quota', desc, paying.toFixed(2), 0, nominativo]
+            );
+        }
+
+        await conn.commit();
+        conn.release();
+
+        logAudit(req.user.id, req.condominio_id, `Registrato Incasso Quota (€ ${paying.toFixed(2)} - ${newStatus})`, 'quotes', id, null, req.ip);
+
+        return res.json({
+            success: true,
+            message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${residualAfter.toFixed(2)})`,
+            newStatus,
+            paid_amount: newPaidAmount.toNumber(),
+            residual: residualAfter.toNumber()
+        });
+    } catch (err) {
+        if (conn) {
+            try { await conn.rollback(); } catch (_) {}
+            try { conn.release(); } catch (_) {}
+        }
+        return res.status(500).json({ success: false, message: 'Errore registrazione incasso: ' + err.message });
+    }
 });
 
 app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
@@ -3370,30 +3463,53 @@ app.put('/api/supplier-payments/:id', authenticateToken, requireCondominio, isAd
         });
 });
 
-// Registrazione Saldo / Acconto Fattura Fornitore
-app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
+// Registrazione Saldo / Acconto Fattura Fornitore (Transazione ACID con Decimal.js e Lock Pessimistico)
+app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     const { id } = req.params;
     let { amount_paying, payment_amount, amount, payment_date, payment_method, note, notes, add_to_journal, create_journal_entry } = req.body || {};
     const inputPaying = (payment_amount !== undefined && payment_amount !== null) ? payment_amount : ((amount_paying !== undefined && amount_paying !== null) ? amount_paying : amount);
     const inputNote = notes || note;
     const shouldAddToJournal = (create_journal_entry !== undefined) ? create_journal_entry : (add_to_journal !== false && add_to_journal !== undefined ? add_to_journal : true);
 
-    db.get('SELECT * FROM supplier_payments WHERE id = ? AND condominio_id = ?', [id, req.condominio_id], (err, supplier) => {
-        if (err || !supplier) return res.status(404).json({ success: false, message: 'Fattura fornitore non trovata' });
+    let conn;
+    try {
+        conn = await db.getConnection();
+        await conn.beginTransaction();
 
-        const totalAmount = parseFloat(supplier.amount) || 0;
-        const alreadyPaid = (supplier.paid_amount !== undefined && supplier.paid_amount !== null)
-            ? parseFloat(supplier.paid_amount)
-            : (supplier.status === 'Pagato' ? totalAmount : 0);
-        const currentResidual = Math.max(0, Math.round((totalAmount - alreadyPaid) * 100) / 100);
+        const [rows] = await conn.query(
+            'SELECT * FROM supplier_payments WHERE id = ? AND condominio_id = ? FOR UPDATE',
+            [id, req.condominio_id]
+        );
+        const supplier = rows && rows[0];
+        if (!supplier) {
+            await conn.rollback();
+            conn.release();
+            return res.status(404).json({ success: false, message: 'Fattura fornitore non trovata' });
+        }
 
-        let paying = parseFloat(inputPaying);
-        if (isNaN(paying) || paying <= 0) paying = currentResidual;
-        if (paying > currentResidual) paying = currentResidual;
-        paying = Math.round(paying * 100) / 100;
+        const totalAmount = new Decimal(supplier.amount || 0);
+        const alreadyPaid = new Decimal(
+            (supplier.paid_amount !== undefined && supplier.paid_amount !== null)
+                ? supplier.paid_amount
+                : (supplier.status === 'Pagato' ? supplier.amount : 0)
+        );
+        const currentResidual = Decimal.max(0, totalAmount.minus(alreadyPaid));
 
-        const newPaidAmount = Math.min(totalAmount, Math.round((alreadyPaid + paying) * 100) / 100);
-        const newStatus = newPaidAmount >= (totalAmount - 0.009) ? 'Pagato' : 'Parziale';
+        let paying = (inputPaying !== undefined && inputPaying !== null && String(inputPaying).trim() !== '')
+            ? new Decimal(inputPaying)
+            : currentResidual;
+
+        if (paying.isNaN() || paying.lte(0)) {
+            paying = currentResidual;
+        }
+        if (paying.gt(currentResidual)) {
+            paying = currentResidual;
+        }
+        paying = paying.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+        const newPaidAmount = Decimal.min(totalAmount, alreadyPaid.plus(paying)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const residualAfter = Decimal.max(0, totalAmount.minus(newPaidAmount)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const newStatus = residualAfter.lte(0.00) ? 'Pagato' : 'Parziale';
         const pDate = payment_date || new Date().toISOString().split('T')[0];
         const pMethod = payment_method || 'Bonifico Bancario';
         const pNote = inputNote || (newStatus === 'Pagato' ? 'Saldo Fattura' : 'Acconto Fattura');
@@ -3405,48 +3521,44 @@ app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio,
         history.push({
             id: Date.now(),
             date: pDate,
-            amount: paying,
+            amount: paying.toNumber(),
             method: pMethod,
             note: pNote,
             registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
         });
 
-        db.run(
-            `UPDATE supplier_payments SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?`,
-            [newPaidAmount, newStatus, pDate, JSON.stringify(history), id, req.condominio_id],
-            function(updErr) {
-                if (updErr) return res.status(500).json({ success: false, message: updErr.message });
-
-                logAudit(req.user.id, req.condominio_id, `Registrato Pagamento Fornitore (€ ${paying.toFixed(2)} - ${newStatus})`, 'supplier_payments', id, null, req.ip);
-
-                // Registrazione automatica nel Libro Giornale (se richiesta)
-                if (shouldAddToJournal) {
-                    const desc = `Pagamento Fornitore (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${supplier.supplier_name} - Fatt. ${supplier.invoice_number || 'N/D'}${pNote ? ' - ' + pNote : ''}`;
-                    db.run(
-                        `INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [req.condominio_id, pDate, supplier.invoice_number || 'AUTO', 'Pagamento Fornitore', desc, 0, paying, supplier.supplier_name],
-                        function() {
-                            res.json({
-                                success: true,
-                                message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
-                                newStatus,
-                                paid_amount: newPaidAmount,
-                                residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
-                            });
-                        }
-                    );
-                } else {
-                    res.json({
-                        success: true,
-                        message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
-                        newStatus,
-                        paid_amount: newPaidAmount,
-                        residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
-                    });
-                }
-            }
+        await conn.query(
+            'UPDATE supplier_payments SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?',
+            [newPaidAmount.toFixed(2), newStatus, pDate, JSON.stringify(history), id, req.condominio_id]
         );
-    });
+
+        if (shouldAddToJournal) {
+            const desc = `Pagamento Fornitore (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${supplier.supplier_name} - Fatt. ${supplier.invoice_number || 'N/D'}${pNote ? ' - ' + pNote : ''}`;
+            await conn.query(
+                'INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [req.condominio_id, pDate, supplier.invoice_number || 'AUTO', 'Pagamento Fornitore', desc, 0, paying.toFixed(2), supplier.supplier_name]
+            );
+        }
+
+        await conn.commit();
+        conn.release();
+
+        logAudit(req.user.id, req.condominio_id, `Registrato Pagamento Fornitore (€ ${paying.toFixed(2)} - ${newStatus})`, 'supplier_payments', id, null, req.ip);
+
+        return res.json({
+            success: true,
+            message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${residualAfter.toFixed(2)})`,
+            newStatus,
+            paid_amount: newPaidAmount.toNumber(),
+            residual: residualAfter.toNumber()
+        });
+    } catch (err) {
+        if (conn) {
+            try { await conn.rollback(); } catch (_) {}
+            try { conn.release(); } catch (_) {}
+        }
+        return res.status(500).json({ success: false, message: 'Errore registrazione pagamento fornitore: ' + err.message });
+    }
 });
 
 
@@ -5231,14 +5343,14 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 }
             }
 
-            // Calcolo totali personali
-            let totaleQuoteDovute = 0;
-            let totaleVersatoPersonale = 0;
+            // Calcolo totali personali con Decimal.js (Zero rounding drift)
+            let totaleQuoteDovute = new Decimal(0);
+            let totaleVersatoPersonale = new Decimal(0);
             (personalScadenze || []).forEach(item => {
-                totaleQuoteDovute += parseFloat(item.quota_dovuta || 0);
-                totaleVersatoPersonale += parseFloat(item.importo_versato || 0);
+                totaleQuoteDovute = totaleQuoteDovute.plus(new Decimal(item.quota_dovuta || 0));
+                totaleVersatoPersonale = totaleVersatoPersonale.plus(new Decimal(item.importo_versato || 0));
             });
-            const residuoPersonaleComplessivo = Math.max(0, parseFloat((totaleQuoteDovute - totaleVersatoPersonale).toFixed(2)));
+            const residuoPersonaleComplessivo = Decimal.max(0, totaleQuoteDovute.minus(totaleVersatoPersonale)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
 
             let statoLabel = 'In regola con i versamenti';
             if (condominoProfile.is_admin_view) {
@@ -5261,11 +5373,11 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 WHERE s.condominio_id = ?
             `, [activeCondoId, activeCondoId]);
 
-            let totalePreventivato = parseFloat((globalStats && globalStats[0] && globalStats[0].totale_gestione_preventivata) || 0);
-            let totaleRiscosso = parseFloat((globalStats && globalStats[0] && globalStats[0].totale_riscosso_fabbricato) || 0);
+            let totalePreventivato = new Decimal((globalStats && globalStats[0] && globalStats[0].totale_gestione_preventivata) || 0);
+            let totaleRiscosso = new Decimal((globalStats && globalStats[0] && globalStats[0].totale_riscosso_fabbricato) || 0);
 
             // Fallback aggregato su tabella quotes se spese_scadenze non ha ancora importi
-            if (totalePreventivato === 0) {
+            if (totalePreventivato.lte(0)) {
                 const [quotesStats] = await connection.query(`
                     SELECT 
                         COALESCE(SUM(amount), 0.00) AS totale_preventivato,
@@ -5274,14 +5386,14 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     WHERE condominio_id = ?
                 `, [activeCondoId]);
                 if (quotesStats && quotesStats.length > 0) {
-                    totalePreventivato = parseFloat(quotesStats[0].totale_preventivato || 0);
-                    totaleRiscosso = parseFloat(quotesStats[0].totale_riscosso || 0);
+                    totalePreventivato = new Decimal(quotesStats[0].totale_preventivato || 0);
+                    totaleRiscosso = new Decimal(quotesStats[0].totale_riscosso || 0);
                 }
             }
 
-            const residuiAttiviGestione = Math.max(0, parseFloat((totalePreventivato - totaleRiscosso).toFixed(2)));
-            const percentualeAvanzamento = totalePreventivato > 0 
-                ? Math.min(100, Math.round((totaleRiscosso / totalePreventivato) * 100))
+            const residuiAttiviGestione = Decimal.max(0, totalePreventivato.minus(totaleRiscosso)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+            const percentualeAvanzamento = totalePreventivato.gt(0)
+                ? Decimal.min(100, totaleRiscosso.dividedBy(totalePreventivato).times(100)).round().toNumber()
                 : 100;
 
             // Storico pagamenti del singolo condomino con codice ricevuta (per download PDF)
@@ -5497,19 +5609,97 @@ app.post('/api/amministratore/registra-pagamento', verifyJWT, checkAmministrator
     if (!condomino_id || !spesa_id || !importo_versato) {
         return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
     }
+
+    let payingDec;
+    try {
+        payingDec = new Decimal(importo_versato).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        if (payingDec.lte(0)) {
+            return res.status(400).json({ success: false, error: 'L\'importo versato deve essere maggiore di zero.' });
+        }
+    } catch (_) {
+        return res.status(400).json({ success: false, error: 'Importo non valido.' });
+    }
+
     if (!ricevuta_codice) {
         ricevuta_codice = 'REC-' + new Date().getFullYear() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
     }
+
+    const pDate = data_pagamento || new Date().toISOString().slice(0, 10);
+    const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin;
+    const adminId = req.user.id;
+
+    let conn;
     try {
-        if (db.pool && typeof db.pool.promise === 'function') {
-            const [result] = await db.pool.promise().query(
-                'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento, ricevuta_codice) VALUES (?, ?, ?, ?, ?)',
-                [condomino_id, spesa_id, parseFloat(importo_versato), data_pagamento || new Date().toISOString().slice(0, 10), ricevuta_codice]
-            );
-            return res.status(201).json({ success: true, message: 'Pagamento registrato con successo.', pagamentoId: result.insertId, ricevuta_codice });
+        conn = await db.getConnection();
+        await conn.beginTransaction();
+
+        // 1. Recupera spesa con lock e verifica autorizzazione amministratore (Tenant Boundary)
+        const [spese] = await conn.query(
+            `SELECT s.*, c.amministratore_id, c.nome as condominio_nome
+             FROM spese_scadenze s
+             JOIN condomini c ON s.condominio_id = c.id
+             WHERE s.id = ? FOR UPDATE`,
+            [spesa_id]
+        );
+        const spesa = spese && spese[0];
+        if (!spesa) {
+            await conn.rollback();
+            conn.release();
+            return res.status(404).json({ success: false, error: 'Spesa/Scadenza non trovata.' });
         }
+
+        if (!isSuper && spesa.amministratore_id !== adminId) {
+            await conn.rollback();
+            conn.release();
+            return res.status(403).json({ success: false, error: 'Non sei autorizzato a registrare pagamenti per questo stabile.' });
+        }
+
+        // 2. Verifica che il condòmino appartenga allo stabile
+        const [condoUsers] = await conn.query(
+            `SELECT u.id, u.nome, COALESCE(u.cognome, '') as cognome, cc.millesimi
+             FROM users u
+             LEFT JOIN condomino_condominio cc ON u.id = cc.condomino_id AND cc.condominio_id = ?
+             WHERE u.id = ? FOR UPDATE`,
+            [spesa.condominio_id, condomino_id]
+        );
+        const condomino = condoUsers && condoUsers[0];
+        if (!condomino) {
+            await conn.rollback();
+            conn.release();
+            return res.status(404).json({ success: false, error: 'Condòmino non trovato nello stabile.' });
+        }
+
+        // 3. Registrazione pagamento in pagamenti_condomini
+        const [result] = await conn.query(
+            'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento, ricevuta_codice) VALUES (?, ?, ?, ?, ?)',
+            [condomino_id, spesa_id, payingDec.toFixed(2), pDate, ricevuta_codice]
+        );
+
+        // 4. Registrazione sincronizzata nel Libro Giornale (dare = incasso cassa)
+        const descGiornale = `Incasso Quota: ${spesa.titolo} (${ricevuta_codice})`;
+        const nominativo = `${condomino.cognome} ${condomino.nome}`.trim() || 'Condòmino';
+        await conn.query(
+            'INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [spesa.condominio_id, pDate, ricevuta_codice, 'Incasso Spesa', descGiornale, payingDec.toFixed(2), 0, nominativo]
+        ).catch(() => {});
+
+        await conn.commit();
+        conn.release();
+
+        logAudit(adminId, spesa.condominio_id, `Registrato Pagamento Spesa (€ ${payingDec.toFixed(2)} - ${ricevuta_codice})`, 'pagamenti_condomini', result.insertId, null, req.ip);
+
+        return res.status(201).json({
+            success: true,
+            message: 'Pagamento registrato con successo e sincronizzato a Libro Giornale.',
+            pagamentoId: result.insertId,
+            ricevuta_codice
+        });
     } catch (e) {
-        return res.status(500).json({ success: false, error: e.message });
+        if (conn) {
+            try { await conn.rollback(); } catch (_) {}
+            try { conn.release(); } catch (_) {}
+        }
+        return res.status(500).json({ success: false, error: 'Errore registrazione pagamento: ' + e.message });
     }
 });
 
@@ -6050,7 +6240,16 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
         if (err || !doc) {
             return res.status(404).json({ success: false, message: 'Documento non trovato.' });
         }
-        if (isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id)) {
+        async function sendDocResponse() {
+            let fileContent = doc.file_data || '';
+            if (doc.file_key) {
+                if (storageService.isS3Configured()) {
+                    const presigned = await storageService.getDownloadUrl(doc.file_key, doc.file_name, 120);
+                    if (presigned) fileContent = presigned;
+                } else {
+                    fileContent = `/api/documents/${doc.id}/raw`;
+                }
+            }
             return res.json({
                 success: true,
                 data: {
@@ -6059,9 +6258,13 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
                     file_name: doc.file_name,
                     file_mime: doc.file_mime,
                     file_size: doc.file_size,
-                    file_data: doc.file_data
+                    file_data: fileContent
                 }
             });
+        }
+
+        if (isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id)) {
+            return sendDocResponse();
         }
         // Verifica corrispondenza tramite anagrafica_persone per i condòmini
         db.get('SELECT id, nome, email FROM users WHERE id = ?', [req.user.id], (errU, userRow) => {
@@ -6079,17 +6282,7 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
                     (doc.recipient_persona_id && matchedPersonaIds.includes(Number(doc.recipient_persona_id))) ||
                     (doc.sender_persona_id && matchedPersonaIds.includes(Number(doc.sender_persona_id)))
                 ) {
-                    return res.json({
-                        success: true,
-                        data: {
-                            id: doc.id,
-                            title: doc.title,
-                            file_name: doc.file_name,
-                            file_mime: doc.file_mime,
-                            file_size: doc.file_size,
-                            file_data: doc.file_data
-                        }
-                    });
+                    return sendDocResponse();
                 }
                 return res.status(403).json({ success: false, message: 'Non sei autorizzato a visualizzare questo documento riservato.' });
             });
@@ -6097,8 +6290,70 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
     });
 });
 
+// Stream binario protetto di un singolo documento (con RBAC e Content-Disposition)
+app.get('/api/documents/:id/raw', authenticateToken, requireCondominio, async (req, res) => {
+    const docId = parseInt(req.params.id, 10);
+    const condoId = req.condominio_id;
+    const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
+
+    db.get('SELECT * FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], async (err, doc) => {
+        if (err || !doc) return res.status(404).send('Documento non trovato.');
+
+        let isAuthorized = isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id);
+        if (!isAuthorized) {
+            const checkP = await new Promise(r => {
+                db.get('SELECT id, nome, email FROM users WHERE id = ?', [req.user.id], (errU, userRow) => {
+                    const userEmail = (userRow && userRow.email) ? userRow.email.trim().toLowerCase() : '';
+                    const userName = (userRow && userRow.nome) ? userRow.nome.trim().toLowerCase() : '';
+                    db.all('SELECT id, nome, cognome, email FROM anagrafica_persone WHERE condominio_id = ?', [condoId], (errP, persone) => {
+                        const matched = (persone || []).filter(p => {
+                            const pEmail = (p.email || '').trim().toLowerCase();
+                            const full1 = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
+                            const full2 = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
+                            return (userEmail && pEmail && userEmail === pEmail) || (userName && (userName === full1 || userName === full2));
+                        }).map(p => Number(p.id));
+                        r((doc.recipient_persona_id && matched.includes(Number(doc.recipient_persona_id))) || (doc.sender_persona_id && matched.includes(Number(doc.sender_persona_id))));
+                    });
+                });
+            });
+            isAuthorized = !!checkP;
+        }
+
+        if (!isAuthorized) {
+            return res.status(403).send('Accesso negato.');
+        }
+
+        // Se su S3, redirect a URL presigned
+        if (doc.file_key && storageService.isS3Configured()) {
+            const presigned = await storageService.getDownloadUrl(doc.file_key, doc.file_name, 120);
+            if (presigned) return res.redirect(presigned);
+        }
+
+        // Se salvato su storage locale protetto
+        if (doc.file_key) {
+            const buffer = await storageService.getLocalFileBuffer(doc.file_key);
+            if (buffer) {
+                res.setHeader('Content-Type', doc.file_mime || 'application/octet-stream');
+                res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.file_name || 'documento.pdf')}"`);
+                return res.send(buffer);
+            }
+        }
+
+        // Fallback su legacy base64
+        if (doc.file_data && doc.file_data.includes('base64,')) {
+            const rawBase64 = doc.file_data.split('base64,')[1];
+            const buffer = Buffer.from(rawBase64, 'base64');
+            res.setHeader('Content-Type', doc.file_mime || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.file_name || 'documento.pdf')}"`);
+            return res.send(buffer);
+        }
+
+        return res.status(404).send('Contenuto documento non disponibile.');
+    });
+});
+
 // Carica e Invia un nuovo Documento / Allegato (Bidirezionale: Admin -> Tutti/Singolo Condòmino, oppure Condòmino -> Admin)
-app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
+app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicenseWrite, async (req, res) => {
     const condoId = req.condominio_id;
     const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
     const {
@@ -6128,6 +6383,30 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
     const cleanFileMime = file_mime ? String(file_mime).trim() : 'application/octet-stream';
     const cleanFileSize = parseInt(file_size, 10) || 0;
 
+    let storageKey = null;
+    let storageType = 'inline';
+    let filePayload = file_data;
+
+    if (file_data && typeof file_data === 'string' && file_data.includes('base64,')) {
+        try {
+            const rawBase64 = file_data.split('base64,')[1];
+            const buffer = Buffer.from(rawBase64, 'base64');
+            const saved = await storageService.upload({
+                condominioId: condoId,
+                filename: cleanFileName,
+                mimeType: cleanFileMime,
+                buffer
+            });
+            storageKey = saved.key;
+            storageType = saved.storageType;
+            if (saved.storageType === 's3') {
+                filePayload = null; // Su S3 non memorizziamo mega stringhe base64 su database
+            }
+        } catch (sErr) {
+            console.warn('⚠️ [StorageService] Avviso upload documento:', sErr.message);
+        }
+    }
+
     // Caso 1: Caricamento da parte dell'Amministratore (o quando l'Admin registra un allegato ricevuto da un condòmino)
     const effectiveDirection = (isAdminUser && req.body.direction === 'from_condomino') ? 'condomino_to_admin' : (isAdminUser ? 'admin_to_condomini' : 'condomino_to_admin');
 
@@ -6137,9 +6416,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
         if (recType === 'all') {
             db.run(`
                 INSERT INTO condo_documents
-                (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
-                VALUES (?, ?, 'admin', 'Studio Amministratore', 'all', 'Tutti i Condòmini (Bacheca Pubblica)', 'Intero Fabbricato', ?, ?, ?, ?, ?, ?, ?, 'Pubblicato')
-            `, [condoId, req.user.id, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
+                VALUES (?, ?, 'admin', 'Studio Amministratore', 'all', 'Tutti i Condòmini (Bacheca Pubblica)', 'Intero Fabbricato', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pubblicato')
+            `, [condoId, req.user.id, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
                 if (errIns) return res.status(500).json({ success: false, message: 'Errore salvataggio documento: ' + errIns.message });
                 const newDocId = this.lastID;
                 logAudit(req.user.id, condoId, `Pubblica Documento in Bacheca: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
@@ -6172,9 +6451,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                 db.run(`
                     INSERT INTO condo_documents
-                    (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
-                    VALUES (?, ?, 'admin', 'Studio Amministratore', 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
-                `, [condoId, req.user.id, persona.id, recName, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                    (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
+                    VALUES (?, ?, 'admin', 'Studio Amministratore', 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
+                `, [condoId, req.user.id, persona.id, recName, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
                     if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
                     const newDocId = this.lastID;
                     logAudit(req.user.id, condoId, `Invia Documento a ${recName}: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
@@ -6205,9 +6484,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                 db.run(`
                     INSERT INTO condo_documents
-                    (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
-                    VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
-                `, [condoId, req.user.id, sName, persona ? persona.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                    (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
+                    VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                `, [condoId, req.user.id, sName, persona ? persona.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
                     if (errIns) return res.status(500).json({ success: false, message: 'Errore caricamento documento: ' + errIns.message });
                     return res.json({
                         success: true,
@@ -6252,9 +6531,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                         db.run(`
                             INSERT INTO condo_documents
-                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
-                            VALUES (?, ?, 'condomino', ?, ?, 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
-                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, targetPeer ? targetPeer.id : null, recName, recUnitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
+                            VALUES (?, ?, 'condomino', ?, ?, 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
+                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, targetPeer ? targetPeer.id : null, recName, recUnitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
                             if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento al condòmino: ' + errIns.message });
                             const newDocId = this.lastID;
                             logAudit(req.user.id, condoId, `Condòmino ${sName} invia allegato a condòmino ${recName}: "${cleanTitle}"`, 'condo_documents', newDocId, null, req.ip);
@@ -6274,9 +6553,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                         db.run(`
                             INSERT INTO condo_documents
-                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
-                            VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
-                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
+                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
+                            VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
                             if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
                             const newDocId = this.lastID;
                             logAudit(req.user.id, condoId, `Condòmino ${sName} invia documento allo Studio: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
@@ -6313,13 +6592,16 @@ app.delete('/api/documents/:id', authenticateToken, requireCondominio, checkCond
     const condoId = req.condominio_id;
     const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
 
-    db.get('SELECT id, title, sender_user_id, status FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], (err, doc) => {
+    db.get('SELECT id, title, sender_user_id, status, file_key FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], (err, doc) => {
         if (err || !doc) return res.status(404).json({ success: false, message: 'Documento non trovato.' });
         if (!isAdminUser && (Number(doc.sender_user_id) !== Number(req.user.id) || doc.status !== 'Da visionare')) {
             return res.status(403).json({ success: false, message: 'Non hai i permessi per eliminare questo documento.' });
         }
         db.run('DELETE FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], function(errDel) {
             if (errDel) return res.status(500).json({ success: false, message: 'Errore eliminazione documento: ' + errDel.message });
+            if (doc.file_key) {
+                storageService.delete(doc.file_key).catch(() => {});
+            }
             logAudit(req.user.id, condoId, `Elimina Documento: "${doc.title}"`, 'condo_documents', docId, null, req.ip);
             return res.json({ success: true, message: 'Documento eliminato con successo.' });
         });
