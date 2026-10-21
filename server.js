@@ -54,6 +54,7 @@ const emailService = require('./emailService');
 const puppeteer = require('puppeteer');
 const Decimal = require('decimal.js');
 const storageService = require('./storageService');
+const pdfReceiptService = require('./pdfReceiptService');
 
 function getPuppeteerLaunchOptions() {
     const defaultArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
@@ -1752,16 +1753,24 @@ function authenticateToken(req, res, next) {
 }
 
 function requireCondominio(req, res, next) {
-    if (req.user.is_superadmin) {
-        req.condominio_id = req.headers['x-condominio-id'] || null;
+    if (req.user && (req.user.is_superadmin || req.user.ruolo === 'superuser')) {
+        const cHeader = req.headers['x-condominio-id'];
+        req.condominio_id = cHeader ? parseInt(cHeader, 10) : null;
         req.role_in_condominio = 'admin'; 
         return next();
     }
     
-    const cId = req.headers['x-condominio-id'];
-    if (!cId) return res.status(400).json({ success: false, message: 'Condominio non selezionato' });
+    const rawCId = req.headers['x-condominio-id'];
+    if (!rawCId) return res.status(400).json({ success: false, message: 'Condominio non selezionato' });
+    const cId = parseInt(rawCId, 10);
+    if (isNaN(cId) || cId <= 0) return res.status(400).json({ success: false, message: 'Identificativo condominio non valido' });
 
-    db.get('SELECT role FROM user_condominios WHERE user_id = ? AND condominio_id = ?', [req.user.id, cId], (err, row) => {
+    db.get(`
+        SELECT role FROM user_condominios WHERE user_id = ? AND condominio_id = ?
+        UNION
+        SELECT 'admin' as role FROM condomini WHERE amministratore_id = ? AND id = ?
+        LIMIT 1
+    `, [req.user.id, cId, req.user.id, cId], (err, row) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
         if (!row) return res.status(403).json({ success: false, message: 'Accesso negato a questo condominio.' });
         
@@ -4180,46 +4189,31 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
     const { activeCondoName } = req.body;
     
     try {
-        db.get('SELECT q.*, u.nome, u.email, uc.unita FROM quotes q JOIN users u ON q.user_id = u.id JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = q.condominio_id WHERE q.id = ?', [quoteId], async (err, quote) => {
+        db.get('SELECT q.*, u.nome, u.email, uc.unita FROM quotes q JOIN users u ON q.user_id = u.id JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = q.condominio_id WHERE q.id = ? AND q.condominio_id = ?', [quoteId, req.condominio_id], async (err, quote) => {
             if (err || !quote) return res.status(404).json({ success: false, message: 'Quota non trovata' });
             if (!quote.email) return res.status(400).json({ success: false, message: 'Nessuna email per questo condomino' });
             
             if (!transporter) throw new Error("Servizio email non pronto");
             
-            let browser;
             try {
-                browser = await puppeteer.launch(getPuppeteerLaunchOptions());
-                const page = await browser.newPage();
-                
-                const htmlContent = `
-                    <html>
-                    <body style="font-family: Arial; padding: 40px; color: #333;">
-                        <h2 style="text-align:center; border-bottom: 2px solid #333; padding-bottom:10px;">AMMINISTRAZIONE CONDOMINIO<br>${activeCondoName}</h2>
-                        <h1 style="text-align:center; color: #16a34a; margin-top:40px;">RICEVUTA DI PAGAMENTO</h1>
-                        <p style="text-align:right; margin-bottom:40px;">Data: ${new Date().toLocaleDateString('it-IT')}</p>
-                        <p>Si attesta di aver ricevuto dal Sig./Sig.ra <b>${quote.nome}</b> (Unità: ${quote.unita || 'N/D'})</p>
-                        <p>La somma di: <b style="font-size:24px;">€ ${quote.amount.toFixed(2)}</b></p>
-                        <p>A titolo di saldo per la seguente causale:</p>
-                        <div style="background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                            <strong>${quote.title}</strong><br>
-                            Tipo Quota: ${quote.type}<br>
-                            Scadenza originaria: ${new Date(quote.due_date).toLocaleDateString('it-IT')}
-                        </div>
-                        <p style="margin-top:50px; text-align:right;">L'Amministratore<br>___________________</p>
-                    </body>
-                    </html>
-                `;
-                
-                await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-                const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
-                await browser.close();
+                const pdfBuffer = await pdfReceiptService.generateReceiptBuffer({
+                    ricevuta_codice: `REC-Q-${quote.id}`,
+                    condominio_nome: activeCondoName || 'Condominio',
+                    condominio_via: '',
+                    nome_condomino: quote.nome,
+                    unita_label: quote.unita || 'N/D',
+                    data_ora: new Date().toLocaleDateString('it-IT'),
+                    spesa_titolo: quote.title,
+                    importo_versato: Number(quote.amount || 0).toFixed(2),
+                    metodo_pagamento: 'Bonifico Bancario / Telematico'
+                });
                 
                 let info = await transporter.sendMail({
                     from: '"Amministrazione Condominio" <admin@condominio.it>',
                     to: quote.email,
-                    subject: 'Ricevuta di Pagamento - ' + activeCondoName,
-                    html: '<p>Gent.le <b>' + quote.nome + '</b>,</p><p>La ringraziamo per il pagamento effettuato. In allegato trova la ricevuta in formato PDF.</p><p>Cordiali saluti,<br><i>L\'Amministrazione</i></p>',
-                    attachments: [{ filename: 'Ricevuta_Pagamento.pdf', content: pdfBuffer, contentType: 'application/pdf' }]
+                    subject: 'Ricevuta di Pagamento - ' + (activeCondoName || 'Condominio'),
+                    html: '<p>Gent.le <b>' + quote.nome + '</b>,</p><p>La ringraziamo per il pagamento effettuato. In allegato trova la ricevuta ufficiale in formato PDF.</p><p>Cordiali saluti,<br><i>L\'Amministrazione</i></p>',
+                    attachments: [{ filename: `Ricevuta_Pagamento_${quote.id}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }]
                 });
 
                 const previewUrl = nodemailer.getTestMessageUrl(info) || '';
@@ -4231,19 +4225,18 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
                     email: quote.email,
                     tipo: 'Ricevuta di Pagamento',
                     oggetto: `Ricevuta quota: ${quote.title} (€ ${Number(quote.amount).toFixed(2)})`,
-                    contenuto_html: htmlContent,
+                    contenuto_html: `<p>Ricevuta pagamento per quota ${quote.title} (€ ${Number(quote.amount).toFixed(2)}) emessa per ${quote.nome}</p>`,
                     preview_url: previewUrl
                 });
                 
-                res.json({ success: true, message: 'Ricevuta inviata con successo!', previewUrl });
+                return res.json({ success: true, message: 'Ricevuta inviata con successo!', previewUrl });
             } catch (e) {
-                if(browser) await browser.close();
-                console.error(e);
-                res.status(500).json({ success: false, message: 'Errore generazione PDF' });
+                console.error("Errore invio email ricevuta:", e);
+                return res.status(500).json({ success: false, message: 'Errore durante la generazione e invio della ricevuta: ' + e.message });
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false });
+        return res.status(500).json({ success: false, message: err.message });
     }
 });
 
@@ -5258,6 +5251,12 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
 
             // Tentativo 3: Se utente è Amministratore o Superuser, oppure non ha unità assegnata
             if (!condominoProfile) {
+                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore';
+                if (!isAdminUser) {
+                    connection.release();
+                    return res.status(403).json({ success: false, message: 'Non risulti associato ad alcuna unità o fabbricato in questo stabile.' });
+                }
+
                 let targetCondoId = condoId;
                 let condoInfo = null;
                 if (targetCondoId) {
@@ -5274,7 +5273,6 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     if (cRows && cRows.length > 0) condoInfo = cRows[0];
                 }
 
-                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore';
                 condominoProfile = {
                     condominio_id: condoInfo ? condoInfo.id : (condoId || 1),
                     condominio_nome: condoInfo ? condoInfo.nome : 'Condominio',
@@ -5283,9 +5281,9 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     condomino_id: userId,
                     condomino_nome: req.user.nome || 'Utente',
                     condomino_email: req.user.email || '',
-                    interno: isAdminUser ? 'Studio Amministrazione' : 'Unità Condominiale',
+                    interno: 'Studio Amministrazione',
                     millesimi: 0.00,
-                    is_admin_view: isAdminUser
+                    is_admin_view: true
                 };
             }
 
@@ -5475,7 +5473,7 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINT GENERAZIONE RICEVUTA PDF CON PUPPETEER
+// ENDPOINT GENERAZIONE RICEVUTA PDF (FAST IN-MEMORY PDFKIT ENGINE)
 // ==========================================
 app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) => {
     const condominoId = req.user.id;
@@ -5486,17 +5484,19 @@ app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) 
         if (db.pool && typeof db.pool.promise === 'function') {
             connection = await db.getConnection();
 
-            const isPrivileged = req.user.ruolo === 'superuser' || req.user.is_superadmin || req.user.ruolo === 'amministratore';
-            // Sicurezza: Recupera la ricevuta accertandosi che appartenga al condomino richiedente o ad utente autorizzato
+            const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin;
+            // Sicurezza: Recupera la ricevuta accertandosi che appartenga al condomino richiedente, all'amministratore dello stabile o al superuser
             const [dati] = await connection.query(
                 `SELECT p.importo_versato, DATE_FORMAT(p.data_pagamento, '%d/%m/%Y %H:%i') AS data_ora, p.ricevuta_codice,
-                        s.titolo AS spesa_titolo, u.nome, COALESCE(u.cognome, '') AS cognome, c.nome AS condominio_nome, c.indirizzo AS condominio_via
+                        s.titolo AS spesa_titolo, u.nome, COALESCE(u.cognome, '') AS cognome, c.nome AS condominio_nome, c.indirizzo AS condominio_via,
+                        COALESCE(c.codice_fiscale, '') AS condominio_cf, cc.interno
                  FROM pagamenti_condomini p
                  JOIN spese_scadenze s ON p.spesa_id = s.id
                  JOIN users u ON p.condomino_id = u.id
                  JOIN condomini c ON s.condominio_id = c.id
-                 WHERE (p.condomino_id = ? OR ?) AND p.ricevuta_codice = ?`,
-                [condominoId, isPrivileged ? 1 : 0, ricevuta_codice]
+                 LEFT JOIN condomino_condominio cc ON cc.condomino_id = u.id AND cc.condominio_id = c.id
+                 WHERE (p.condomino_id = ? OR ? = 1 OR c.amministratore_id = ?) AND p.ricevuta_codice = ?`,
+                [condominoId, isSuper ? 1 : 0, condominoId, ricevuta_codice]
             );
 
             if (!dati || dati.length === 0) {
@@ -5505,70 +5505,19 @@ app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) 
 
             const r = dati[0];
 
-            // Struttura HTML del PDF
-            const htmlContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>Ricevuta ${r.ricevuta_codice}</title>
-                    <style>
-                        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px; margin: 0; }
-                        .header { border-bottom: 2px solid #4f46e5; padding-bottom: 20px; margin-bottom: 30px; }
-                        .title { font-size: 24px; font-weight: bold; color: #1e1b4b; }
-                        .details { margin-bottom: 40px; font-size: 14px; line-height: 1.6; }
-                        .table-Ricevuta { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        .table-Ricevuta th { background-color: #f3f4f6; text-align: left; padding: 12px; font-size: 14px; }
-                        .table-Ricevuta td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-                        .total-box { margin-top: 30px; text-align: right; font-size: 18px; font-weight: bold; color: #4f46e5; }
-                        .footer { margin-top: 60px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="title">RICEVUTA DI PAGAMENTO TELEMATICO</div>
-                        <div style="font-size: 12px; color: #6b7280; margin-top: 5px;">Documento generato automaticamente dalla piattaforma</div>
-                    </div>
-                    <div class="details">
-                        <strong>Condominio:</strong> ${r.condominio_nome}<br>
-                        <strong>Ubicazione:</strong> ${r.condominio_via}<br><br>
-                        <strong>Intestatario Unità:</strong> ${r.nome} ${r.cognome}<br>
-                        <strong>Data/Ora Transazione:</strong> ${r.data_ora}
-                    </div>
-                    <table class="table-Ricevuta">
-                        <thead>
-                            <tr>
-                                <th>Descrizione Causale</th>
-                                <th>Identificativo Ricevuta</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>${r.spesa_titolo}</td>
-                                <td><code>${r.ricevuta_codice}</code></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <div class="total-box">
-                        Importo Corrisposto: € ${parseFloat(r.importo_versato).toFixed(2)}
-                    </div>
-                    <div class="footer">
-                        Il presente documento attesta l'avvenuto incasso del rateo indicato nella cassa comune del condominio.<br>
-                        Ai sensi del GDPR, i dati sensibili degli altri residenti sono protetti.
-                    </div>
-                </body>
-                </html>
-            `;
-
-            // Avvia Puppeteer con getPuppeteerLaunchOptions
-            const launchOpts = typeof getPuppeteerLaunchOptions === 'function'
-                ? getPuppeteerLaunchOptions()
-                : { headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] };
-            const browser = await puppeteer.launch(launchOpts);
-            const page = await browser.newPage();
-            await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-            const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
-            await browser.close();
+            // Generazione PDF ultra-veloce in memoria tramite PDFKit (Zero Chromium, Zero OOM)
+            const pdfBuffer = await pdfReceiptService.generateReceiptBuffer({
+                ricevuta_codice: r.ricevuta_codice,
+                condominio_nome: r.condominio_nome,
+                condominio_via: r.condominio_via,
+                condominio_cf: r.condominio_cf,
+                nome_condomino: `${r.nome || ''} ${r.cognome || ''}`.trim(),
+                unita_label: r.interno || 'Unità Condominiale',
+                data_ora: r.data_ora,
+                spesa_titolo: r.spesa_titolo,
+                importo_versato: r.importo_versato,
+                metodo_pagamento: 'Bonifico / Telematico'
+            });
 
             // Invia il file binario direttamente al browser per il download
             res.contentType("application/pdf");
@@ -5579,7 +5528,7 @@ app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) 
         }
     } catch (error) {
         console.error('Errore generazione PDF:', error);
-        return res.status(500).json({ success: false, error: 'Errore durante la generazione del file PDF.' });
+        return res.status(500).json({ success: false, error: 'Errore durante la generazione del file PDF: ' + error.message });
     } finally {
         if (connection) connection.release();
     }
