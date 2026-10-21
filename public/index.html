@@ -75,6 +75,10 @@
                 </div>
             </div>
             <div class="flex items-center gap-2.5">
+                <button id="btn-admin-desk" onclick="openAdminPanel()" class="hidden px-4 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-md shadow-emerald-500/20">
+                    <i class="fa-solid fa-user-plus text-emerald-200"></i>
+                    <span>Associa Condòmino</span>
+                </button>
                 <button id="btn-superuser-desk" onclick="openSuperUserDashboard()" class="hidden px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-md shadow-purple-500/20">
                     <i class="fa-solid fa-crown text-amber-300"></i>
                     <span>Cabina di Regia SuperUser</span>
@@ -167,6 +171,76 @@
                 <div class="flex justify-end pt-4">
                     <button type="submit" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl shadow-lg shadow-indigo-600/20 hover:shadow-indigo-500/30 transition-all flex items-center gap-2">
                         <i class="fa-solid fa-paper-plane"></i> Conferma Inserimento ed Abilita
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</section>
+
+<!-- Sezione Dashboard Amministratore (Visibile solo se loggato come Amministratore Abilitato) -->
+<section id="admin-panel" class="min-h-screen bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 p-6 text-slate-100 hidden">
+    <div class="max-w-4xl mx-auto">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-8 pb-4 border-b border-emerald-500/20">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+                    <i class="fa-solid fa-user-gear text-emerald-400"></i> Pannello Amministratore
+                </h1>
+                <p class="text-sm text-slate-400 mt-1">Gestione stabili, tabelle millesimali e associazione residenti</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-xs px-3 py-1.5 rounded-full font-medium">Ruolo: Amministratore</span>
+                <button type="button" onclick="closeAdminPanel()" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrow-left"></i> Torna alla Dashboard
+                </button>
+            </div>
+        </div>
+
+        <!-- Form Inserimento Condòmino -->
+        <div class="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 md:p-8 shadow-2xl shadow-black/40">
+            <h2 class="text-xl font-semibold mb-6 flex items-center gap-2 text-emerald-200">
+                <i class="fa-solid fa-user-plus text-emerald-400"></i> Associa Nuovo Condòmino a Stabile
+            </h2>
+
+            <form id="form-invita-condomino" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Selezione Condominio (Dinamico) -->
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Seleziona Condominio</label>
+                        <select id="invito-condominio-id" required 
+                            class="w-full px-4 py-3 bg-slate-950/60 border border-slate-700 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-100 transition-colors">
+                            <!-- Popolato dinamicamente da app_v4.js con i soli condomini gestiti da questo admin -->
+                            <option value="">Scegli lo stabile...</option>
+                        </select>
+                    </div>
+
+                    <!-- Email Condòmino -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Email del Condòmino</label>
+                        <input type="email" id="invito-email" required placeholder="email@condomino.it" 
+                            class="w-full px-4 py-3 bg-slate-950/60 border border-slate-700 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-100 placeholder-slate-500 transition-colors">
+                    </div>
+
+                    <!-- Interno / Appartamento -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Interno / Unità Immobiliare</label>
+                        <input type="text" id="invito-interno" required placeholder="Es. Scala A - Int. 5" 
+                            class="w-full px-4 py-3 bg-slate-950/60 border border-slate-700 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-100 placeholder-slate-500 transition-colors">
+                    </div>
+
+                    <!-- Valore Millesimale -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Quota Millesimale (su 1000)</label>
+                        <input type="number" step="0.01" min="0" max="1000" id="invito-millesimi" required placeholder="Es. 45.50" 
+                            class="w-full px-4 py-3 bg-slate-950/60 border border-slate-700 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-100 placeholder-slate-500 transition-colors">
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-4">
+                    <button type="submit" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl shadow-lg transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Inserisci Condòmino
                     </button>
                 </div>
             </form>
@@ -944,6 +1018,11 @@
                     <button id="btn-superuser-header" onclick="openSuperUserDashboard()" class="hidden no-print px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs" title="Cabina di Regia SuperUser">
                         <i class="fa-solid fa-crown text-amber-300 text-xs"></i>
                         <span class="hidden sm:inline">Cabina di Regia</span>
+                    </button>
+
+                    <button id="btn-admin-panel" onclick="openAdminPanel()" class="hidden no-print px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs" title="Pannello Amministratore (Associa Residenti)">
+                        <i class="fa-solid fa-user-gear text-emerald-200 text-xs"></i>
+                        <span class="hidden sm:inline">Pannello Admin</span>
                     </button>
 
                     <button onclick="openSecurityProfileModal()" class="no-print px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-colors flex items-center gap-1.5">

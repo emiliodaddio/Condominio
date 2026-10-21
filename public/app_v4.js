@@ -8841,3 +8841,145 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+
+// ============================================================================
+// GESTIONE PANNELLO AMMINISTRATORE (ASSOCIAZIONE CONDOMINO / RESIDENTI)
+// ============================================================================
+window.openAdminPanel = function() {
+    const p = document.getElementById('admin-panel');
+    const suP = document.getElementById('superuser-panel');
+    const d = document.getElementById('superuser-dashboard-view');
+    const a = document.getElementById('agency-dashboard-view');
+    const c = document.getElementById('app-core-view');
+    if (suP) suP.classList.add('hidden');
+    if (d) d.classList.add('hidden');
+    if (a) a.classList.add('hidden');
+    if (c) c.classList.add('hidden');
+    if (p) {
+        p.classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        loadAdminCondosForInvito();
+    }
+};
+
+window.closeAdminPanel = function() {
+    const p = document.getElementById('admin-panel');
+    if (p) p.classList.add('hidden');
+    if (typeof returnToAgencyDashboard === 'function') {
+        returnToAgencyDashboard();
+    } else {
+        const a = document.getElementById('agency-dashboard-view');
+        if (a) a.classList.remove('hidden');
+    }
+};
+
+async function loadAdminCondosForInvito() {
+    const select = document.getElementById('invito-condominio-id');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Caricamento stabili in corso...</option>';
+    
+    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+    
+    try {
+        const res = await fetch('/api/amministratore/miei-condomini', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.condomini) && data.condomini.length > 0) {
+            select.innerHTML = '<option value="">Scegli lo stabile...</option>' + 
+                data.condomini.map(c => `<option value="${c.id}">${c.nome} - ${c.indirizzo || ''} (CF: ${c.codice_fiscale || 'N/D'})</option>`).join('');
+        } else if (window.state && state.currentUser && state.currentUser.condomini && state.currentUser.condomini.length > 0) {
+            select.innerHTML = '<option value="">Scegli lo stabile...</option>' + 
+                state.currentUser.condomini.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+        } else {
+            select.innerHTML = '<option value="">Nessuno stabile assegnato trovato</option>';
+        }
+    } catch (e) {
+        if (window.state && state.currentUser && state.currentUser.condomini && state.currentUser.condomini.length > 0) {
+            select.innerHTML = '<option value="">Scegli lo stabile...</option>' + 
+                state.currentUser.condomini.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+        } else {
+            select.innerHTML = '<option value="">Errore caricamento stabili</option>';
+        }
+    }
+}
+
+// Inizializzazione listener form invito condomino
+document.addEventListener('DOMContentLoaded', () => {
+    const formInvitaCondomino = document.getElementById('form-invita-condomino');
+
+    if (formInvitaCondomino) {
+        formInvitaCondomino.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+
+            const payload = {
+                condominio_id: document.getElementById('invito-condominio-id').value,
+                condomino_email: document.getElementById('invito-email').value.trim(),
+                interno: document.getElementById('invito-interno').value.trim(),
+                millesimi: parseFloat(document.getElementById('invito-millesimi').value)
+            };
+
+            const submitBtn = formInvitaCondomino.querySelector('button[type="submit"]');
+            const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Inserimento in corso...';
+            }
+
+            try {
+                const response = await fetch('/api/amministratore/invita-condomino', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    alert('🎉 Abbinamento completato con successo!\n' + (data.message || ''));
+                    formInvitaCondomino.reset();
+                    if (typeof fetchAnagrafica === 'function') fetchAnagrafica();
+                } else {
+                    alert('❌ Errore: ' + (data.error || 'Impossibile associare il condomino.'));
+                }
+            } catch (error) {
+                console.error('Errore di rete:', error);
+                alert('❌ Errore di connessione con il server.');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHtml;
+                }
+            }
+        });
+    }
+});
+
+
+// Controllo visibilità pulsanti Amministratore (Desk & Header)
+function updateAdminPanelVisibility() {
+    const user = window.state && window.state.currentUser;
+    if (!user) return;
+    const isSuper = user.is_superadmin || user.ruolo === 'superuser';
+    const isAdmin = isSuper || user.ruolo === 'amministratore' || (user.condomini && user.condomini.some(c => c.role === 'admin'));
+    
+    const bDesk = document.getElementById('btn-admin-desk');
+    if (bDesk) {
+        if (isAdmin) bDesk.classList.remove('hidden');
+        else bDesk.classList.add('hidden');
+    }
+    const bHeader = document.getElementById('btn-admin-panel');
+    if (bHeader) {
+        if (isAdmin) bHeader.classList.remove('hidden');
+        else bHeader.classList.add('hidden');
+    }
+}
+setInterval(updateAdminPanelVisibility, 1000);

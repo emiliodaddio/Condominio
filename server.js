@@ -982,6 +982,7 @@ function initDatabase() {
             db.run(`ALTER TABLE users ADD COLUMN ruolo ENUM('superuser', 'amministratore', 'condomino') NOT NULL DEFAULT 'condomino'`, () => {});
             db.run(`ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1`, () => {});
             db.run(`ALTER TABLE users ADD COLUMN stato_abilitazione ENUM('In attesa', 'Abilitato', 'Sospeso') NOT NULL DEFAULT 'Abilitato'`, () => {});
+            db.run(`ALTER TABLE users ADD COLUMN cognome VARCHAR(100) NULL`, () => {});
             db.run(`CREATE TABLE IF NOT EXISTS condomini (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 nome VARCHAR(150) NOT NULL,
@@ -991,8 +992,30 @@ function initDatabase() {
                 creato_il DATETIME DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_condomini_amministratore FOREIGN KEY (amministratore_id) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
+            db.run(`CREATE TABLE IF NOT EXISTS condomino_condominio (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                condomino_id INT NOT NULL,
+                condominio_id INT NOT NULL,
+                interno VARCHAR(50) NOT NULL,
+                millesimi DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+                associato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unico_condomino_stesso_stabile (condomino_id, condominio_id),
+                CONSTRAINT fk_cc_condomino FOREIGN KEY (condomino_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_cc_condominio FOREIGN KEY (condominio_id) REFERENCES condomini(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
             db.run(`CREATE OR REPLACE VIEW utenti AS SELECT * FROM users`, () => {});
         });
+
+        db.run(`CREATE TABLE IF NOT EXISTS condomino_condominio (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            condomino_id INT NOT NULL,
+            condominio_id INT NOT NULL,
+            interno VARCHAR(50) NOT NULL,
+            millesimi DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+            associato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unico_condomino_stesso_stabile (condomino_id, condominio_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
+        db.run(`ALTER TABLE condomino_condominio MODIFY COLUMN interno VARCHAR(50) NOT NULL`, () => {});
 
 
         // UNITA IMMOBILIARI E MILLESIMI
@@ -1696,6 +1719,36 @@ const checkSuperuser = (req, res, next) => {
         req.user = decodedUser;
         next();
     });
+};
+
+// ==========================================
+// MIDDLEWARE PER VERIFICARE IL RUOLO DI AMMINISTRATORE ABILITATO
+// ==========================================
+const checkAmministratore = (req, res, next) => {
+    if (!req.user) {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ success: false, error: 'Token mancante.' });
+        }
+        return jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
+            if (err) return res.status(403).json({ success: false, error: 'Token non valido.' });
+            req.user = decodedUser;
+            return checkAmministratore(req, res, next);
+        });
+    }
+
+    const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin === 1 || req.user.is_superadmin === true;
+    const isActiveAdmin = (req.user.ruolo === 'amministratore' || isSuper) && 
+                          (req.user.is_active === 1 || req.user.is_active === true || req.user.is_active === undefined);
+
+    if (!isActiveAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            error: 'Accesso negato: Richiesto ruolo Amministratore attivo.' 
+        });
+    }
+    next();
 };
 
 function computeLicenseInfo(license) {
@@ -4941,6 +4994,169 @@ app.post('/api/superuser/crea-condominio', verifyJWT, checkSuperuser, async (req
         }
         console.error('Errore durante la transazione del Superuser:', error);
         return res.status(500).json({ success: false, error: 'Errore interno del server durante l\'inserimento.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// ==========================================
+// API LISTA CONDOMINI AMMINISTRATORE
+// ==========================================
+app.get('/api/amministratore/miei-condomini', verifyJWT, checkAmministratore, async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin;
+        if (db.pool && typeof db.pool.promise === 'function') {
+            const [rows] = await db.pool.promise().query(
+                isSuper 
+                    ? 'SELECT id, nome, indirizzo, codice_fiscale FROM condomini ORDER BY nome ASC'
+                    : 'SELECT id, nome, indirizzo, codice_fiscale FROM condomini WHERE amministratore_id = ? ORDER BY nome ASC',
+                isSuper ? [] : [adminId]
+            );
+            return res.json({ success: true, condomini: rows || [] });
+        } else {
+            db.all(
+                isSuper
+                    ? 'SELECT id, nome, indirizzo, codice_fiscale FROM condomini ORDER BY nome ASC'
+                    : 'SELECT id, nome, indirizzo, codice_fiscale FROM condomini WHERE amministratore_id = ? ORDER BY nome ASC',
+                isSuper ? [] : [adminId],
+                (err, rows) => {
+                    if (err) return res.status(500).json({ success: false, error: err.message });
+                    res.json({ success: true, condomini: rows || [] });
+                }
+            );
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ==========================================
+// API PER L'INSERIMENTO/INVITO DI UN CONDOMINO IN UNO STABILE
+// ==========================================
+app.post('/api/amministratore/invita-condomino', verifyJWT, checkAmministratore, async (req, res) => {
+    const { condominio_id, condomino_email, interno, millesimi } = req.body;
+    const adminId = req.user.id; // Preso dal token JWT
+
+    if (!condominio_id || !condomino_email || !interno || millesimi === undefined || millesimi === null || millesimi === '') {
+        return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
+    }
+
+    const condoId = parseInt(condominio_id, 10);
+    const millesimiNum = parseFloat(millesimi);
+    if (isNaN(condoId) || isNaN(millesimiNum)) {
+        return res.status(400).json({ success: false, error: 'Valori numerici non validi per condominio o millesimi.' });
+    }
+
+    const cleanEmail = String(condomino_email).trim().toLowerCase();
+    const cleanInterno = String(interno).trim();
+
+    let connection;
+
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            connection = await db.getConnection();
+            
+            // 1. Sicurezza: Verifica che questo condominio sia gestito proprio dall'amministratore richiedente
+            const isSuper = req.user && (req.user.ruolo === 'superuser' || req.user.is_superadmin);
+            let condoCheck;
+            if (isSuper) {
+                [condoCheck] = await connection.query('SELECT id FROM condomini WHERE id = ?', [condoId]);
+            } else {
+                [condoCheck] = await connection.query(
+                    'SELECT id FROM condomini WHERE id = ? AND amministratore_id = ?',
+                    [condoId, adminId]
+                );
+            }
+
+            if (!condoCheck || condoCheck.length === 0) {
+                return res.status(403).json({ success: false, error: 'Non hai i permessi per gestire questo condominio.' });
+            }
+
+            // 2. Cerca il condomino tramite email
+            const [userCheck] = await connection.query(
+                'SELECT id, nome, email, ruolo FROM utenti WHERE email = ?',
+                [cleanEmail]
+            );
+
+            if (!userCheck || userCheck.length === 0) {
+                return res.status(404).json({ success: false, error: 'Nessun condomino registrato con questa email.' });
+            }
+
+            const targetUser = userCheck[0];
+
+            if (targetUser.ruolo !== 'condomino') {
+                return res.status(400).json({ success: false, error: 'L\'utente indicato non ha il ruolo di Condòmino.' });
+            }
+
+            // 3. Associa il condomino all'edificio (e imposta l'appartamento)
+            await connection.query(
+                'INSERT INTO condomino_condominio (condomino_id, condominio_id, interno, millesimi) VALUES (?, ?, ?, ?)',
+                [targetUser.id, condoId, cleanInterno, millesimiNum]
+            );
+
+            // Sincronizzazione automatica con user_condominios per fruizione immediata del portale
+            await connection.query(
+                'INSERT INTO user_condominios (user_id, condominio_id, role, unita, millesimi) VALUES (?, ?, "condomino", ?, ?) ON DUPLICATE KEY UPDATE role = "condomino", unita = VALUES(unita), millesimi = VALUES(millesimi)',
+                [targetUser.id, condoId, cleanInterno, millesimiNum]
+            ).catch(() => {});
+
+            return res.status(201).json({ 
+                success: true, 
+                message: `Condòmino associato correttamente all'interno ${cleanInterno}.` 
+            });
+        } else {
+            // Fallback SQLite
+            const isSuper = req.user && (req.user.ruolo === 'superuser' || req.user.is_superadmin);
+            const condo = await new Promise((resolve, reject) => {
+                const sql = isSuper 
+                    ? 'SELECT id FROM condomini WHERE id = ?' 
+                    : 'SELECT id FROM condomini WHERE id = ? AND amministratore_id = ?';
+                const params = isSuper ? [condoId] : [condoId, adminId];
+                db.get(sql, params, (err, row) => {
+                    if (err) reject(err); else resolve(row);
+                });
+            });
+
+            if (!condo) {
+                return res.status(403).json({ success: false, error: 'Non hai i permessi per gestire questo condominio.' });
+            }
+
+            const targetUser = await new Promise((resolve, reject) => {
+                db.get('SELECT id, ruolo FROM utenti WHERE LOWER(email) = ?', [cleanEmail], (err, row) => {
+                    if (err) reject(err); else resolve(row);
+                });
+            });
+
+            if (!targetUser) {
+                return res.status(404).json({ success: false, error: 'Nessun condomino registrato con questa email.' });
+            }
+
+            if (targetUser.ruolo !== 'condomino') {
+                return res.status(400).json({ success: false, error: 'L\'utente indicato non ha il ruolo di Condòmino.' });
+            }
+
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO condomino_condominio (condomino_id, condominio_id, interno, millesimi) VALUES (?, ?, ?, ?)',
+                    [targetUser.id, condoId, cleanInterno, millesimiNum],
+                    function(err) {
+                        if (err) reject(err); else resolve(this.lastID);
+                    }
+                );
+            });
+
+            return res.status(201).json({ 
+                success: true, 
+                message: `Condòmino associato correttamente all'interno ${cleanInterno}.` 
+            });
+        }
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY' || (error.message && error.message.includes('UNIQUE constraint'))) {
+            return res.status(400).json({ success: false, error: 'Questo condòmino è già associato a questo stabile.' });
+        }
+        console.error('Errore invito condomino:', error);
+        return res.status(500).json({ success: false, error: 'Errore interno del server.' });
     } finally {
         if (connection) connection.release();
     }
