@@ -8981,6 +8981,18 @@ function updateAdminPanelVisibility() {
         if (isAdmin) bHeader.classList.remove('hidden');
         else bHeader.classList.add('hidden');
     }
+
+    const isCondomino = user.ruolo === 'condomino' || (!isAdmin && !isSuper);
+    const bCondoDesk = document.getElementById('btn-condomino-desk');
+    if (bCondoDesk) {
+        if (isCondomino) bCondoDesk.classList.remove('hidden');
+        else bCondoDesk.classList.add('hidden');
+    }
+    const bCondoHeader = document.getElementById('btn-condomino-panel');
+    if (bCondoHeader) {
+        if (isCondomino) bCondoHeader.classList.remove('hidden');
+        else bCondoHeader.classList.add('hidden');
+    }
 }
 setInterval(updateAdminPanelVisibility, 1000);
 
@@ -9105,10 +9117,136 @@ window.loadCondominoFinanceDashboard = async function() {
 };
 
 // Invocazione automatica ad avvio pagina
+
+
+// ============================================================================
+// MODULO DASHBOARD PRIVATA CONDOMINO & GENERAZIONE RICEVUTA PDF
+// ============================================================================
+window.openCondominoPanel = function() {
+    const p = document.getElementById('condomino-panel');
+    const adminP = document.getElementById('admin-panel');
+    const suP = document.getElementById('superuser-panel');
+    const d = document.getElementById('superuser-dashboard-view');
+    const a = document.getElementById('agency-dashboard-view');
+    const c = document.getElementById('app-core-view');
+    if (adminP) adminP.classList.add('hidden');
+    if (suP) suP.classList.add('hidden');
+    if (d) d.classList.add('hidden');
+    if (a) a.classList.add('hidden');
+    if (c) c.classList.add('hidden');
+    if (p) {
+        p.classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        caricaDashboardCondomino();
+    }
+};
+
+window.closeCondominoPanel = function() {
+    const p = document.getElementById('condomino-panel');
+    if (p) p.classList.add('hidden');
+    const c = document.getElementById('app-core-view');
+    if (c) c.classList.remove('hidden');
+};
+
+async function caricaDashboardCondomino() {
+    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+
+    try {
+        const response = await fetch('/api/condomino/dashboard', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // 1. Aggiorna intestazione privata
+            const infoEl = document.getElementById('info-appartamento');
+            if (infoEl && data.datiPersonali) {
+                infoEl.innerText = `Unità Immobiliare: ${data.datiPersonali.interno || 'N/D'} | Quota: ${data.datiPersonali.millesimi || '0.00'} millesimi`;
+            }
+
+            // 2. Aggiorna la CARD PRIVACY con i dati aggregati
+            const elBar = document.getElementById('cassa-progress-bar');
+            const elPerc = document.getElementById('cassa-percentuale');
+            const elResidui = document.getElementById('cassa-residui');
+
+            if (data.cassaComune) {
+                if (elBar) elBar.style.width = `${data.cassaComune.percentualeRiscossa || 0}%`;
+                if (elPerc) elPerc.innerText = `${data.cassaComune.percentualeRiscossa || 0}%`;
+                if (elResidui) elResidui.innerText = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(data.cassaComune.residuiAttivi || 0);
+            }
+
+            // 3. Popola lo storico dei pagamenti personali
+            const corpoTabella = document.getElementById('tabella-pagamenti-corpo');
+            if (corpoTabella) {
+                corpoTabella.innerHTML = '';
+                const pagamenti = (data.datiPersonali && Array.isArray(data.datiPersonali.pagamenti)) ? data.datiPersonali.pagamenti : [];
+
+                if (pagamenti.length === 0) {
+                    corpoTabella.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">Nessun pagamento registrato.</td></tr>';
+                    return;
+                }
+
+                pagamenti.forEach(p => {
+                    const cod = p.ricevuta_codice || '';
+                    corpoTabella.innerHTML += `
+                        <tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
+                            <td class="p-3 font-medium text-white">${p.titolo || 'Quota Deliberata'}</td>
+                            <td class="p-3 text-slate-400">${p.data || '-'}</td>
+                            <td class="p-3 text-right font-mono text-emerald-400 font-bold">€ ${parseFloat(p.importo_versato || 0).toFixed(2)}</td>
+                            <td class="p-3 text-center">
+                                ${cod ? `
+                                <button type="button" onclick="scaricaPDF('${cod}')" class="text-indigo-400 hover:text-indigo-300 transition-colors p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 inline-flex items-center gap-1.5 text-xs font-semibold">
+                                    <i class="fa-solid fa-file-pdf"></i> Scarica
+                                </button>
+                                ` : '<span class="text-xs text-slate-500">N/D</span>'}
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Errore render dashboard condomino:', error);
+    }
+}
+
+// Funzione globale per invocare il download binario del PDF generato da Puppeteer
+async function scaricaPDF(codiceRicevuta) {
+    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+    try {
+        const response = await fetch(`/api/condomino/ricevuta/${encodeURIComponent(codiceRicevuta)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) throw new Error('Download fallito');
+
+        // Trasforma la risposta in un BLOB binario ed avvia il download del file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Ricevuta_${codiceRicevuta}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+        alert('Impossibile scaricare il PDF della ricevuta.');
+    }
+}
+
+window.caricaDashboardCondomino = caricaDashboardCondomino;
+window.scaricaPDF = scaricaPDF;
+
+// Aggiorna l'event listener DOMContentLoaded
+
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         if (typeof window.loadCondominoFinanceDashboard === 'function') {
             window.loadCondominoFinanceDashboard();
+        }
+        if (typeof window.caricaDashboardCondomino === 'function') {
+            window.caricaDashboardCondomino();
         }
     }, 700);
 });

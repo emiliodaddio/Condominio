@@ -79,6 +79,10 @@
                     <i class="fa-solid fa-user-plus text-emerald-200"></i>
                     <span>Associa Condòmino</span>
                 </button>
+                <button id="btn-condomino-desk" onclick="openCondominoPanel()" class="hidden px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 hover:from-indigo-700 hover:to-violet-800 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-md shadow-indigo-500/20">
+                    <i class="fa-solid fa-receipt text-indigo-200"></i>
+                    <span>Le mie Ricevute & Cassa</span>
+                </button>
                 <button id="btn-superuser-desk" onclick="openSuperUserDashboard()" class="hidden px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-md shadow-purple-500/20">
                     <i class="fa-solid fa-crown text-amber-300"></i>
                     <span>Cabina di Regia SuperUser</span>
@@ -247,6 +251,68 @@
         </div>
     </div>
 </section>
+
+<!-- Sezione Dashboard Condòmino (Visibile solo al ruolo condomino) -->
+<section id="condomino-panel" class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-slate-100 hidden">
+    <div class="max-w-4xl mx-auto space-y-8">
+        
+        <!-- Intestazione Privata -->
+        <div class="flex items-center justify-between pb-4 border-b border-white/10">
+            <div>
+                <h1 class="text-2xl font-bold">La tua Area Riservata</h1>
+                <p class="text-xs text-slate-400 mt-1" id="info-appartamento">Unità Immobiliare: -- | Quota: -- millesimi</p>
+            </div>
+            <div>
+                <button type="button" onclick="closeCondominoPanel()" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrow-left"></i> Torna alla Dashboard
+                </button>
+            </div>
+        </div>
+
+        <!-- 🟢 INTERFACCIA CARD PRIVACY: STATO AVANZAMENTO FINANZIARIO GLOBAL -->
+        <div class="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-semibold tracking-wide uppercase text-indigo-400">Stato Avanzamento Riscossioni</h3>
+                    <p class="text-xs text-slate-400 mt-1">Quota dei contributi periodici deliberati in corso di consolidamento nella cassa comune.</p>
+                </div>
+                <i class="fa-solid fa-chart-pie text-xl text-indigo-400"></i>
+            </div>
+            
+            <!-- Barra di Avanzamento -->
+            <div class="w-full bg-slate-950 rounded-full h-4 overflow-hidden mb-3 border border-slate-800">
+                <div id="cassa-progress-bar" class="bg-gradient-to-r from-indigo-600 to-violet-500 h-full rounded-full transition-all duration-700" style="width: 0%"></div>
+            </div>
+
+            <div class="flex justify-between items-center text-sm font-medium">
+                <span class="text-slate-300">Indice di liquidità comune: <strong id="cassa-percentuale" class="text-white">0%</strong></span>
+                <span class="text-slate-400 text-xs">Residui attivi di gestione: <span id="cassa-residui" class="font-mono text-slate-300 font-bold">€ 0,00</span></span>
+            </div>
+        </div>
+
+        <!-- Elenco Ricevute e Pagamenti Personali -->
+        <div class="bg-slate-900/30 border border-white/5 rounded-2xl p-6">
+            <h3 class="text-lg font-medium mb-4 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-slate-400"></i> Storico Versamenti Effettuati</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-300">
+                    <thead class="text-xs uppercase bg-slate-950/40 text-slate-400">
+                        <tr>
+                            <th class="p-3">Causale Competenza</th>
+                            <th class="p-3">Data</th>
+                            <th class="p-3 text-right">Importo</th>
+                            <th class="p-3 text-center">Ricevuta</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabella-pagamenti-corpo">
+                        <!-- Popolato dinamicamente -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</section>
+
 
 <!-- ========================================================================
      SUPERUSER DASHBOARD VIEW - CABINA DI REGIA DEL PROPRIETARIO
@@ -1023,6 +1089,10 @@
                     <button id="btn-admin-panel" onclick="openAdminPanel()" class="hidden no-print px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs" title="Pannello Amministratore (Associa Residenti)">
                         <i class="fa-solid fa-user-gear text-emerald-200 text-xs"></i>
                         <span class="hidden sm:inline">Pannello Admin</span>
+                    </button>
+                    <button id="btn-condomino-panel" onclick="openCondominoPanel()" class="hidden no-print px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs" title="Area Personale & Ricevute Condòmino">
+                        <i class="fa-solid fa-receipt text-indigo-200 text-xs"></i>
+                        <span class="hidden sm:inline">Area Condòmino</span>
                     </button>
 
                     <button onclick="openSecurityProfileModal()" class="no-print px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-colors flex items-center gap-1.5">

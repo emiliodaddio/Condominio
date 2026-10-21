@@ -1032,11 +1032,13 @@ function initDatabase() {
             condomino_id INT NOT NULL,
             spesa_id INT NOT NULL,
             importo_versato DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-            data_pagamento DATE NULL,
+            data_pagamento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ricevuta_codice VARCHAR(50) UNIQUE NOT NULL,
             creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_pagamenti_condomino FOREIGN KEY (condomino_id) REFERENCES users(id) ON DELETE CASCADE,
             CONSTRAINT fk_pagamenti_spesa FOREIGN KEY (spesa_id) REFERENCES spese_scadenze(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
+        db.run(`ALTER TABLE pagamenti_condomini ADD COLUMN ricevuta_codice VARCHAR(50) UNIQUE NULL`, () => {});
 
 
         // UNITA IMMOBILIARI E MILLESIMI
@@ -5124,8 +5126,26 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 ? Math.min(100, Math.round((totaleRiscosso / totalePreventivato) * 100))
                 : 100;
 
+            // Storico pagamenti del singolo condomino con codice ricevuta (per download PDF)
+            const [pagamentiPersonali] = await connection.query(`
+                SELECT p.id, s.titolo, p.importo_versato, DATE_FORMAT(p.data_pagamento, '%d/%m/%Y') AS data, p.ricevuta_codice 
+                FROM pagamenti_condomini p
+                JOIN spese_scadenze s ON p.spesa_id = s.id
+                WHERE p.condomino_id = ?
+                ORDER BY p.data_pagamento DESC
+            `, [userId]);
+
             return res.json({
                 success: true,
+                datiPersonali: {
+                    interno: condominoProfile.interno,
+                    millesimi: parseFloat(condominoProfile.millesimi),
+                    pagamenti: pagamentiPersonali || []
+                },
+                cassaComune: {
+                    residuiAttivi: residuiAttiviGestione,
+                    percentualeRiscossa: percentualeAvanzamento
+                },
                 dati_personali: {
                     condomino_id: condominoProfile.condomino_id,
                     nome: condominoProfile.condomino_nome,
@@ -5166,6 +5186,117 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
     }
 });
 
+// ==========================================
+// ENDPOINT GENERAZIONE RICEVUTA PDF CON PUPPETEER
+// ==========================================
+app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) => {
+    const condominoId = req.user.id;
+    const { ricevuta_codice } = req.params;
+    let connection;
+
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            connection = await db.getConnection();
+
+            const isPrivileged = req.user.ruolo === 'superuser' || req.user.is_superadmin || req.user.ruolo === 'amministratore';
+            // Sicurezza: Recupera la ricevuta accertandosi che appartenga al condomino richiedente o ad utente autorizzato
+            const [dati] = await connection.query(
+                `SELECT p.importo_versato, DATE_FORMAT(p.data_pagamento, '%d/%m/%Y %H:%i') AS data_ora, p.ricevuta_codice,
+                        s.titolo AS spesa_titolo, u.nome, COALESCE(u.cognome, '') AS cognome, c.nome AS condominio_nome, c.indirizzo AS condominio_via
+                 FROM pagamenti_condomini p
+                 JOIN spese_scadenze s ON p.spesa_id = s.id
+                 JOIN users u ON p.condomino_id = u.id
+                 JOIN condomini c ON s.condominio_id = c.id
+                 WHERE (p.condomino_id = ? OR ?) AND p.ricevuta_codice = ?`,
+                [condominoId, isPrivileged ? 1 : 0, ricevuta_codice]
+            );
+
+            if (!dati || dati.length === 0) {
+                return res.status(404).json({ success: false, error: 'Ricevuta non trovata o non autorizzata.' });
+            }
+
+            const r = dati[0];
+
+            // Struttura HTML del PDF
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Ricevuta ${r.ricevuta_codice}</title>
+                    <style>
+                        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px; margin: 0; }
+                        .header { border-bottom: 2px solid #4f46e5; padding-bottom: 20px; margin-bottom: 30px; }
+                        .title { font-size: 24px; font-weight: bold; color: #1e1b4b; }
+                        .details { margin-bottom: 40px; font-size: 14px; line-height: 1.6; }
+                        .table-Ricevuta { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        .table-Ricevuta th { background-color: #f3f4f6; text-align: left; padding: 12px; font-size: 14px; }
+                        .table-Ricevuta td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+                        .total-box { margin-top: 30px; text-align: right; font-size: 18px; font-weight: bold; color: #4f46e5; }
+                        .footer { margin-top: 60px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div class="title">RICEVUTA DI PAGAMENTO TELEMATICO</div>
+                        <div style="font-size: 12px; color: #6b7280; margin-top: 5px;">Documento generato automaticamente dalla piattaforma</div>
+                    </div>
+                    <div class="details">
+                        <strong>Condominio:</strong> ${r.condominio_nome}<br>
+                        <strong>Ubicazione:</strong> ${r.condominio_via}<br><br>
+                        <strong>Intestatario Unità:</strong> ${r.nome} ${r.cognome}<br>
+                        <strong>Data/Ora Transazione:</strong> ${r.data_ora}
+                    </div>
+                    <table class="table-Ricevuta">
+                        <thead>
+                            <tr>
+                                <th>Descrizione Causale</th>
+                                <th>Identificativo Ricevuta</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>${r.spesa_titolo}</td>
+                                <td><code>${r.ricevuta_codice}</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="total-box">
+                        Importo Corrisposto: € ${parseFloat(r.importo_versato).toFixed(2)}
+                    </div>
+                    <div class="footer">
+                        Il presente documento attesta l'avvenuto incasso del rateo indicato nella cassa comune del condominio.<br>
+                        Ai sensi del GDPR, i dati sensibili degli altri residenti sono protetti.
+                    </div>
+                </body>
+                </html>
+            `;
+
+            // Avvia Puppeteer con getPuppeteerLaunchOptions
+            const launchOpts = typeof getPuppeteerLaunchOptions === 'function'
+                ? getPuppeteerLaunchOptions()
+                : { headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+            const browser = await puppeteer.launch(launchOpts);
+            const page = await browser.newPage();
+            await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+            const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+            await browser.close();
+
+            // Invia il file binario direttamente al browser per il download
+            res.contentType("application/pdf");
+            res.setHeader("Content-Disposition", `attachment; filename=Ricevuta_${ricevuta_codice}.pdf`);
+            return res.send(pdfBuffer);
+        } else {
+            return res.status(501).json({ success: false, error: 'Database MySQL non configurato.' });
+        }
+    } catch (error) {
+        console.error('Errore generazione PDF:', error);
+        return res.status(500).json({ success: false, error: 'Errore durante la generazione del file PDF.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
 // Endpoint ausiliari per gestione contabile
 app.post('/api/amministratore/spese-scadenze', verifyJWT, checkAmministratore, async (req, res) => {
     const { condominio_id, titolo, importo_totale, data_scadenza } = req.body;
@@ -5186,17 +5317,20 @@ app.post('/api/amministratore/spese-scadenze', verifyJWT, checkAmministratore, a
 });
 
 app.post('/api/amministratore/registra-pagamento', verifyJWT, checkAmministratore, async (req, res) => {
-    const { condomino_id, spesa_id, importo_versato, data_pagamento } = req.body;
+    let { condomino_id, spesa_id, importo_versato, data_pagamento, ricevuta_codice } = req.body;
     if (!condomino_id || !spesa_id || !importo_versato) {
         return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
+    }
+    if (!ricevuta_codice) {
+        ricevuta_codice = 'REC-' + new Date().getFullYear() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
     }
     try {
         if (db.pool && typeof db.pool.promise === 'function') {
             const [result] = await db.pool.promise().query(
-                'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento) VALUES (?, ?, ?, ?)',
-                [condomino_id, spesa_id, parseFloat(importo_versato), data_pagamento || new Date().toISOString().slice(0, 10)]
+                'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento, ricevuta_codice) VALUES (?, ?, ?, ?, ?)',
+                [condomino_id, spesa_id, parseFloat(importo_versato), data_pagamento || new Date().toISOString().slice(0, 10), ricevuta_codice]
             );
-            return res.status(201).json({ success: true, message: 'Pagamento registrato con successo.', pagamentoId: result.insertId });
+            return res.status(201).json({ success: true, message: 'Pagamento registrato con successo.', pagamentoId: result.insertId, ricevuta_codice });
         }
     } catch (e) {
         return res.status(500).json({ success: false, error: e.message });
