@@ -1017,6 +1017,27 @@ function initDatabase() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
         db.run(`ALTER TABLE condomino_condominio MODIFY COLUMN interno VARCHAR(50) NOT NULL`, () => {});
 
+        db.run(`CREATE TABLE IF NOT EXISTS spese_scadenze (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            condominio_id INT NOT NULL,
+            titolo VARCHAR(255) NOT NULL,
+            importo_totale DECIMAL(10,2) NOT NULL,
+            data_scadenza DATE NOT NULL,
+            creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_spese_condominio FOREIGN KEY (condominio_id) REFERENCES condomini(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
+
+        db.run(`CREATE TABLE IF NOT EXISTS pagamenti_condomini (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            condomino_id INT NOT NULL,
+            spesa_id INT NOT NULL,
+            importo_versato DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            data_pagamento DATE NULL,
+            creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_pagamenti_condomino FOREIGN KEY (condomino_id) REFERENCES users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_pagamenti_spesa FOREIGN KEY (spesa_id) REFERENCES spese_scadenze(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
+
 
         // UNITA IMMOBILIARI E MILLESIMI
         db.run(`CREATE TABLE IF NOT EXISTS anagrafica_persone (
@@ -4996,6 +5017,189 @@ app.post('/api/superuser/crea-condominio', verifyJWT, checkSuperuser, async (req
         return res.status(500).json({ success: false, error: 'Errore interno del server durante l\'inserimento.' });
     } finally {
         if (connection) connection.release();
+    }
+});
+
+// ============================================================================
+// DASHBOARD PRIVATA CONDOMINO & CARD RIEPILOGO FINANZIARIO RISERVATO
+// ============================================================================
+app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
+    const userId = req.user.id;
+    let condoId = req.query.condominio_id || req.headers['x-condominio-id'];
+
+    let connection;
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            connection = await db.getConnection();
+
+            // 1. Identificazione associazione del condomino allo stabile
+            let userCondoRows;
+            if (condoId) {
+                [userCondoRows] = await connection.query(`
+                    SELECT cc.condominio_id, cc.interno, cc.millesimi, 
+                           c.nome AS condominio_nome, c.indirizzo, c.codice_fiscale,
+                           u.id AS condomino_id, u.nome AS condomino_nome, u.email AS condomino_email
+                    FROM condomino_condominio cc
+                    JOIN condomini c ON cc.condominio_id = c.id
+                    JOIN users u ON cc.condomino_id = u.id
+                    WHERE cc.condomino_id = ? AND cc.condominio_id = ?
+                `, [userId, condoId]);
+            } else {
+                [userCondoRows] = await connection.query(`
+                    SELECT cc.condominio_id, cc.interno, cc.millesimi, 
+                           c.nome AS condominio_nome, c.indirizzo, c.codice_fiscale,
+                           u.id AS condomino_id, u.nome AS condomino_nome, u.email AS condomino_email
+                    FROM condomino_condominio cc
+                    JOIN condomini c ON cc.condominio_id = c.id
+                    JOIN users u ON cc.condomino_id = u.id
+                    WHERE cc.condomino_id = ?
+                    ORDER BY cc.id DESC
+                    LIMIT 1
+                `, [userId]);
+            }
+
+            if (!userCondoRows || userCondoRows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Nessun condominio associato trovato per questo account condòmino.'
+                });
+            }
+
+            const condominoProfile = userCondoRows[0];
+            const activeCondoId = condominoProfile.condominio_id;
+
+            // 2. Dettaglio scadenze e situazione contabile personale del condòmino
+            const [personalScadenze] = await connection.query(`
+                SELECT 
+                    s.id AS spesa_id,
+                    s.titolo,
+                    s.importo_totale AS importo_totale_spesa,
+                    s.data_scadenza,
+                    ROUND((s.importo_totale * ? / 1000.00), 2) AS quota_dovuta,
+                    COALESCE(p.totale_versato, 0.00) AS importo_versato,
+                    ROUND(((s.importo_totale * ? / 1000.00) - COALESCE(p.totale_versato, 0.00)), 2) AS residuo_individuale,
+                    CASE 
+                        WHEN COALESCE(p.totale_versato, 0.00) >= ROUND((s.importo_totale * ? / 1000.00), 2) THEN 'Regolarizzato'
+                        ELSE 'In corso di riscossione'
+                    END AS stato_contabile,
+                    p.ultima_data_pagamento
+                FROM spese_scadenze s
+                LEFT JOIN (
+                    SELECT spesa_id, condomino_id, SUM(importo_versato) AS totale_versato, MAX(data_pagamento) AS ultima_data_pagamento
+                    FROM pagamenti_condomini
+                    WHERE condomino_id = ?
+                    GROUP BY spesa_id, condomino_id
+                ) p ON s.id = p.spesa_id
+                WHERE s.condominio_id = ?
+                ORDER BY s.data_scadenza ASC
+            `, [condominoProfile.millesimi, condominoProfile.millesimi, condominoProfile.millesimi, userId, activeCondoId]);
+
+            // Calcolo totali personali
+            let totaleQuoteDovute = 0;
+            let totaleVersatoPersonale = 0;
+            personalScadenze.forEach(item => {
+                totaleQuoteDovute += parseFloat(item.quota_dovuta || 0);
+                totaleVersatoPersonale += parseFloat(item.importo_versato || 0);
+            });
+            const residuoPersonaleComplessivo = Math.max(0, parseFloat((totaleQuoteDovute - totaleVersatoPersonale).toFixed(2)));
+
+            // 3. Calcolo aggregato globale di cassa dello stabile (Zero-leakage di privacy)
+            const [globalStats] = await connection.query(`
+                SELECT 
+                    COALESCE(SUM(s.importo_totale), 0.00) AS totale_gestione_preventivata,
+                    COALESCE((
+                        SELECT SUM(p.importo_versato) 
+                        FROM pagamenti_condomini p
+                        JOIN spese_scadenze sp ON p.spesa_id = sp.id
+                        WHERE sp.condominio_id = ?
+                    ), 0.00) AS totale_riscosso_fabbricato
+                FROM spese_scadenze s
+                WHERE s.condominio_id = ?
+            `, [activeCondoId, activeCondoId]);
+
+            const totalePreventivato = parseFloat(globalStats[0].totale_gestione_preventivata || 0);
+            const totaleRiscosso = parseFloat(globalStats[0].totale_riscosso_fabbricato || 0);
+            const residuiAttiviGestione = Math.max(0, parseFloat((totalePreventivato - totaleRiscosso).toFixed(2)));
+            const percentualeAvanzamento = totalePreventivato > 0 
+                ? Math.min(100, Math.round((totaleRiscosso / totalePreventivato) * 100))
+                : 100;
+
+            return res.json({
+                success: true,
+                dati_personali: {
+                    condomino_id: condominoProfile.condomino_id,
+                    nome: condominoProfile.condomino_nome,
+                    email: condominoProfile.condomino_email,
+                    condominio: {
+                        id: condominoProfile.condominio_id,
+                        nome: condominoProfile.condominio_nome,
+                        indirizzo: condominoProfile.indirizzo,
+                        codice_fiscale: condominoProfile.codice_fiscale
+                    },
+                    unita_immobiliare: {
+                        interno: condominoProfile.interno,
+                        millesimi: parseFloat(condominoProfile.millesimi)
+                    },
+                    riepilogo_personale: {
+                        totale_quote_dovute: parseFloat(totaleQuoteDovute.toFixed(2)),
+                        totale_versato: parseFloat(totaleVersatoPersonale.toFixed(2)),
+                        saldo_in_corso: residuoPersonaleComplessivo,
+                        stato: residuoPersonaleComplessivo === 0 ? 'In regola con i versamenti' : 'Quote in corso di regolazione'
+                    },
+                    scadenze: personalScadenze
+                },
+                // Dati aggregati a livello di fabbricato (GDPR Compliant - Nessun dato nominativo di terzi)
+                aggregato_cassa_stabile: {
+                    totale_gestione_preventivata: totalePreventivato,
+                    totale_riscosso_fabbricato: totaleRiscosso,
+                    residui_attivi_gestione: residuiAttiviGestione,
+                    percentuale_avanzamento: percentualeAvanzamento,
+                    formula_informativa: 'Valore matematico complessivo delle quote di gestione deliberate in fase di riscossione.'
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Errore dashboard condomino:', error);
+        return res.status(500).json({ success: false, error: 'Errore durante il recupero dei dati contabili.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Endpoint ausiliari per gestione contabile
+app.post('/api/amministratore/spese-scadenze', verifyJWT, checkAmministratore, async (req, res) => {
+    const { condominio_id, titolo, importo_totale, data_scadenza } = req.body;
+    if (!condominio_id || !titolo || !importo_totale || !data_scadenza) {
+        return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
+    }
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            const [result] = await db.pool.promise().query(
+                'INSERT INTO spese_scadenze (condominio_id, titolo, importo_totale, data_scadenza) VALUES (?, ?, ?, ?)',
+                [condominio_id, titolo.trim(), parseFloat(importo_totale), data_scadenza]
+            );
+            return res.status(201).json({ success: true, message: 'Spesa creata con successo.', spesaId: result.insertId });
+        }
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/amministratore/registra-pagamento', verifyJWT, checkAmministratore, async (req, res) => {
+    const { condomino_id, spesa_id, importo_versato, data_pagamento } = req.body;
+    if (!condomino_id || !spesa_id || !importo_versato) {
+        return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
+    }
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            const [result] = await db.pool.promise().query(
+                'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento) VALUES (?, ?, ?, ?)',
+                [condomino_id, spesa_id, parseFloat(importo_versato), data_pagamento || new Date().toISOString().slice(0, 10)]
+            );
+            return res.status(201).json({ success: true, message: 'Pagamento registrato con successo.', pagamentoId: result.insertId });
+        }
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
     }
 });
 

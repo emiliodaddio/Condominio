@@ -8983,3 +8983,132 @@ function updateAdminPanelVisibility() {
     }
 }
 setInterval(updateAdminPanelVisibility, 1000);
+
+
+// ============================================================================
+// LOGICA CONTABILE CONDOMINO & CARD RIEPILOGO FINANZIARIO RISERVATO
+// ============================================================================
+window.loadCondominoFinanceDashboard = async function() {
+    const cardContainer = document.getElementById('condomino-finance-dashboard');
+    if (!cardContainer) return;
+
+    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token);
+    if (!token) return;
+
+    const activeCondoId = (window.state && window.state.currentCondoId) || sessionStorage.getItem('active_Condominio_id');
+    const url = activeCondoId 
+        ? `/api/condomino/dashboard?condominio_id=${encodeURIComponent(activeCondoId)}`
+        : '/api/condomino/dashboard';
+
+    try {
+        const res = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'x-condominio-id': activeCondoId || ''
+            }
+        });
+
+        if (!res.ok) {
+            return;
+        }
+
+        const data = await res.json();
+        if (!data.success) return;
+
+        const pers = data.dati_personali || {};
+        const glob = data.aggregato_cassa_stabile || {};
+
+        const formatEuro = (val) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val || 0);
+
+        // 1. Aggiornamento Card Globale Riservata (Residui Attivi della Gestione)
+        const elTotalePrevisto = document.getElementById('stat-totale-preventivato');
+        const elTotaleRiscosso = document.getElementById('stat-totale-riscosso');
+        const elResiduiAttivi = document.getElementById('stat-residui-attivi');
+        const elPerc = document.getElementById('stat-percentuale-avanzamento');
+        const elBar = document.getElementById('bar-avanzamento-riscossioni');
+        const elBadge = document.getElementById('badge-stato-riscossioni');
+
+        if (elTotalePrevisto) elTotalePrevisto.textContent = formatEuro(glob.totale_gestione_preventivata);
+        if (elTotaleRiscosso) elTotaleRiscosso.textContent = formatEuro(glob.totale_riscosso_fabbricato);
+        if (elResiduiAttivi) elResiduiAttivi.textContent = formatEuro(glob.residui_attivi_gestione);
+
+        const perc = Math.round(glob.percentuale_avanzamento || 0);
+        if (elPerc) elPerc.textContent = `${perc}%`;
+        if (elBar) elBar.style.width = `${Math.min(100, Math.max(0, perc))}%`;
+
+        if (elBadge) {
+            if (perc >= 90) {
+                elBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mt-1';
+                elBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Ottima Liquidità';
+            } else if (perc >= 60) {
+                elBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 mt-1';
+                elBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-indigo-400"></span> Flussi Regolari';
+            } else {
+                elBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 mt-1';
+                elBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Riscossioni in Corso';
+            }
+        }
+
+        // 2. Aggiornamento Posizione Personale Individuale
+        const elUnita = document.getElementById('pers-unita');
+        const elMillesimi = document.getElementById('pers-millesimi');
+        const elBadgeSaldo = document.getElementById('pers-badge-saldo');
+
+        if (elUnita) elUnita.textContent = pers.unita_immobiliare ? pers.unita_immobiliare.interno : 'N/D';
+        if (elMillesimi) elMillesimi.textContent = pers.unita_immobiliare ? `${parseFloat(pers.unita_immobiliare.millesimi).toFixed(2)} / 1000` : '0,00 / 1000';
+
+        const saldoPers = pers.riepilogo_personale ? pers.riepilogo_personale.saldo_in_corso : 0;
+        if (elBadgeSaldo) {
+            if (saldoPers === 0) {
+                elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5';
+                elBadgeSaldo.innerHTML = '<i class="fa-solid fa-check-circle"></i> In regola con i versamenti';
+            } else {
+                elBadgeSaldo.className = 'px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 flex items-center gap-1.5';
+                elBadgeSaldo.innerHTML = `<i class="fa-solid fa-clock"></i> Quota residua da saldare: ${formatEuro(saldoPers)}`;
+            }
+        }
+
+        // 3. Tabella Scadenze Personali
+        const tbody = document.getElementById('condomino-scadenze-tbody');
+        if (tbody) {
+            const scadenze = pers.scadenze || [];
+            if (scadenze.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Nessuna spesa o scadenza contabile attualmente attiva per questo stabile.</td></tr>';
+            } else {
+                tbody.innerHTML = scadenze.map(s => {
+                    const isRegolare = s.stato_contabile === 'Regolarizzato';
+                    const badgeClass = isRegolare 
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                        : 'bg-amber-500/10 text-amber-300 border border-amber-500/20';
+                    const escape = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+                    return `
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="py-3 px-3 font-medium text-white">${escape(s.titolo)}</td>
+                            <td class="py-3 px-3 text-right text-slate-400">${s.data_scadenza ? s.data_scadenza.slice(0, 10) : '-'}</td>
+                            <td class="py-3 px-3 text-right font-semibold text-white">${formatEuro(s.quota_dovuta)}</td>
+                            <td class="py-3 px-3 text-right text-emerald-400">${formatEuro(s.importo_versato)}</td>
+                            <td class="py-3 px-3 text-right font-bold ${parseFloat(s.residuo_individuale) > 0 ? 'text-amber-300' : 'text-slate-400'}">${formatEuro(s.residuo_individuale)}</td>
+                            <td class="py-3 px-3 text-center">
+                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}">
+                                    ${s.stato_contabile}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+
+    } catch (e) {
+        console.warn('Avviso caricamento dashboard finanziaria condomino:', e);
+    }
+};
+
+// Invocazione automatica ad avvio pagina
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        if (typeof window.loadCondominoFinanceDashboard === 'function') {
+            window.loadCondominoFinanceDashboard();
+        }
+    }, 700);
+});
