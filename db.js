@@ -181,6 +181,12 @@ if (DB_TYPE === 'sqlite') {
         serialize(cb) {
             if (cb) cb();
         },
+        getConnection() {
+            if (pool && typeof pool.promise === 'function') {
+                return pool.promise().getConnection();
+            }
+            throw new Error('MySQL connection pool non disponibile per transazioni');
+        },
         close(cb) {
             pool.end(cb);
         }

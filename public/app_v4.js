@@ -8753,3 +8753,91 @@ window.closeTesoreriaInfoModal = function() {
     const m = document.getElementById('modal-tesoreria-info');
     if (m) m.classList.add('hidden');
 };
+
+
+// ============================================================================
+// GESTIONE PANNELLO SUPERUSER (CENSIMENTO RAPIDO CONDOMINIO & ABILITAZIONE)
+// ============================================================================
+window.openSuperuserPanel = function() {
+    const p = document.getElementById('superuser-panel');
+    const d = document.getElementById('superuser-dashboard-view');
+    const a = document.getElementById('agency-dashboard-view');
+    const c = document.getElementById('app-core-view');
+    if (d) d.classList.add('hidden');
+    if (a) a.classList.add('hidden');
+    if (c) c.classList.add('hidden');
+    if (p) {
+        p.classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+};
+
+window.closeSuperuserPanel = function() {
+    const p = document.getElementById('superuser-panel');
+    if (p) p.classList.add('hidden');
+    if (typeof openSuperUserDashboard === 'function') {
+        openSuperUserDashboard();
+    } else if (typeof returnToAgencyDashboard === 'function') {
+        returnToAgencyDashboard();
+    }
+};
+
+// Inizializzazione listener form censimento superuser
+document.addEventListener('DOMContentLoaded', () => {
+    const formCreaCondominio = document.getElementById('form-crea-condominio');
+
+    if (formCreaCondominio) {
+        formCreaCondominio.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Recupera il token JWT salvato a sistema (es. in localStorage o sessionStorage)
+            const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('condo_token') || localStorage.getItem('condo_token') || (window.state && window.state.token); 
+
+            // Estrazione dei dati dai campi dell'interfaccia
+            const payload = {
+                nome: document.getElementById('condo-nome').value.trim(),
+                codice_fiscale: document.getElementById('condo-cf').value.trim(),
+                indirizzo: document.getElementById('condo-indirizzo').value.trim(),
+                amministratore_email: document.getElementById('condo-admin-email').value.trim()
+            };
+
+            const submitBtn = formCreaCondominio.querySelector('button[type="submit"]');
+            const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Elaborazione in corso...';
+            }
+
+            try {
+                const response = await fetch('/api/superuser/crea-condominio', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}` // Trasmissione sicura del token
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    alert('🎉 Successo: ' + data.message);
+                    formCreaCondominio.reset(); // Svuota i campi del form
+                    if (typeof loadSuperUserOverview === 'function') loadSuperUserOverview();
+                    if (typeof fetchCondos === 'function') fetchCondos();
+                } else {
+                    alert('❌ Errore: ' + (data.error || data.errore || data.message || 'Impossibile completare l\'operazione.'));
+                }
+
+            } catch (error) {
+                console.error('Errore durante la richiesta Fetch:', error);
+                alert('❌ Si è verificato un errore di rete o il server non risponde.');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHtml;
+                }
+            }
+        });
+    }
+});

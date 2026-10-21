@@ -739,6 +739,7 @@
                     } else {
                         sessionStorage.removeItem('active_Condominio_id');
                         sessionStorage.setItem('condo_token', data.token);
+                        localStorage.setItem('jwt_token', data.token);
                         sessionStorage.setItem('condo_user', JSON.stringify(data.user));
                         window.location.href = 'index.html';
                     }
@@ -779,6 +780,7 @@
                 if (res.ok && data.success) {
                     sessionStorage.removeItem('active_Condominio_id');
                     sessionStorage.setItem('condo_token', data.token);
+                    localStorage.setItem('jwt_token', data.token);
                     sessionStorage.setItem('condo_user', JSON.stringify(data.user));
                     window.location.href = 'index.html';
                 } else {

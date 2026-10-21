@@ -1643,14 +1643,33 @@ function requireSuperAdmin(req, res, next) {
     return res.status(403).json({ success: false, message: 'Accesso negato: operazione riservata al SuperUser (Proprietario).' });
 }
 
-// Middleware Express per la verifica del ruolo Superuser su JWT
-function checkSuperuser(req, res, next) {
+const verifyJWT = authenticateToken;
+
+// ==========================================
+// MIDDLEWARE DI CONTROLLO RUOLO SUPERUSER
+// ==========================================
+const checkSuperuser = (req, res, next) => {
+    // Se req.user è già stato popolato dal middleware precedente (es. verifyJWT / authenticateToken)
+    if (req.user) {
+        const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin === 1 || req.user.is_superadmin === true;
+        if (!isSuper) {
+            return res.status(403).json({ 
+                success: false, 
+                error: 'Accesso negato: Autorizzazione riservata al Superuser.',
+                errore: 'Accesso negato: Autorizzazione riservata al Superuser.' 
+            });
+        }
+        return next();
+    }
+
+    // Altrimenti decodifica dal token Bearer
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(401).json({ 
             success: false, 
+            error: 'Accesso non autorizzato: token di autenticazione mancante',
             errore: 'Accesso non autorizzato: token di autenticazione mancante' 
         });
     }
@@ -1659,6 +1678,7 @@ function checkSuperuser(req, res, next) {
         if (err) {
             return res.status(403).json({ 
                 success: false, 
+                error: 'Token non valido o sessione scaduta',
                 errore: 'Token non valido o sessione scaduta' 
             });
         }
@@ -1668,14 +1688,15 @@ function checkSuperuser(req, res, next) {
         if (!isSuper) {
             return res.status(403).json({ 
                 success: false, 
-                errore: 'Accesso negato: richiesto ruolo Superuser' 
+                error: 'Accesso negato: Autorizzazione riservata al Superuser.',
+                errore: 'Accesso negato: Autorizzazione riservata al Superuser.' 
             });
         }
 
         req.user = decodedUser;
         next();
     });
-}
+};
 
 function computeLicenseInfo(license) {
     if (!license) {
@@ -4800,6 +4821,128 @@ app.post('/api/superadmin/condomini', checkSuperuser, async (req, res) => {
         if (connection) {
             try { connection.release(); } catch (relErr) { console.error('Errore durante release connection:', relErr); }
         }
+    }
+});
+
+// ==========================================
+// ROTTA API: CREAZIONE CONDOMINIO E ABILITAZIONE AMMINISTRATORE (SUPERUSER)
+// ==========================================
+app.post('/api/superuser/crea-condominio', verifyJWT, checkSuperuser, async (req, res) => {
+    const { nome, indirizzo, codice_fiscale, amministratore_email } = req.body;
+
+    // Validazione base dei campi obbligatori
+    if (!nome || !indirizzo || !codice_fiscale || !amministratore_email) {
+        return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
+    }
+
+    const cfPulito = String(codice_fiscale).trim().toUpperCase();
+    const cleanEmail = String(amministratore_email).trim().toLowerCase();
+
+    let connection;
+
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            // Ottieni una connessione dal pool per eseguire una transazione sicura
+            connection = await db.getConnection();
+            await connection.beginTransaction();
+
+            // 1. Verifica se l'amministratore esiste nel sistema tramite email
+            const [users] = await connection.query(
+                'SELECT id, ruolo FROM utenti WHERE email = ?', 
+                [cleanEmail]
+            );
+
+            if (!users || users.length === 0) {
+                await connection.rollback();
+                return res.status(404).json({ success: false, error: 'Nessun utente trovato con questa email.' });
+            }
+
+            const admin = users[0];
+
+            if (admin.ruolo !== 'amministratore') {
+                await connection.rollback();
+                return res.status(400).json({ success: false, error: 'L\'utente specificato non ha il ruolo di Amministratore.' });
+            }
+
+            // 2. Inserisci il nuovo condominio associandolo all'amministratore trovato
+            const [condoResult] = await connection.query(
+                'INSERT INTO condomini (nome, indirizzo, codice_fiscale, amministratore_id) VALUES (?, ?, ?, ?)',
+                [nome.trim(), indirizzo.trim(), cfPulito, admin.id]
+            );
+            const nuovoCondominioId = condoResult.insertId;
+
+            // Allineamento tabelle del portale per immediata operatività
+            await connection.query(
+                'INSERT INTO condominios (id, nome, indirizzo, cf, created_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo), cf = VALUES(cf)',
+                [nuovoCondominioId, nome.trim(), indirizzo.trim(), cfPulito]
+            ).catch(() => {});
+
+            await connection.query(
+                'INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, "admin", "Studio Amministrazione") ON DUPLICATE KEY UPDATE role = "admin"',
+                [admin.id, nuovoCondominioId]
+            ).catch(() => {});
+
+            // 3. Abilita l'amministratore cambiando il suo stato a 1 (Attivo)
+            await connection.query(
+                'UPDATE utenti SET is_active = 1, stato_abilitazione = "Abilitato" WHERE id = ?',
+                [admin.id]
+            );
+
+            // Se tutto va a buon fine, conferma la transazione sul database MySQL
+            await connection.commit();
+
+            return res.status(201).json({
+                success: true,
+                message: 'Condominio creato con successo e Amministratore abilitato alla gestione.',
+                condominioId: nuovoCondominioId
+            });
+        } else {
+            // Fallback universale SQLite
+            const user = await new Promise((resolve, reject) => {
+                db.get('SELECT id, ruolo FROM utenti WHERE LOWER(email) = ?', [cleanEmail], (err, row) => {
+                    if (err) reject(err); else resolve(row);
+                });
+            });
+
+            if (!user) {
+                return res.status(404).json({ success: false, error: 'Nessun utente trovato con questa email.' });
+            }
+
+            if (user.ruolo !== 'amministratore') {
+                return res.status(400).json({ success: false, error: 'L\'utente specificato non ha il ruolo di Amministratore.' });
+            }
+
+            const condoId = await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO condomini (nome, indirizzo, codice_fiscale, amministratore_id) VALUES (?, ?, ?, ?)',
+                    [nome.trim(), indirizzo.trim(), cfPulito, user.id],
+                    function(err) {
+                        if (err) reject(err); else resolve(this.lastID);
+                    }
+                );
+            });
+
+            await new Promise((resolve, reject) => {
+                db.run('UPDATE utenti SET is_active = 1, stato_abilitazione = "Abilitato" WHERE id = ?', [user.id], function(err) {
+                    if (err) reject(err); else resolve(this.changes);
+                });
+            });
+
+            return res.status(201).json({
+                success: true,
+                message: 'Condominio creato con successo e Amministratore abilitato alla gestione.',
+                condominioId: condoId
+            });
+        }
+    } catch (error) {
+        if (connection) await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY' || (error.message && error.message.includes('UNIQUE constraint'))) {
+            return res.status(409).json({ success: false, error: 'Esiste già un condominio registrato con questo Codice Fiscale.' });
+        }
+        console.error('Errore durante la transazione del Superuser:', error);
+        return res.status(500).json({ success: false, error: 'Errore interno del server durante l\'inserimento.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
