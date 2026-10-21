@@ -979,6 +979,19 @@ function initDatabase() {
             db.run(`ALTER TABLE users ADD COLUMN two_factor_secret TEXT`, () => {});
             db.run(`ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 0`, () => {});
             db.run(`ALTER TABLE users ADD COLUMN backup_codes TEXT`, () => {});
+            db.run(`ALTER TABLE users ADD COLUMN ruolo ENUM('superuser', 'amministratore', 'condomino') NOT NULL DEFAULT 'condomino'`, () => {});
+            db.run(`ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1`, () => {});
+            db.run(`ALTER TABLE users ADD COLUMN stato_abilitazione ENUM('In attesa', 'Abilitato', 'Sospeso') NOT NULL DEFAULT 'Abilitato'`, () => {});
+            db.run(`CREATE TABLE IF NOT EXISTS condomini (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                nome VARCHAR(150) NOT NULL,
+                indirizzo VARCHAR(255) NOT NULL,
+                codice_fiscale VARCHAR(16) NOT NULL UNIQUE,
+                amministratore_id INT NULL,
+                creato_il DATETIME DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_condomini_amministratore FOREIGN KEY (amministratore_id) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, () => {});
+            db.run(`CREATE OR REPLACE VIEW utenti AS SELECT * FROM users`, () => {});
         });
 
 
@@ -1624,10 +1637,44 @@ function isAdmin(req, res, next) {
 }
 
 function requireSuperAdmin(req, res, next) {
-    if (req.user && req.user.is_superadmin) {
+    if (req.user && (req.user.is_superadmin || req.user.ruolo === 'superuser')) {
         return next();
     }
     return res.status(403).json({ success: false, message: 'Accesso negato: operazione riservata al SuperUser (Proprietario).' });
+}
+
+// Middleware Express per la verifica del ruolo Superuser su JWT
+function checkSuperuser(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            errore: 'Accesso non autorizzato: token di autenticazione mancante' 
+        });
+    }
+
+    jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
+        if (err) {
+            return res.status(403).json({ 
+                success: false, 
+                errore: 'Token non valido o sessione scaduta' 
+            });
+        }
+
+        const isSuper = decodedUser.ruolo === 'superuser' || decodedUser.is_superadmin === 1 || decodedUser.is_superadmin === true;
+
+        if (!isSuper) {
+            return res.status(403).json({ 
+                success: false, 
+                errore: 'Accesso negato: richiesto ruolo Superuser' 
+            });
+        }
+
+        req.user = decodedUser;
+        next();
+    });
 }
 
 function computeLicenseInfo(license) {
@@ -4598,6 +4645,161 @@ app.post('/api/superuser/create-condo-admin', authenticateToken, requireSuperAdm
     } catch (e) {
         console.error('Errore imprevisto create-condo-admin:', e);
         res.status(500).json({ success: false, message: 'Errore interno del server: ' + e.message });
+    }
+});
+
+// ============================================================================
+// PRIMO INSERIMENTO CONDOMINIO & ABILITAZIONE AMMINISTRATORE (SUPERUSER)
+// ============================================================================
+app.post('/api/superadmin/condomini', checkSuperuser, async (req, res) => {
+    const { nome, indirizzo, codice_fiscale, amministratore_id } = req.body;
+
+    // Validazione input obbligatori
+    if (!nome || !indirizzo || !codice_fiscale || !amministratore_id) {
+        return res.status(400).json({
+            success: false,
+            errore: 'Tutti i campi sono obbligatori: nome, indirizzo, codice_fiscale, amministratore_id.'
+        });
+    }
+
+    const cfPulito = String(codice_fiscale).trim().toUpperCase();
+    const adminId = parseInt(amministratore_id, 10);
+    if (isNaN(adminId)) {
+        return res.status(400).json({
+            success: false,
+            errore: 'amministratore_id deve essere un valore numerico valido.'
+        });
+    }
+
+    // Gestione transazione atomica con connection pooling mysql2 (o fallback db)
+    let connection;
+    try {
+        if (db.pool && typeof db.pool.promise === 'function') {
+            connection = await db.pool.promise().getConnection();
+            await connection.beginTransaction();
+
+            // 1. Verifica esistenza dell'amministratore designato
+            const [userRows] = await connection.query(
+                'SELECT id, nome, email, ruolo FROM users WHERE id = ? FOR UPDATE',
+                [adminId]
+            );
+
+            if (!userRows || userRows.length === 0) {
+                await connection.rollback();
+                return res.status(404).json({
+                    success: false,
+                    errore: `Nessun utente/amministratore trovato con ID ${adminId}.`
+                });
+            }
+
+            // 2. Inserimento nuovo condominio nella tabella condomini
+            const [condoResult] = await connection.query(
+                'INSERT INTO condomini (nome, indirizzo, codice_fiscale, amministratore_id, creato_il) VALUES (?, ?, ?, ?, NOW())',
+                [nome.trim(), indirizzo.trim(), cfPulito, adminId]
+            );
+            const nuovoCondominioId = condoResult.insertId;
+
+            // Allineamento opzionale alle tabelle di sistema condominios e user_condominios
+            await connection.query(
+                'INSERT INTO condominios (id, nome, indirizzo, cf, created_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo), cf = VALUES(cf)',
+                [nuovoCondominioId, nome.trim(), indirizzo.trim(), cfPulito]
+            ).catch(() => {});
+
+            await connection.query(
+                'INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, "admin", "Studio Amministrazione") ON DUPLICATE KEY UPDATE role = "admin"',
+                [adminId, nuovoCondominioId]
+            ).catch(() => {});
+
+            // 3. Aggiornamento stato amministratore ad 'Abilitato' (is_active = 1, ruolo = 'amministratore')
+            await connection.query(
+                'UPDATE users SET ruolo = "amministratore", is_active = 1, stato_abilitazione = "Abilitato" WHERE id = ?',
+                [adminId]
+            );
+
+            // Commit atomico della transazione
+            await connection.commit();
+
+            return res.status(201).json({
+                success: true,
+                messaggio: 'Condominio creato con successo e amministratore abilitato alle funzionalità gestionali.',
+                dati: {
+                    condominio: {
+                        id: nuovoCondominioId,
+                        nome: nome.trim(),
+                        indirizzo: indirizzo.trim(),
+                        codice_fiscale: cfPulito,
+                        amministratore_id: adminId
+                    },
+                    amministratore: {
+                        id: adminId,
+                        nome: userRows[0].nome,
+                        email: userRows[0].email,
+                        ruolo: 'amministratore',
+                        is_active: 1,
+                        stato_abilitazione: 'Abilitato'
+                    }
+                }
+            });
+        } else {
+            // Fallback database SQLite / generico
+            const user = await new Promise((resolve, reject) => {
+                db.get('SELECT id, nome, email, ruolo FROM users WHERE id = ?', [adminId], (err, row) => {
+                    if (err) reject(err); else resolve(row);
+                });
+            });
+            if (!user) {
+                return res.status(404).json({ success: false, errore: `Nessun utente trovato con ID ${adminId}.` });
+            }
+
+            const condoId = await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO condomini (nome, indirizzo, codice_fiscale, amministratore_id, creato_il) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)',
+                    [nome.trim(), indirizzo.trim(), cfPulito, adminId],
+                    function(err) {
+                        if (err) reject(err); else resolve(this.lastID);
+                    }
+                );
+            });
+
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'UPDATE users SET ruolo = "amministratore", is_active = 1, stato_abilitazione = "Abilitato" WHERE id = ?',
+                    [adminId],
+                    function(err) {
+                        if (err) reject(err); else resolve(this.changes);
+                    }
+                );
+            });
+
+            return res.status(201).json({
+                success: true,
+                messaggio: 'Condominio creato con successo e amministratore abilitato alle funzionalità gestionali.',
+                dati: {
+                    condominio: { id: condoId, nome: nome.trim(), indirizzo: indirizzo.trim(), codice_fiscale: cfPulito, amministratore_id: adminId },
+                    amministratore: { id: adminId, ruolo: 'amministratore', is_active: 1, stato_abilitazione: 'Abilitato' }
+                }
+            });
+        }
+    } catch (error) {
+        if (connection) {
+            try { await connection.rollback(); } catch (rbErr) { console.error('Errore durante rollback:', rbErr); }
+        }
+        if (error.code === 'ER_DUP_ENTRY' || (error.message && error.message.includes('UNIQUE constraint failed'))) {
+            return res.status(409).json({
+                success: false,
+                errore: 'Esiste già un condominio registrato con questo Codice Fiscale.'
+            });
+        }
+        console.error('❌ [Superadmin API] Errore inserimento condominio e abilitazione amministratore:', error);
+        return res.status(500).json({
+            success: false,
+            errore: 'Errore interno del server durante la transazione.',
+            dettaglio: error.message
+        });
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (relErr) { console.error('Errore durante release connection:', relErr); }
+        }
     }
 });
 
