@@ -442,7 +442,46 @@ async function sendPasswordResetEmail({ email, nome, token, host, protocol = 'ht
     });
 }
 
+
+/**
+ * ============================================================================
+ * FLUSSO D: ACCESSO RAPIDO PASSWORDLESS (MAGIC LINK)
+ * Validità token: 15 minuti
+ * ============================================================================
+ */
+async function sendMagicLinkEmail({ email, nome, token, host, protocol = 'http' }) {
+    const magicUrl = `${protocol}://${host}/login.html?magic_token=${token}`;
+
+    const headline = `Accesso Rapido a Condominio Trasparente`;
+    const introText = `
+        <p style="margin: 0 0 14px 0;">Gentile <strong>${nome || 'Utente'}</strong>,</p>
+        <p style="margin: 0 0 14px 0;">
+            Hai richiesto un link sicuro per accedere a <strong>Condominio Trasparente</strong> senza dover digitare la password. Clicca sul pulsante qui sotto per completare l'accesso.
+        </p>
+    `;
+
+    const extraNotice = `Se non hai richiesto tu questo accesso, puoi ignorare questo messaggio. Il link è monouso e scadrà tra <strong>15 minuti</strong>.`;
+
+    const html = buildEmailHtml({
+        headline,
+        introText,
+        ctaText: 'Accedi al Portale',
+        ctaUrl: magicUrl,
+        extraNotice
+    });
+
+    const text = `Gentile ${nome || 'Utente'}, clicca sul seguente link per accedere a Condominio Trasparente senza password:\n${magicUrl}\n\nIl link è valido per 15 minuti ed è monouso.`;
+
+    return sendMailWrapper({
+        to: email,
+        subject: `Link di Accesso Rapido - Condominio Trasparente`,
+        text,
+        html
+    });
+}
+
 module.exports = {
+    sendMagicLinkEmail,
     sendOnboardingInviteEmail,
     sendTwoFactorOtpEmail,
     sendPasswordResetEmail,

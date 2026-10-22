@@ -1,15 +1,23 @@
 {
-  "name": "CondoTransparent",
-  "short_name": "CondoApp",
-  "start_url": "/",
+  "name": "Condominio Trasparente",
+  "short_name": "Condominio",
+  "start_url": "/login.html",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#2563eb",
+  "theme_color": "#1e3a8a",
+  "description": "Portale Digitale e Trasparenza Condominiale",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/5988/5988246.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/5988/5988246.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

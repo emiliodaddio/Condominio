@@ -1,15 +1,20 @@
-const CACHE_NAME = 'condo-store-v5'; // Bump version
+const CACHE_NAME = 'condo-store-v6';
+
+const STATIC_ASSETS = [
+    '/',
+    '/index.html',
+    '/login.html',
+    '/manifest.json'
+];
 
 self.addEventListener('install', (e) => {
-    self.skipWaiting(); // Force the waiting service worker to become the active service worker
+    self.skipWaiting();
     e.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll([
-            '/',
-            '/index.html',
-            '/login.html',
-            '/style.css',
-            '/app.js'
-        ]))
+        caches.open(CACHE_NAME).then((cache) => {
+            return Promise.allSettled(
+                STATIC_ASSETS.map((url) => cache.add(url).catch(() => {}))
+            );
+        })
     );
 });
 
@@ -27,10 +32,11 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-    if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) {
-        return fetch(e.request);
+    // Only intercept same-origin GET requests that are not API calls
+    if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin) || e.request.url.includes('/api/')) {
+        return;
     }
-    // Network first strategy
+    // Network-first strategy
     e.respondWith(
         fetch(e.request).catch(() => caches.match(e.request))
     );

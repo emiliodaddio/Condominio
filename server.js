@@ -1886,6 +1886,20 @@ app.post('/api/auth/login', (req, res) => {
             return issueToken(user, res);
         }
 
+        // Verifica se il dispositivo è fidato (token valido per 30 giorni)
+        const { trustedDeviceToken } = req.body;
+        if (trustedDeviceToken) {
+            try {
+                const decoded = jwt.verify(trustedDeviceToken, JWT_SECRET);
+                if (decoded && decoded.trusted && String(decoded.userId) === String(user.id)) {
+                    logAudit(user.id, null, 'Login Riuscito (Dispositivo Fidato)', 'users', user.id, null, req.ip);
+                    return issueToken(user, res);
+                }
+            } catch (_) {
+                // Token fidato non valido o scaduto, procedi normalmente con OTP
+            }
+        }
+
         // FLUSSO B: Codice di Sicurezza 2FA (Accesso Confermato) - Validità 10 minuti
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpires = Date.now() + 10 * 60 * 1000; // 10 minuti
@@ -1920,7 +1934,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.post('/api/auth/login/verify-otp', (req, res) => {
-    const { userId, otp } = req.body;
+    const { userId, otp, rememberDevice } = req.body;
     console.log('OTP VERIFY ATTEMPT:', userId, otp);
     db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
         if (err || !user) return res.status(401).json({ success: false, message: 'Utente non trovato' });
@@ -1935,7 +1949,26 @@ app.post('/api/auth/login/verify-otp', (req, res) => {
 
         db.run('UPDATE users SET otp_code = NULL, otp_expires = NULL WHERE id = ?', [user.id], () => {
             logAudit(user.id, null, 'Login Riuscito (con OTP)', 'users', user.id, null, req.ip);
-            issueToken(user, res);
+            let trustedToken = null;
+            if (rememberDevice) {
+                trustedToken = jwt.sign({ userId: user.id, email: user.email, trusted: true }, JWT_SECRET, { expiresIn: '30d' });
+            }
+            // issueToken custom o standard con trustedDeviceToken allegato
+            const fetchCondosQuery = user.is_superadmin
+                ? "SELECT id, nome, indirizzo, cf, scala, 'admin' as role, 'Proprietario' as unita FROM condominios"
+                : 'SELECT c.id, c.nome, c.indirizzo, c.cf, c.scala, uc.role, uc.unita FROM user_condominios uc JOIN condominios c ON uc.condominio_id = c.id WHERE uc.user_id = ?';
+            const params = user.is_superadmin ? [] : [user.id];
+
+            db.all(fetchCondosQuery, params, (errC, condomini) => {
+                const tokenPayload = { id: user.id, nome: user.nome, email: user.email, is_superadmin: user.is_superadmin, privacy_accepted: user.privacy_accepted };
+                const jwtToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+                res.json({ 
+                    success: true, 
+                    token: jwtToken, 
+                    trustedDeviceToken: trustedToken,
+                    user: { ...tokenPayload, condomini: condomini || [] } 
+                });
+            });
         });
     });
 });
@@ -1944,6 +1977,119 @@ app.post('/api/auth/login/verify-otp', (req, res) => {
 // ==========================================
 // REGISTRAZIONE UTENTI (MySQL & SQLite)
 // ==========================================
+
+// ============================================================================
+// NUOVO ENDPOINT: Accesso Rapido Passwordless (Magic Link)
+// ============================================================================
+app.post('/api/auth/magic-link-request', async (req, res) => {
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+        return res.status(400).json({ success: false, message: 'Inserisci un indirizzo email valido.' });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+
+    db.get('SELECT id, nome, email FROM users WHERE LOWER(email) = ?', [cleanEmail], async (err, user) => {
+        if (err) return res.status(500).json({ success: false, message: 'Errore interno.' });
+
+        // Prevenzione User Enumeration: messaggio neutro anche se l'email non esiste
+        if (!user) {
+            return res.json({
+                success: true,
+                message: 'Se l\'indirizzo email è registrato nel sistema, riceverai a breve un link sicuro per accedere senza password.'
+            });
+        }
+
+        const crypto = require('crypto');
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = Date.now() + 15 * 60 * 1000; // 15 minuti
+
+        db.run('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [token, expires, user.id], async (errUp) => {
+            if (errUp) return res.status(500).json({ success: false, message: 'Errore durante la generazione del link.' });
+
+            const host = req.get('host');
+            const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+
+            try {
+                let previewUrl = null;
+                if (typeof emailService.sendMagicLinkEmail === 'function') {
+                    const result = await emailService.sendMagicLinkEmail({
+                        email: user.email,
+                        nome: user.nome,
+                        token,
+                        host,
+                        protocol
+                    });
+                    if (result && result.previewUrl) previewUrl = result.previewUrl;
+                }
+
+                logAudit(user.id, null, 'Richiesta Magic Link Passwordless', 'users', user.id, null, req.ip);
+                return res.json({
+                    success: true,
+                    message: 'Se l\'indirizzo email è registrato nel sistema, riceverai a breve un link sicuro per accedere senza password.',
+                    previewUrl
+                });
+            } catch (e) {
+                console.error('Errore invio magic link:', e);
+                return res.status(500).json({ success: false, message: 'Errore durante l\'invio dell\'email.' });
+            }
+        });
+    });
+});
+
+app.post('/api/auth/magic-link-verify', (req, res) => {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ success: false, message: 'Token di accesso mancante.' });
+
+    db.get('SELECT * FROM users WHERE reset_token = ?', [token], (err, user) => {
+        if (err || !user) {
+            return res.status(400).json({ success: false, message: 'Link di accesso non valido o già utilizzato.' });
+        }
+
+        const expires = user.reset_token_expires instanceof Date ? user.reset_token_expires.getTime() : Number(user.reset_token_expires);
+        if (Date.now() > expires) {
+            return res.status(400).json({ success: false, message: 'Il link di accesso è scaduto (durata 15 minuti).' });
+        }
+
+        db.run('UPDATE users SET reset_token = NULL, reset_token_expires = NULL WHERE id = ?', [user.id], () => {
+            logAudit(user.id, null, 'Login Riuscito (Magic Link)', 'users', user.id, null, req.ip);
+            issueToken(user, res);
+        });
+    });
+});
+
+// ============================================================================
+// NUOVO ENDPOINT: Accesso Modalità Demo (Ambiente dimostrativo isolato)
+// ============================================================================
+app.post('/api/auth/demo', (req, res) => {
+    const demoPayload = {
+        id: 9999,
+        nome: 'Ospite Dimostrativo',
+        email: 'demo@condominiotrasparente.com',
+        is_superadmin: 0,
+        role: 'condomino',
+        privacy_accepted: 1,
+        is_demo: true
+    };
+    const demoCondos = [
+        {
+            id: 1,
+            nome: 'Condominio Ma.Ca. (Demo)',
+            indirizzo: 'Via Vittorio Alfieri, 4 - San Nicola la Strada (CE)',
+            cf: '9304301615',
+            scala: 'Scale A e B',
+            role: 'condomino',
+            unita: 'Interno 3 - Piano 1'
+        }
+    ];
+
+    const jwtToken = jwt.sign(demoPayload, JWT_SECRET, { expiresIn: '2h' });
+    return res.json({
+        success: true,
+        token: jwtToken,
+        user: { ...demoPayload, condomini: demoCondos }
+    });
+});
+
 app.get('/api/auth/condominios', (req, res) => {
     db.all('SELECT id, nome, indirizzo, cf, scala FROM condominios ORDER BY nome ASC', [], (err, rows) => {
         if (err) return res.status(500).json({ success: false, message: 'Errore recupero lista condomini' });
@@ -2044,9 +2190,10 @@ app.post('/api/auth/activate-request', (req, res) => {
         if (!persona) {
             return db.get('SELECT id, email, nome FROM users WHERE LOWER(email) = ?', [cleanLower], (errU, user) => {
                 if (errU || !user) {
-                    return res.status(404).json({
-                        success: false,
-                        message: 'Nessuna anagrafica corrispondente trovata. Contatta lo studio di amministrazione per verificare la registrazione dei tuoi dati.'
+                    // Prevenzione User Enumeration: risposta neutra anche in caso di mancata corrispondenza
+                    return res.json({
+                        success: true,
+                        message: 'Se i dati inseriti corrispondono a un\'utenza presente nell\'anagrafe condominiale, riceverai a breve un\'email con le istruzioni di attivazione.'
                     });
                 }
                 deliverActivationEmail(user.id, user.email, user.nome, 'CondoTransparent', req, res);
@@ -2235,7 +2382,7 @@ function deliverActivationEmail(userId, email, nome, condoNome, req, res) {
 
             return res.json({
                 success: true,
-                message: `Anagrafica verificata! Abbiamo inviato un link sicuro all'indirizzo email associato (${maskedEmail}) per impostare la password.`,
+                message: 'Se i dati inseriti corrispondono a un\'utenza presente nell\'anagrafe condominiale, riceverai a breve un\'email con le istruzioni di attivazione.',
                 previewUrl
             });
         } catch (e) {
