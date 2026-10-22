@@ -2336,13 +2336,13 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
     if (req.user && (req.user.is_demo || req.user.id === 9999)) {
         const demoCondos = [
             {
-                id: 1,
-                nome: 'Condominio Ma.Ca. (Demo)',
-                indirizzo: 'Via Vittorio Alfieri, 4 - San Nicola la Strada (CE)',
-                cf: '9304301615',
+                id: 9999,
+                nome: 'Condominio Belvedere - Sole e Pini',
+                indirizzo: 'Via dei Giardini Fioriti, 12 - 00100 Roma (RM)',
+                cf: '90099887766',
                 scala: 'Scale A e B',
                 role: 'condomino',
-                unita: 'Interno 3 - Piano 1'
+                unita: 'Interno 4 - Piano 2'
             }
         ];
         return res.json({
@@ -2895,6 +2895,17 @@ app.get('/api/receivables', authenticateToken, requireCondominio, (req, res) => 
 
 
 app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                { id: 201, title: 'Rata Ordinaria 1° Rata Gestione', due_date: '2026-01-31', amount: 150.00, paid_amount: 150.00, status: 'Pagato' },
+                { id: 202, title: 'Fondo Pulizia e Cura Giardino Condominiale', due_date: '2026-02-28', amount: 45.00, paid_amount: 45.00, status: 'Pagato' },
+                { id: 203, title: 'Rata Ordinaria 2° Rata Gestione', due_date: '2026-04-30', amount: 150.00, paid_amount: 0.00, status: 'In attesa' },
+                { id: 204, title: 'Manutenzione Programmata Impianto Citofonico', due_date: '2026-05-31', amount: 60.00, paid_amount: 0.00, status: 'In attesa' }
+            ]
+        });
+    }
     realignDatabaseToAnagrafica(req.condominio_id, () => {
         const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
         
@@ -3515,6 +3526,17 @@ app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio,
 
 
 app.get('/api/accounting-summary', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: {
+                totalIncome: 15850.00,
+                totalExpense: 12400.00,
+                balance: 3450.00,
+                pendingIncome: 2350.00
+            }
+        });
+    }
     const condominioId = req.condominio_id;
 
     const qQuotes = `
@@ -3557,6 +3579,18 @@ app.get('/api/accounting-summary', authenticateToken, requireCondominio, (req, r
 // Endpoint di sintesi finanziaria aggregata a tutela della privacy (GDPR Compliant)
 // Fornisce SOLO funzioni aggregate SUM/COUNT per card e indicatori senza identificativi individuali
 app.get('/api/condominio/financial-health', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: {
+                totale_gestione: 18200.00,
+                totale_riscosso: 15850.00,
+                residui_attivi: 2350.00,
+                percentuale: 87,
+                stato_salute: 'Ottima Liquidità'
+            }
+        });
+    }
     const condoId = req.condominio_id;
     const todaySql = (db && db.type === 'sqlite') ? "date('now')" : "CURDATE()";
 
@@ -3633,6 +3667,35 @@ app.get('/api/condominio/financial-health', authenticateToken, requireCondominio
 });
 
 app.get('/api/tickets', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    id: 1,
+                    condominio_id: 9999,
+                    titolo: 'Sostituzione lampada vano scale piano 2',
+                    descrizione: 'La lampada a led del pianerottolo è stata sostituita dal tecnico manutentore.',
+                    categoria: 'Impianto Elettrico',
+                    priorita: 'Bassa',
+                    stato: 'Risolto',
+                    created_at: '2026-03-12 10:30:00',
+                    user_nome: 'Mario Rossi (Demo)'
+                },
+                {
+                    id: 2,
+                    condominio_id: 9999,
+                    titolo: 'Verifica chiusura automatica portone ingresso',
+                    descrizione: 'Il braccio oleodinamico del portone principale necessita di regolazione, intervento programmato per venerdì.',
+                    categoria: 'Fabbro / Serramenti',
+                    priorita: 'Media',
+                    stato: 'In Lavorazione',
+                    created_at: '2026-04-18 15:45:00',
+                    user_nome: 'Mario Rossi (Demo)'
+                }
+            ]
+        });
+    }
     let query = `
         SELECT t.*, u.nome as creator_name, uc.unita as creator_unita 
         FROM tickets t 
@@ -3771,6 +3834,46 @@ app.get('/api/assemblies', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.get('/api/condominio', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: {
+                id: 9999,
+                nome: 'Condominio Belvedere - Sole e Pini',
+                indirizzo: 'Via dei Giardini Fioriti, 12 - 00100 Roma (RM)',
+                cf: '90099887766',
+                scala: 'Scale A e B (Palazzina 1)',
+                dati_bancari: 'IT60X0542811101000000123456 (Banca Dimostrativa Nazionale)',
+                admin_titolo: 'Dott.',
+                admin_nome: 'Valerio',
+                admin_cognome: 'Bianchi',
+                admin_telefono: '06 00001111',
+                admin_cellulare: '333 0000999',
+                admin_email_condominio: 'amministrazione.demo@condominiotrasparente.com',
+                admin_email: 'amministrazione.demo@condominiotrasparente.com',
+                admin_emergenza: '800 999 888',
+                admin_numero_emergenze: '800 999 888',
+                module_contabilita: 1,
+                module_segnalazioni: 1,
+                module_assemblee: 1,
+                module_comunicazioni: 1,
+                module_banca: 1,
+                module_anagrafica: 1,
+                current_units_count: 24,
+                license: {
+                    plan_type: 'completo',
+                    license_status: 'active',
+                    status: 'active',
+                    is_active: true,
+                    is_read_only: false,
+                    badge_text: 'Licenza Attiva',
+                    badge_color: 'emerald',
+                    days_remaining: 365,
+                    end_date: '31/12/2026'
+                }
+            }
+        });
+    }
     db.get(`
         SELECT c.*, 
             COALESCE(cf.module_contabilita, 1) as module_contabilita,
@@ -5149,49 +5252,50 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
         return res.json({
             success: true,
             datiPersonali: {
-                interno: 'Interno 3 - Piano 1',
-                millesimi: 65.50,
+                interno: 'Interno 4 - Piano 2',
+                millesimi: 68.45,
                 pagamenti: [
-                    { id: 101, titolo: 'Rata Ordinaria 1° Trimestre', importo_versato: 120.00, data: '15/01/2026', ricevuta_codice: 'REC-2026-DEMO01' },
-                    { id: 102, titolo: 'Fondo Manutenzione Ascensore', importo_versato: 55.00, data: '10/02/2026', ricevuta_codice: 'REC-2026-DEMO02' }
+                    { id: 101, titolo: 'Rata Ordinaria 1° Rata Gestione', importo_versato: 150.00, data: '15/01/2026', ricevuta_codice: 'REC-2026-DEMO01' },
+                    { id: 102, titolo: 'Fondo Pulizia e Cura Giardino Condominiale', importo_versato: 45.00, data: '10/02/2026', ricevuta_codice: 'REC-2026-DEMO02' }
                 ]
             },
             cassaComune: {
-                residuiAttivi: 1450.00,
-                percentualeRiscossa: 89
+                residuiAttivi: 2350.00,
+                percentualeRiscossa: 87
             },
             dati_personali: {
                 is_admin_view: false,
                 condomino_id: 9999,
-                nome: 'Ospite Dimostrativo',
+                nome: 'Mario Rossi (Ospite Demo)',
                 email: 'demo@condominiotrasparente.com',
                 condominio: {
-                    id: 1,
-                    nome: 'Condominio Ma.Ca. (Demo)',
-                    indirizzo: 'Via Vittorio Alfieri, 4 - San Nicola la Strada (CE)',
-                    codice_fiscale: '9304301615'
+                    id: 9999,
+                    nome: 'Condominio Belvedere - Sole e Pini',
+                    indirizzo: 'Via dei Giardini Fioriti, 12 - 00100 Roma (RM)',
+                    codice_fiscale: '90099887766'
                 },
                 unita_immobiliare: {
-                    interno: 'Interno 3 - Piano 1',
-                    millesimi: 65.50
+                    interno: 'Interno 4 - Piano 2',
+                    millesimi: 68.45
                 },
                 riepilogo_personale: {
-                    totale_quote_dovute: 295.00,
-                    totale_versato: 175.00,
-                    saldo_in_corso: 120.00,
+                    totale_quote_dovute: 405.00,
+                    totale_versato: 195.00,
+                    saldo_in_corso: 210.00,
                     stato: 'Quote in corso di regolazione'
                 },
                 scadenze: [
-                    { spesa_id: 201, titolo: 'Rata Ordinaria 1° Trimestre', data_scadenza: '2026-01-31', quota_dovuta: 120.00, importo_versato: 120.00, residuo_individuale: 0.00, stato_contabile: 'Regolarizzato' },
-                    { spesa_id: 202, titolo: 'Fondo Manutenzione Ascensore', data_scadenza: '2026-02-28', quota_dovuta: 55.00, importo_versato: 55.00, residuo_individuale: 0.00, stato_contabile: 'Regolarizzato' },
-                    { spesa_id: 203, titolo: 'Rata Ordinaria 2° Trimestre', data_scadenza: '2026-04-30', quota_dovuta: 120.00, importo_versato: 0.00, residuo_individuale: 120.00, stato_contabile: 'In corso di riscossione' }
+                    { spesa_id: 201, titolo: 'Rata Ordinaria 1° Rata Gestione', data_scadenza: '2026-01-31', quota_dovuta: 150.00, importo_versato: 150.00, residuo_individuale: 0.00, stato_contabile: 'Regolarizzato' },
+                    { spesa_id: 202, titolo: 'Fondo Pulizia e Cura Giardino Condominiale', data_scadenza: '2026-02-28', quota_dovuta: 45.00, importo_versato: 45.00, residuo_individuale: 0.00, stato_contabile: 'Regolarizzato' },
+                    { spesa_id: 203, titolo: 'Rata Ordinaria 2° Rata Gestione', data_scadenza: '2026-04-30', quota_dovuta: 150.00, importo_versato: 0.00, residuo_individuale: 150.00, stato_contabile: 'In corso di riscossione' },
+                    { spesa_id: 204, titolo: 'Manutenzione Programmata Impianto Citofonico', data_scadenza: '2026-05-31', quota_dovuta: 60.00, importo_versato: 0.00, residuo_individuale: 60.00, stato_contabile: 'In corso di riscossione' }
                 ]
             },
             aggregato_cassa_stabile: {
-                totale_gestione_preventivata: 15400.00,
-                totale_riscosso_fabbricato: 13950.00,
-                residui_attivi_gestione: 1450.00,
-                percentuale_avanzamento: 89
+                totale_gestione_preventivata: 18200.00,
+                totale_riscosso_fabbricato: 15850.00,
+                residui_attivi_gestione: 2350.00,
+                percentuale_avanzamento: 87
             }
         });
     }
@@ -6104,6 +6208,46 @@ setTimeout(() => {
 
 // Lista Documenti e Allegati (con filtro RBAC automatico per Admin vs Condòmino)
 app.get('/api/documents', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    id: 1,
+                    condominio_id: 9999,
+                    titolo: 'Verbale Assemblea Ordinaria 2026.pdf',
+                    categoria: 'Verbali Assemblea',
+                    file_name: 'Verbale_Assemblea_Ordinaria_2026.pdf',
+                    file_size: 245760,
+                    created_at: '2026-01-10 18:00:00',
+                    sender_name: 'Studio Amministrazioni Esempio',
+                    note: 'Approvazione bilancio consuntivo e preventivo di gestione'
+                },
+                {
+                    id: 2,
+                    condominio_id: 9999,
+                    titolo: 'Regolamento di Condominio e Tabelle Millesimali.pdf',
+                    categoria: 'Regolamento',
+                    file_name: 'Regolamento_Condominiale_Belvedere.pdf',
+                    file_size: 524288,
+                    created_at: '2025-09-15 11:30:00',
+                    sender_name: 'Studio Amministrazioni Esempio',
+                    note: 'Regolamento contrattuale dello stabile'
+                },
+                {
+                    id: 3,
+                    condominio_id: 9999,
+                    titolo: 'Polizza Assicurativa Globale Fabbricati.pdf',
+                    categoria: 'Assicurazione',
+                    file_name: 'Polizza_Assicurativa_2026.pdf',
+                    file_size: 389120,
+                    created_at: '2026-01-01 09:00:00',
+                    sender_name: 'Studio Amministrazioni Esempio',
+                    note: 'Certificato e quietanza di polizza fabbricato in vigore'
+                }
+            ]
+        });
+    }
     const condoId = req.condominio_id;
     const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
 
