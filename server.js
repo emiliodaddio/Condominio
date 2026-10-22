@@ -5275,6 +5275,7 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     percentualeRiscossa: percentualeAvanzamento
                 },
                 dati_personali: {
+                    is_admin_view: !!condominoProfile.is_admin_view,
                     condomino_id: condominoProfile.condomino_id,
                     nome: condominoProfile.condomino_nome,
                     email: condominoProfile.condomino_email,

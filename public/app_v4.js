@@ -8995,6 +8995,10 @@ function updateAdminPanelVisibility() {
         if (isCondomino) bCondoHeader.classList.remove('hidden');
         else bCondoHeader.classList.add('hidden');
     }
+    const elPosizioneIndividuale = document.getElementById('section-condomino-posizione-individuale');
+    if (elPosizioneIndividuale && (isAdmin || isSuper) && !isCondomino) {
+        elPosizioneIndividuale.classList.add('hidden');
+    }
 }
 setInterval(updateAdminPanelVisibility, 1000);
 
@@ -9018,6 +9022,7 @@ window.loadCondominoFinanceDashboard = async function() {
     const elMillesimi = document.getElementById('pers-millesimi');
     const elBadgeSaldo = document.getElementById('pers-badge-saldo');
     const tbody = document.getElementById('condomino-scadenze-tbody');
+    const elPosizioneIndividuale = document.getElementById('section-condomino-posizione-individuale');
     const formatEuro = (val) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
     try {
@@ -9056,6 +9061,18 @@ window.loadCondominoFinanceDashboard = async function() {
         }
 
         const pers = data.dati_personali || {};
+        const user = window.state && window.state.currentUser;
+        const isSuper = user && (user.is_superadmin || user.ruolo === 'superuser');
+        const isAdmin = user && (isSuper || user.ruolo === 'amministratore' || (user.condomini && user.condomini.some(c => c.role === 'admin')));
+        const hasUnit = pers.unita_immobiliare && parseFloat(pers.unita_immobiliare.millesimi || 0) > 0 && pers.unita_immobiliare.interno !== 'Studio Amministrazione';
+        if (elPosizioneIndividuale) {
+            if ((isAdmin || isSuper || pers.is_admin_view) && !hasUnit) {
+                elPosizioneIndividuale.classList.add('hidden');
+            } else {
+                elPosizioneIndividuale.classList.remove('hidden');
+            }
+        }
+
         const glob = data.aggregato_cassa_stabile || {};
 
         // 1. Aggiornamento Card Globale Riservata (Residui Attivi della Gestione)
