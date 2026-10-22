@@ -7168,7 +7168,7 @@ function buildMillesimiDistributionRows(tabella = 'proprieta') {
 window.openMillesimiCalculatorModal = async function() {
     await ensureMillesimiDataLoaded();
 
-    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Ma.Ca.';
+    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Belvedere';
     const subEl = document.getElementById('mill-calc-condo-subtitle');
     if (subEl) {
         subEl.innerHTML = `Tabella millesimale attiva per <b>${condoName}</b> &bull; Puoi modificare i millesimi o la spesa totale per simulare qualsiasi riparto`;
@@ -7477,7 +7477,7 @@ window.submitBatchMillesimiQuotes = async function() {
 };
 
 window.printMillesimiDistribution = function() {
-    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Ma.Ca.';
+    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Belvedere';
     const spesaTotale = parseFloat(document.getElementById('mill-calc-spesa-totale')?.value) || 0;
     const millTotaliTabella = parseFloat(document.getElementById('mill-calc-totale-millesimi')?.value) || 1000;
     const coeffUnitario = millTotaliTabella > 0 ? (spesaTotale / millTotaliTabella) : 0;

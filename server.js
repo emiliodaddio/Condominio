@@ -1668,7 +1668,7 @@ function requireCondominio(req, res, next) {
         return next();
     }
     if (req.user.is_demo || req.user.id === 9999) {
-        req.condominio_id = req.headers['x-condominio-id'] || 1;
+        req.condominio_id = 9999;
         req.role_in_condominio = 'condomino';
         return next();
     }
@@ -2585,6 +2585,35 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
 }
 
 app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    id: 9001,
+                    condominio_id: 9999,
+                    nome: 'Mario',
+                    cognome: 'Rossi',
+                    denominazione: 'Mario Rossi',
+                    tipo_persona: 'fisica',
+                    codice_fiscale: 'RSSMRA80A01H501Z',
+                    email: 'demo@condominiotrasparente.test',
+                    telefono: '333 1234567',
+                    ruolo_principale: 'proprietario',
+                    unita_id: 9101,
+                    unita_identificativo: 'Int. 4',
+                    unita_tipo: 'Appartamento',
+                    unita_scala: 'A',
+                    unita_piano: '2',
+                    unita_interno: '4',
+                    unita_mill_prop: 68.45,
+                    unita_mill_scale: 72.10,
+                    unita_mill_asc: 70.00,
+                    unita_dati_catastali: 'Foglio 12, Part. 345, Sub. 4, Cat. A/2'
+                }
+            ]
+        });
+    }
     const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
     const fetchList = (isRetry = false) => {
         let sql = `
@@ -2768,6 +2797,29 @@ app.post('/api/anagrafica-persone/:id/send-invite', authenticateToken, requireCo
 });
 
 app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    id: 9101,
+                    condominio_id: 9999,
+                    identificativo: 'Int. 4',
+                    tipo: 'Appartamento',
+                    scala: 'A',
+                    piano: '2',
+                    interno: '4',
+                    millesimi_proprieta: 68.45,
+                    millesimi_scale: 72.10,
+                    millesimi_ascensore: 70.00,
+                    dati_catastali: 'Foglio 12, Part. 345, Sub. 4, Cat. A/2',
+                    prop_nome: 'Mario',
+                    prop_cognome: 'Rossi',
+                    condomino_nome: 'Mario Rossi (Ospite Demo)'
+                }
+            ]
+        });
+    }
     const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
     let sql = `SELECT u.*, 
             us.nome as condomino_nome, us.email as condomino_email,
@@ -3358,6 +3410,40 @@ app.delete('/api/users/:id', authenticateToken, requireCondominio, isAdmin, chec
 // ==========================================
 
 app.get('/api/suppliers', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    id: 9501,
+                    condominio_id: 9999,
+                    ragione_sociale: 'ElettroServizi S.r.l.',
+                    piva: '01234567890',
+                    email: 'servizi@elettroservizi-esempio.test',
+                    telefono: '06 99887766',
+                    iban: 'IT02L1234512345000000123456'
+                },
+                {
+                    id: 9502,
+                    condominio_id: 9999,
+                    ragione_sociale: 'Verde & Giardini S.a.s.',
+                    piva: '09876543210',
+                    email: 'info@verdegiardini-esempio.test',
+                    telefono: '06 11223344',
+                    iban: 'IT02L1234512345000000654321'
+                },
+                {
+                    id: 9503,
+                    condominio_id: 9999,
+                    ragione_sociale: 'Pulizie Brillanti S.n.c.',
+                    piva: '05556667778',
+                    email: 'amministrazione@puliziebrillanti-esempio.test',
+                    telefono: '06 22334455',
+                    iban: 'IT02L1234512345000000789012'
+                }
+            ]
+        });
+    }
     db.all('SELECT * FROM suppliers WHERE condominio_id = ? ORDER BY ragione_sociale ASC', [req.condominio_id], (err, rows) => {
         if (err) return res.status(500).json({ success: false, message: 'DB Error' });
         res.json({ success: true, data: rows || [] });
@@ -3383,6 +3469,52 @@ app.put('/api/suppliers/:id', authenticateToken, requireCondominio, checkCondoLi
 });
 
 app.get('/api/supplier-payments', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    id: 9401,
+                    condominio_id: 9999,
+                    supplier_name: 'ElettroServizi S.r.l.',
+                    category: 'Manutenzione Impianti',
+                    invoice_number: 'FT-2026/04',
+                    amount: 240.00,
+                    paid_amount: 240.00,
+                    residual: 0,
+                    payment_date: '2026-02-15',
+                    status: 'Pagato',
+                    notes: 'Sostituzione corpi illuminanti a risparmio energetico'
+                },
+                {
+                    id: 9402,
+                    condominio_id: 9999,
+                    supplier_name: 'Verde & Giardini S.a.s.',
+                    category: 'Giardinaggio & Aree Comuni',
+                    invoice_number: 'FT-2026/18',
+                    amount: 450.00,
+                    paid_amount: 450.00,
+                    residual: 0,
+                    payment_date: '2026-03-01',
+                    status: 'Pagato',
+                    notes: 'Potatura primaverile siepi e alberature'
+                },
+                {
+                    id: 9403,
+                    condominio_id: 9999,
+                    supplier_name: 'Pulizie Brillanti S.n.c.',
+                    category: 'Pulizie e Sanificazioni',
+                    invoice_number: 'FT-2026/33',
+                    amount: 380.00,
+                    paid_amount: 0,
+                    residual: 380.00,
+                    payment_date: '2026-04-10',
+                    status: 'Da liquidare',
+                    notes: 'Servizio di pulizia scale mese di marzo'
+                }
+            ]
+        });
+    }
     db.all('SELECT * FROM supplier_payments WHERE condominio_id = ? ORDER BY payment_date DESC, id DESC', [req.condominio_id], (err, rows) => {
         if (err) return res.status(500).json({ success: false, message: err.message });
         const mapped = (rows || []).map(r => {
@@ -3530,9 +3662,13 @@ app.get('/api/accounting-summary', authenticateToken, requireCondominio, (req, r
         return res.json({
             success: true,
             data: {
+                totalReceived: 15850.00,
+                totalReceivables: 2350.00,
+                totalSuppliersPaid: 690.00,
+                totalSuppliersDebt: 380.00,
                 totalIncome: 15850.00,
-                totalExpense: 12400.00,
-                balance: 3450.00,
+                totalExpense: 690.00,
+                balance: 15160.00,
                 pendingIncome: 2350.00
             }
         });
@@ -3717,6 +3853,32 @@ app.get('/api/tickets', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.get('/api/tickets/:id', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        const is801 = String(req.params.id) === '801';
+        return res.json({
+            success: true,
+            data: {
+                id: is801 ? 801 : 802,
+                condominio_id: 9999,
+                title: is801 ? 'Sostituzione lampada androne Scala A' : 'Registrazione chiusura rallentata portone',
+                category: 'Elettrico',
+                priority: is801 ? 'bassa' : 'media',
+                status: is801 ? 'risolto' : 'in lavorazione',
+                description: is801 ? 'Lampadina LED androne fulminata, sostituita dal manutentore.' : 'Il braccio idraulico chiude con troppo impatto nelle ore serali.',
+                creator_name: 'Mario Rossi (Ospite Demo)',
+                creator_unita: 'Interno 4 - Scala A',
+                created_at: is801 ? '2026-02-10 09:30:00' : '2026-03-01 14:15:00',
+                updates: [
+                    {
+                        id: 1,
+                        author_name: 'Dott. Valerio Bianchi (Amministratore)',
+                        message: is801 ? 'Intervento completato con successo.' : 'Richiesta di intervento inoltrata alla ditta manutentrice.',
+                        created_at: is801 ? '2026-02-11 11:00:00' : '2026-03-02 10:00:00'
+                    }
+                ]
+            }
+        });
+    }
     let query = `
         SELECT t.*, u.nome as creator_name, uc.unita as creator_unita 
         FROM tickets t 
@@ -3827,6 +3989,42 @@ app.put('/api/tickets/:id/status', authenticateToken, requireCondominio, checkCo
 });
 
 app.get('/api/assemblies', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        const isPast = req.query.past === '1' ? 1 : 0;
+        if (isPast) {
+            return res.json({
+                success: true,
+                data: [
+                    {
+                        id: 9002,
+                        condominio_id: 9999,
+                        title: 'Assemblea Straordinaria Manutenzioni',
+                        date: '2025-11-20 19:00',
+                        location: 'Sala Condominiale Sole e Pini',
+                        status: 'Conclusa',
+                        order_of_day: '1. Relazione tecnica stato impianto citofonico; 2. Approvazione preventivo di spesa; 3. Varie ed eventuali.',
+                        is_past: 1
+                    }
+                ]
+            });
+        } else {
+            return res.json({
+                success: true,
+                data: [
+                    {
+                        id: 9001,
+                        condominio_id: 9999,
+                        title: 'Assemblea Ordinaria Annuale - Approvazione Rendiconto',
+                        date: '2026-05-15 18:30',
+                        location: 'Sala Condominiale Sole e Pini - Via dei Giardini Fioriti 12',
+                        status: 'Convocata',
+                        order_of_day: '1. Esame e approvazione rendiconto consuntivo esercizio 2025; 2. Approvazione preventivo di gestione 2026; 3. Nomina/conferma amministratore.',
+                        is_past: 0
+                    }
+                ]
+            });
+        }
+    }
     const isPast = req.query.past === '1' ? 1 : 0;
     db.all('SELECT * FROM assemblies WHERE condominio_id = ? AND is_past = ? ORDER BY date DESC', [req.condominio_id, isPast], (err, rows) => {
         res.json({ success: true, data: rows || [] });
@@ -3844,15 +4042,25 @@ app.get('/api/condominio', authenticateToken, requireCondominio, (req, res) => {
                 cf: '90099887766',
                 scala: 'Scale A e B (Palazzina 1)',
                 dati_bancari: 'IT60X0542811101000000123456 (Banca Dimostrativa Nazionale)',
+                admin_studio_nome: 'Studio Amministrazioni Esempio',
+                admin_studio_indirizzo: 'Via Roma, 100 - 00100 Roma (RM)',
                 admin_titolo: 'Dott.',
                 admin_nome: 'Valerio',
                 admin_cognome: 'Bianchi',
                 admin_telefono: '06 00001111',
                 admin_cellulare: '333 0000999',
-                admin_email_condominio: 'amministrazione.demo@condominiotrasparente.com',
-                admin_email: 'amministrazione.demo@condominiotrasparente.com',
+                admin_emergenze: '800 999 888',
                 admin_emergenza: '800 999 888',
                 admin_numero_emergenze: '800 999 888',
+                admin_email_condominio: 'amministrazione.demo@condominiotrasparente.com',
+                admin_email: 'amministrazione.demo@condominiotrasparente.com',
+                admin_pec: 'studio.bianchi@pec.it',
+                admin_orari_ricevimento: 'Lun - Ven: 09:30 - 12:30 / 15:30 - 18:30',
+                admin_ricevimento_note: 'Si riceve previo appuntamento telefonico.',
+                admin_collaboratori: JSON.stringify([
+                    { nome: 'Giulia', cognome: 'Verdi', ruolo: 'Referente Contabilità', tel: '06 00001112', email: 'contabilita@esempio.test' },
+                    { nome: 'Marco', cognome: 'Neri', ruolo: 'Referente Manutenzioni & Guasti', tel: '06 00001113', email: 'manutenzioni@esempio.test' }
+                ]),
                 module_contabilita: 1,
                 module_segnalazioni: 1,
                 module_assemblee: 1,
