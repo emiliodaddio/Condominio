@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 
 // Carica variabili da .env (supporta sia locale che Secret Files di Render in /etc/secrets/.env)
 const envPaths = [
@@ -40,9 +39,6 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const express = require('express');
-const helmet = require('helmet');
-const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
@@ -53,9 +49,6 @@ const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
 const emailService = require('./emailService');
 const puppeteer = require('puppeteer');
-const Decimal = require('decimal.js');
-const storageService = require('./storageService');
-const pdfReceiptService = require('./pdfReceiptService');
 
 function getPuppeteerLaunchOptions() {
     const defaultArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
@@ -92,23 +85,9 @@ nodemailer.createTestAccount().then(testAccount => {
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
-}));
-app.use(cookieParser());
 
-// Rate limiter anti-bruteforce sulle rotte di autenticazione
-const authRateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minuti
-    max: 50, // max 50 tentativi per IP
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, message: 'Troppe richieste di autenticazione da questo IP. Riprova tra 15 minuti.' }
-});
-app.use('/api/auth/login', authRateLimiter);
-app.use('/api/auth/login/verify-otp', authRateLimiter);
-
+app.get('/healthz', (req, res) => res.json({ status: 'ok', service: 'condo-transparent' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'condo-transparent' }));
 
 app.get('/api/health-email', (req, res) => {
     const keys = Object.keys(process.env);
@@ -122,50 +101,6 @@ app.get('/api/health-email', (req, res) => {
         envKeysFound: keys.filter(k => /brevo|smtp|mail|tidb|mysql/i.test(k))
     });
 });
-
-// Health Checks Standard Cloud-Native (/healthz & /api/health)
-const handleHealthCheck = async (req, res) => {
-    let dbStatus = 'ok';
-    let dbLatencyMs = 0;
-    const start = Date.now();
-    try {
-        if (db.pool && typeof db.pool.promise === 'function') {
-            await db.pool.promise().query('SELECT 1');
-            dbLatencyMs = Date.now() - start;
-        }
-    } catch (e) {
-        dbStatus = 'degraded: ' + e.message;
-    }
-
-    const mem = process.memoryUsage();
-    const isHealthy = !dbStatus.startsWith('degraded');
-
-    res.status(isHealthy ? 200 : 503).json({
-        status: isHealthy ? 'pass' : 'fail',
-        service: 'condo-transparent-saas',
-        timestamp: new Date().toISOString(),
-        uptime_seconds: Math.floor(process.uptime()),
-        checks: {
-            database: {
-                status: dbStatus,
-                latency_ms: dbLatencyMs,
-                type: db.type || 'mysql'
-            },
-            storage: {
-                status: 'ok',
-                type: storageService.isS3Configured() ? 's3' : 'local'
-            },
-            memory: {
-                rss_mb: Math.round(mem.rss / 1024 / 1024),
-                heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
-                heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024)
-            }
-        }
-    });
-};
-
-app.get('/healthz', handleHealthCheck);
-app.get('/api/health', handleHealthCheck);
 
 app.get('/api/export/accounting-excel', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
     try {
@@ -972,15 +907,7 @@ app.get('/api/export/scheda-tecnica-pdf', authenticateToken, requireCondominio, 
 });
 
 const PORT = process.env.PORT || 3000;
-let JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-    if (process.env.NODE_ENV === 'production') {
-        console.warn('⚠️ [AVVISO SICUREZZA]: JWT_SECRET non impostato nelle variabili d\'ambiente di produzione. Generazione chiave temporanea a 256-bit.');
-        JWT_SECRET = crypto.randomBytes(32).toString('hex');
-    } else {
-        JWT_SECRET = 'dev_chiave_segreta_condominio_sicura_123!';
-    }
-}
+const JWT_SECRET = 'chiave_segreta_condominio_sicura_123!';
 
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
@@ -993,14 +920,6 @@ app.use((req, res, next) => {
     res.setHeader('Expires', '0');
     res.setHeader('Surrogate-Control', 'no-store');
     next();
-});
-
-// Protezione Zero-Leakage: Blocca qualsiasi accesso diretto pubblico alla cartella degli upload
-app.use('/uploads', (req, res) => {
-    return res.status(403).json({
-        success: false,
-        message: 'Accesso diretto negato. I documenti condominiali sono archiviati in modo protetto con autorizzazione RBAC.'
-    });
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -1038,6 +957,7 @@ function initDatabase() {
     ensurePartialPaymentColumns();
     ensureAnagraficaAndUnitaColumns();
     ensureCondoDocumentsTable();
+    selfHealCondoData();
     if (db.type === 'mysql') {
         console.log('✅ Inizializzazione schema MySQL verificata.');
         return;
@@ -1428,11 +1348,7 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'condominios', col: 'assicurazione_compagnia', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'condominios', col: 'assicurazione_polizza', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
         { table: 'condominios', col: 'assicurazione_scadenza', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
-        { table: 'condominios', col: 'note_fabbricato', defMysql: 'TEXT', defSqlite: 'TEXT' },
-        { table: 'condo_documents', col: 'file_key', defMysql: 'VARCHAR(500)', defSqlite: 'TEXT' },
-        { table: 'condo_documents', col: 'storage_type', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
-        { table: 'condomini', col: 'cf', defMysql: 'VARCHAR(20)', defSqlite: 'TEXT' },
-        { table: 'condominios', col: 'amministratore_id', defMysql: 'INT', defSqlite: 'INTEGER' }
+        { table: 'condominios', col: 'note_fabbricato', defMysql: 'TEXT', defSqlite: 'TEXT' }
     ];
 
     let pending = colsToEnsure.length;
@@ -1502,16 +1418,129 @@ function ensureAnagraficaAndUnitaColumns(callback) {
 
     // Riallineamento rigoroso a "Anagrafica Condominio & Tabelle Millesimali" (anagrafica_persone)
     realignDatabaseToAnagrafica();
-
-    // Sincronizzazione automatica tabelle parallele (condomini vs condominios, condomino_condominio vs user_condominios)
-    syncDualDatabaseEntities();
-
-    // Auto-ripristino e allineamento robusto dati
-    selfHealCondoData();
 }
 
 function realignDatabaseToAnagrafica(condominioId = null, callback = null) {
     if (callback) callback();
+    return;
+
+    try {
+        const condoFilterQuotes = condominioId ? `AND condominio_id = ${parseInt(condominioId, 10)}` : '';
+        const condoFilterUnita = condominioId ? `WHERE u.condominio_id = ${parseInt(condominioId, 10)}` : '';
+
+        // 1. Elimina le quote orfane non associate a una persona presente in Anagrafica Condominio & Tabelle Millesimali
+        db.run(`DELETE FROM quotes WHERE (persona_id IS NULL OR persona_id NOT IN (SELECT id FROM anagrafica_persone)) ${condoFilterQuotes}`, () => {
+            // 2. Analisi approfondita di tutte le unità per rilevare orfane e duplicati
+            db.all(`
+                SELECT u.id, u.condominio_id, u.identificativo, u.scala, u.piano, u.interno, 
+                       u.millesimi_proprieta, u.proprietario_id, u.conduttore_id,
+                       p1.id as p1_id, p2.id as p2_id
+                FROM unita_immobiliari u
+                LEFT JOIN anagrafica_persone p1 ON u.proprietario_id = p1.id
+                LEFT JOIN anagrafica_persone p2 ON u.conduttore_id = p2.id
+                ${condoFilterUnita}
+                ORDER BY u.id ASC
+            `, [], (errU, allUnits) => {
+                if (errU || !Array.isArray(allUnits)) {
+                    if (callback) callback();
+                    return;
+                }
+
+                const unitsToDelete = new Set();
+                const seenKeys = new Map();
+
+                allUnits.forEach(u => {
+                    const hasValidPersona = (u.p1_id !== null && u.p1_id !== undefined) || (u.p2_id !== null && u.p2_id !== undefined);
+                    
+                    // Se non collegata ad alcuna persona censita nell'anagrafica del condominio -> orfana di test/seed
+                    if (!hasValidPersona) {
+                        unitsToDelete.add(u.id);
+                        return;
+                    }
+
+                    // Chiave per duplicati: identificativo normalizzato oppure locazione (scala + piano + interno)
+                    const cleanIdent = String(u.identificativo || '').trim().toLowerCase();
+                    const cleanScala = String(u.scala || '').trim().toLowerCase();
+                    const cleanPiano = String(u.piano || '').trim().toLowerCase();
+                    const cleanInterno = String(u.interno || '').trim().toLowerCase();
+
+                    const keyIdent = cleanIdent ? `${u.condominio_id}|ident:${cleanIdent}` : null;
+                    const keyLoc = (cleanScala || cleanPiano || cleanInterno)
+                        ? `${u.condominio_id}|loc:${cleanScala}|${cleanPiano}|${cleanInterno}`
+                        : null;
+
+                    let existingMatchId = null;
+                    if (keyIdent && seenKeys.has(keyIdent)) {
+                        existingMatchId = seenKeys.get(keyIdent);
+                    } else if (keyLoc && seenKeys.has(keyLoc)) {
+                        existingMatchId = seenKeys.get(keyLoc);
+                    }
+
+                    if (existingMatchId) {
+                        // Duplicato rilevato: teniamo quella con millesimi valorizzati > 0 o ID più recente
+                        const prevUnit = allUnits.find(x => x.id === existingMatchId);
+                        const currMill = parseFloat(u.millesimi_proprieta) || 0;
+                        const prevMill = prevUnit ? (parseFloat(prevUnit.millesimi_proprieta) || 0) : 0;
+
+                        if (currMill > 0 && prevMill === 0) {
+                            unitsToDelete.add(existingMatchId);
+                            if (keyIdent) seenKeys.set(keyIdent, u.id);
+                            if (keyLoc) seenKeys.set(keyLoc, u.id);
+                        } else {
+                            unitsToDelete.add(u.id);
+                        }
+                    } else {
+                        if (keyIdent) seenKeys.set(keyIdent, u.id);
+                        if (keyLoc) seenKeys.set(keyLoc, u.id);
+                    }
+                });
+
+                const deleteIds = Array.from(unitsToDelete);
+
+                const afterUnitsPurged = () => {
+                    // Pulizia quote_millesimali orfane (unita non più esistenti)
+                    db.run(`DELETE FROM quote_millesimali WHERE unita_id NOT IN (SELECT id FROM unita_immobiliari)`, () => {
+                        // Deduplica quote contabili identiche
+                        db.all(`SELECT id, condominio_id, persona_id, title, due_date, amount, paid_amount FROM quotes WHERE 1=1 ${condoFilterQuotes} ORDER BY paid_amount DESC, id ASC`, [], (errQ, qRows) => {
+                            if (!errQ && Array.isArray(qRows)) {
+                                const seenQuotes = new Set();
+                                const dupIds = [];
+                                qRows.forEach(q => {
+                                    const key = `${q.condominio_id}|${q.persona_id}|${(q.title || '').trim().toLowerCase()}|${q.due_date}|${parseFloat(q.amount) || 0}`;
+                                    if (seenQuotes.has(key)) {
+                                        dupIds.push(q.id);
+                                    } else {
+                                        seenQuotes.add(key);
+                                    }
+                                });
+                                if (dupIds.length > 0) {
+                                    db.run(`DELETE FROM quotes WHERE id IN (${dupIds.join(',')})`, () => {
+                                        if (callback) callback();
+                                    });
+                                    return;
+                                }
+                            }
+                            if (callback) callback();
+                        });
+                    });
+                };
+
+                if (deleteIds.length > 0) {
+                    console.log(`🧹 [Riallineamento DB] Rimozione di ${deleteIds.length} unità orfane/duplicate: IDs [${deleteIds.join(', ')}]`);
+                    db.run(`DELETE FROM quote_millesimali WHERE unita_id IN (${deleteIds.join(',')})`, () => {
+                        db.run(`DELETE FROM unita_immobiliari WHERE id IN (${deleteIds.join(',')})`, () => {
+                            afterUnitsPurged();
+                        });
+                    });
+                } else {
+                    afterUnitsPurged();
+                }
+            });
+        });
+    } catch (e) {
+        console.warn('⚠️ realignDatabaseToAnagrafica:', e.message);
+        if (callback) callback();
+    }
 }
 
 function ensurePartialPaymentColumns() {
@@ -1587,227 +1616,6 @@ function ensurePartialPaymentColumns() {
     }
 }
 
-async function syncDualDatabaseEntities() {
-    if (db.type !== 'mysql') return;
-    let conn;
-    try {
-        conn = await db.getConnection();
-        // 1. Sincronizzazione condominios -> condomini
-        await conn.query(`
-            INSERT INTO condomini (id, nome, indirizzo, codice_fiscale, creato_il)
-            SELECT c.id, c.nome, c.indirizzo,
-                   COALESCE(NULLIF(TRIM(c.cf), ''), CONCAT('CF-TEMP-', c.id)),
-                   COALESCE(c.created_at, NOW())
-            FROM condominios c
-            LEFT JOIN condomini cd ON c.id = cd.id
-            WHERE cd.id IS NULL
-            ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo)
-        `).catch(() => {});
-
-        // 2. Sincronizzazione condomini -> condominios
-        await conn.query(`
-            INSERT INTO condominios (id, nome, indirizzo, cf, created_at)
-            SELECT cd.id, cd.nome, cd.indirizzo, cd.codice_fiscale, COALESCE(cd.creato_il, NOW())
-            FROM condomini cd
-            LEFT JOIN condominios c ON cd.id = c.id
-            WHERE c.id IS NULL
-            ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo), cf = VALUES(cf)
-        `).catch(() => {});
-
-        // 3. Sincronizzazione user_condominios -> condomino_condominio
-        await conn.query(`
-            INSERT INTO condomino_condominio (condomino_id, condominio_id, interno, millesimi, associato_il)
-            SELECT uc.user_id, uc.condominio_id, COALESCE(NULLIF(TRIM(uc.unita), ''), 'Int. 1'), 0.00, NOW()
-            FROM user_condominios uc
-            LEFT JOIN condomino_condominio cc ON uc.user_id = cc.condomino_id AND uc.condominio_id = cc.condominio_id
-            WHERE cc.id IS NULL AND uc.role = 'condomino'
-            ON DUPLICATE KEY UPDATE interno = VALUES(interno)
-        `).catch(() => {});
-
-        // 4. Sincronizzazione condomino_condominio -> user_condominios
-        await conn.query(`
-            INSERT INTO user_condominios (user_id, condominio_id, role, unita)
-            SELECT cc.condomino_id, cc.condominio_id, 'condomino', cc.interno
-            FROM condomino_condominio cc
-            LEFT JOIN user_condominios uc ON cc.condomino_id = uc.user_id AND cc.condominio_id = uc.condominio_id
-            WHERE uc.id IS NULL
-            ON DUPLICATE KEY UPDATE role = 'condomino', unita = VALUES(unita)
-        `).catch(() => {});
-
-        console.log('✅ [Dual-DB Sync] Allineamento bidirezionale condomini/condominios e condomino_condominio/user_condominios completato.');
-    } catch (e) {
-        console.warn('⚠️ [Dual-DB Sync] Avviso durante sincronizzazione:', e.message);
-    } finally {
-        if (conn) {
-            try { conn.release(); } catch (_) {}
-        }
-    }
-}
-
-async function selfHealCondoData() {
-    if (db.type !== 'mysql') return;
-    let conn;
-    try {
-        conn = await db.getConnection();
-
-        // 1. Assicura che la tabella condominios abbia Condominio Ma.Ca. con ID 1
-        await conn.query(`
-            INSERT INTO condominios (id, nome, indirizzo, cf, scala)
-            VALUES (1, 'Condominio Ma.Ca.', 'Via Vittorio Alfieri, 4 - 81020 San Nicola la Strada (Ce)', '9304301615', 'Scale A e B')
-            ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo), cf = VALUES(cf), scala = VALUES(scala)
-        `).catch(() => {});
-
-        // 2. Assicura associazione per Studio Rossi (admin) su Condominio Ma.Ca.
-        await conn.query(`
-            INSERT INTO user_condominios (user_id, condominio_id, role, unita)
-            SELECT u.id, 1, 'admin', 'Ufficio'
-            FROM users u WHERE LOWER(u.email) = 'admin@condominio.it'
-            ON DUPLICATE KEY UPDATE role = 'admin'
-        `).catch(() => {});
-
-        // 3. Assicura che tutti i condòmini registrati in users / user_condominios siano presenti in anagrafica_persone
-        const [condoUsers] = await conn.query(`
-            SELECT u.id as user_id, u.nome, u.email, u.telefono, uc.condominio_id, uc.unita, uc.role
-            FROM users u
-            JOIN user_condominios uc ON u.id = uc.user_id
-            WHERE uc.condominio_id = 1 OR uc.role = 'condomino'
-        `).catch(() => [[]]);
-
-        for (const u of (condoUsers || [])) {
-            if (u.role === 'admin' || !u.nome) continue;
-            let nome = u.nome.trim();
-            let cognome = '';
-            const sp = nome.split(/\s+/);
-            if (sp.length > 1) {
-                nome = sp[0];
-                cognome = sp.slice(1).join(' ');
-            }
-
-            // Verifica presenza in anagrafica_persone
-            const [pRows] = await conn.query(`
-                SELECT id FROM anagrafica_persone
-                WHERE condominio_id = ? AND (
-                    (email IS NOT NULL AND email != '' AND LOWER(email) = LOWER(?))
-                    OR (LOWER(nome) = LOWER(?) AND LOWER(cognome) = LOWER(?))
-                )
-            `, [u.condominio_id, u.email || '', nome, cognome]).catch(() => [[]]);
-
-            let personaId;
-            if (!pRows || pRows.length === 0) {
-                const [pIns] = await conn.query(`
-                    INSERT INTO anagrafica_persone 
-                    (condominio_id, nome, cognome, email, cellulare, ruolo_default, created_at)
-                    VALUES (?, ?, ?, ?, ?, 'Proprietario', NOW())
-                `, [u.condominio_id, nome, cognome, u.email || '', u.telefono || '']).catch(() => [{}]);
-                personaId = pIns ? pIns.insertId : null;
-            } else {
-                personaId = pRows[0].id;
-                if (u.email) {
-                    await conn.query(`UPDATE anagrafica_persone SET email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?`, [u.email, personaId]).catch(() => {});
-                }
-            }
-
-            if (!personaId) continue;
-
-            // 4. Collega / crea unità immobiliare
-            const unitaLabel = u.unita || 'Int. 1';
-            let scala = null, piano = null, interno = null;
-            const mSc = unitaLabel.match(/Scala\s+([A-Za-z0-9]+)/i);
-            if (mSc) scala = mSc[1];
-            const mPi = unitaLabel.match(/Piano\s+([A-Za-z0-9°]+)/i);
-            if (mPi) piano = mPi[1];
-            const mIn = unitaLabel.match(/Int\.?\s*([A-Za-z0-9]+)/i);
-            if (mIn) interno = mIn[1];
-            else interno = unitaLabel;
-
-            const [uRows] = await conn.query(`
-                SELECT id FROM unita_immobiliari 
-                WHERE condominio_id = ? AND (proprietario_id = ? OR user_id = ?)
-            `, [u.condominio_id, personaId, u.user_id]).catch(() => [[]]);
-
-            let unitaId;
-            if (!uRows || uRows.length === 0) {
-                const [uIns] = await conn.query(`
-                    INSERT INTO unita_immobiliari
-                    (condominio_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, created_at)
-                    VALUES (?, ?, 'Appartamento', ?, ?, ?, ?, 100.00, 100.00, 100.00, ?, NOW())
-                `, [u.condominio_id, u.user_id, unitaLabel, scala, piano, interno, personaId]).catch(() => [{}]);
-                unitaId = uIns ? uIns.insertId : null;
-            } else {
-                unitaId = uRows[0].id;
-                await conn.query(`
-                    UPDATE unita_immobiliari 
-                    SET proprietario_id = COALESCE(proprietario_id, ?), user_id = COALESCE(user_id, ?)
-                    WHERE id = ?
-                `, [personaId, u.user_id, unitaId]).catch(() => {});
-            }
-
-            // 5. Collega / crea rata quota condominiale
-            const [qRows] = await conn.query(`
-                SELECT id FROM quotes WHERE condominio_id = ? AND (persona_id = ? OR unita_id = ?)
-            `, [u.condominio_id, personaId, unitaId]).catch(() => [[]]);
-
-            if (!qRows || qRows.length === 0) {
-                await conn.query(`
-                    INSERT INTO quotes 
-                    (condominio_id, persona_id, unita_id, user_id, type, title, due_date, amount, paid_amount, status, created_at)
-                    VALUES (?, ?, ?, ?, 'ordinaria', 'RATA ORDINARIA GESTIONE', '2026-11-15', 75.00, 0.00, 'In sospeso', NOW())
-                `, [u.condominio_id, personaId, unitaId, u.user_id]).catch(() => {});
-            } else {
-                await conn.query(`
-                    UPDATE quotes 
-                    SET persona_id = COALESCE(persona_id, ?), unita_id = COALESCE(unita_id, ?)
-                    WHERE id = ?
-                `, [personaId, unitaId, qRows[0].id]).catch(() => {});
-            }
-        }
-
-        // 6. Assicura dati fornitore e conto banca per Condominio Ma.Ca.
-        const [supp] = await conn.query(`SELECT id FROM suppliers WHERE condominio_id = 1`).catch(() => [[]]);
-        if (!supp || supp.length === 0) {
-            await conn.query(`
-                INSERT INTO suppliers (condominio_id, name, piva, cf, address, created_at)
-                VALUES (1, 'La veloce tutto lind srl', '0158945221444', 'dddfrc85b62f839c', 'Via dei Matti, n° 0', NOW())
-            `).catch(() => {});
-            await conn.query(`
-                INSERT INTO supplier_payments (condominio_id, supplier_name, category, invoice_number, amount, paid_amount, due_date, status, created_at)
-                VALUES (1, 'La veloce tutto lind srl', 'Pulizia Scale', '1257', 250.00, 250.00, '2026-09-30', 'Pagato', NOW())
-            `).catch(() => {});
-        }
-
-        const [bank] = await conn.query(`SELECT id FROM bank_accounts WHERE condominio_id = 1`).catch(() => [[]]);
-        if (!bank || bank.length === 0) {
-            await conn.query(`
-                INSERT INTO bank_accounts (condominio_id, bank_name, iban, account_holder, created_at)
-                VALUES (1, 'Banca Intesa Sanpaolo', 'IT30000000123456789012345', 'Condominio Ma.Ca.', NOW())
-            `).catch(() => {});
-        }
-
-        // 7. Aggiorna campi informativi in condominios se vuoti
-        await conn.query(`
-            UPDATE condominios SET
-                dati_bancari = COALESCE(NULLIF(dati_bancari, ''), 'Banca Intesa - IBAN: IT30000000123456789012345'),
-                admin_nome = COALESCE(NULLIF(admin_nome, ''), 'Tizio'),
-                admin_cognome = COALESCE(NULLIF(admin_cognome, ''), 'Caio'),
-                admin_titolo = COALESCE(NULLIF(admin_titolo, ''), 'Avv.'),
-                admin_telefono = COALESCE(NULLIF(admin_telefono, ''), '018890192456'),
-                admin_cellulare = COALESCE(NULLIF(admin_cellulare, ''), '3357985406'),
-                admin_emergenze = COALESCE(NULLIF(admin_emergenze, ''), '34879512689'),
-                admin_email = COALESCE(NULLIF(admin_email, ''), 'test@gmail.com'),
-                admin_pec = COALESCE(NULLIF(admin_pec, ''), 'test@pec.it')
-            WHERE id = 1
-        `).catch(() => {});
-
-        console.log('✅ [Self-Heal] Sincronizzazione automatica e ripristino dati Condominio Ma.Ca. completati.');
-    } catch (e) {
-        console.warn('⚠️ [Self-Heal] Errore:', e.message);
-    } finally {
-        if (conn) {
-            try { conn.release(); } catch (_) {}
-        }
-    }
-}
-
 function seedInitialData() {
     db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
         if (err || (row && row.count > 0)) return;
@@ -1843,7 +1651,7 @@ initDatabase();
 // ==========================================
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = (req.cookies && req.cookies.auth_token) || (authHeader && authHeader.split(' ')[1]);
+    const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ success: false, message: 'Token mancante.' });
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -1854,26 +1662,21 @@ function authenticateToken(req, res, next) {
 }
 
 function requireCondominio(req, res, next) {
-    if (req.user && (req.user.is_superadmin || req.user.ruolo === 'superuser')) {
-        const cHeader = req.headers['x-condominio-id'];
-        req.condominio_id = cHeader ? parseInt(cHeader, 10) : 1;
+    if (req.user.is_superadmin) {
+        req.condominio_id = req.headers['x-condominio-id'] || null;
         req.role_in_condominio = 'admin'; 
         return next();
     }
     
-    const rawCId = req.headers['x-condominio-id'];
-    const cId = parseInt(rawCId, 10) || (req.user && req.user.condomini && req.user.condomini[0] && req.user.condomini[0].id) || 1;
+    const cId = req.headers['x-condominio-id'];
+    if (!cId) return res.status(400).json({ success: false, message: 'Condominio non selezionato' });
 
-    db.get('SELECT role FROM user_condominios WHERE user_id = ? AND condominio_id = ? LIMIT 1', [req.user.id, cId], (err, row) => {
-        if (!err && row) {
-            req.condominio_id = cId;
-            req.role_in_condominio = row.role;
-            return next();
-        }
+    db.get('SELECT role FROM user_condominios WHERE user_id = ? AND condominio_id = ?', [req.user.id, cId], (err, row) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        if (!row) return res.status(403).json({ success: false, message: 'Accesso negato a questo condominio.' });
         
-        // Fallback resiliente: evita crash 500 se tabella parallela condomini è assente
         req.condominio_id = cId;
-        req.role_in_condominio = (req.user && req.user.is_superadmin) ? 'admin' : ((req.user && req.user.role) || 'condomino');
+        req.role_in_condominio = row.role;
         next();
     });
 }
@@ -2146,22 +1949,6 @@ app.get('/api/auth/condominios', (req, res) => {
         if (err) return res.status(500).json({ success: false, message: 'Errore recupero lista condomini' });
         res.json({ success: true, data: rows || [] });
     });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie('auth_token');
-    res.json({ success: true, message: 'Disconnessione effettuata con successo.' });
-});
-
-// Endpoint protetto: restituisce il markup della cabina di regia SOLO a utenti Superuser certificati
-app.get('/api/superuser/template', authenticateToken, requireSuperAdmin, (req, res) => {
-    const tplPath = path.join(__dirname, 'views', 'superuser-view.html');
-    if (fs.existsSync(tplPath)) {
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.sendFile(tplPath);
-    } else {
-        res.status(404).json({ success: false, error: 'Template Superuser non presente sul server.' });
-    }
 });
 
 app.post('/api/auth/register', (req, res) => {
@@ -2515,24 +2302,8 @@ function issueToken(user, res) {
     const params = user.is_superadmin ? [] : [user.id];
 
     db.all(fetchCondosQuery, params, (err, condomini) => {
-        const tokenPayload = { 
-            id: user.id, 
-            nome: user.nome, 
-            email: user.email, 
-            ruolo: user.ruolo || (user.is_superadmin ? 'superuser' : 'condomino'),
-            is_superadmin: user.is_superadmin, 
-            privacy_accepted: user.privacy_accepted 
-        };
+        const tokenPayload = { id: user.id, nome: user.nome, email: user.email, is_superadmin: user.is_superadmin, privacy_accepted: user.privacy_accepted };
         const jwtToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
-
-        // Imposta Cookie HttpOnly, Secure, SameSite per proteggere la sessione contro attacchi XSS
-        res.cookie('auth_token', jwtToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 24 * 60 * 60 * 1000
-        });
-
         res.json({ success: true, token: jwtToken, user: { ...tokenPayload, condomini: condomini || [] } });
     });
 }
@@ -3109,62 +2880,62 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCond
     );
 });
 
-app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
+app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { type, title, due_date, items } = req.body;
     if (!title || !due_date || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ success: false, message: 'Titolo, data di scadenza ed elenco quote sono obbligatori.' });
     }
 
-    let conn;
-    try {
-        conn = await db.getConnection();
-        await conn.beginTransaction();
+    let inserted = 0;
+    let errors = 0;
+    let pending = items.length;
 
-        let inserted = 0;
-        for (const item of items) {
-            const personaVal = (item.persona_id !== undefined && item.persona_id !== '' && item.persona_id !== null) ? parseInt(item.persona_id, 10) : null;
-            const unitaVal = (item.unita_id !== undefined && item.unita_id !== '' && item.unita_id !== null) ? parseInt(item.unita_id, 10) : null;
-            const amountDec = new Decimal(item.amount || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-            const descVal = item.description || null;
-            const itemTitle = item.title || title;
+    items.forEach(item => {
+        const personaVal = (item.persona_id !== undefined && item.persona_id !== '' && item.persona_id !== null) ? parseInt(item.persona_id, 10) : null;
+        const unitaVal = (item.unita_id !== undefined && item.unita_id !== '' && item.unita_id !== null) ? parseInt(item.unita_id, 10) : null;
+        const amountVal = Math.round((parseFloat(item.amount) || 0) * 100) / 100;
+        const descVal = item.description || null;
+        const itemTitle = item.title || title;
 
-            if (amountDec.lte(0)) continue;
-
-            await conn.query(
-                'INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description) VALUES (?, ?, ?, ?, ?, ?, 0, ?, "In sospeso", ?)',
-                [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountDec.toFixed(2), due_date, descVal]
-            );
-            inserted++;
+        if (amountVal <= 0) {
+            pending--;
+            if (pending === 0) {
+                logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
+                return res.json({ success: true, inserted, errors });
+            }
+            return;
         }
 
-        await conn.commit();
-        conn.release();
-
-        logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
-        return res.json({ success: true, inserted, errors: 0 });
-    } catch (err) {
-        if (conn) {
-            try { await conn.rollback(); } catch (_) {}
-            try { conn.release(); } catch (_) {}
-        }
-        return res.status(500).json({ success: false, message: 'Errore generazione massiva quote: ' + err.message });
-    }
+        db.run(
+            `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'In sospeso', ?)`,
+            [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountVal, due_date, descVal],
+            function(err) {
+                if (err) errors++;
+                else inserted++;
+                pending--;
+                if (pending === 0) {
+                    logAudit(req.user.id, req.condominio_id, `Ripartizione Millesimale Massiva (${inserted} quote generate)`, 'quotes', null, null, req.ip);
+                    res.json({ success: true, inserted, errors });
+                }
+            }
+        );
+    });
 });
 
 app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     const { amount, due_date, status, paid_amount } = req.body;
-    const amountVal = new Decimal(amount || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const amountVal = parseFloat(amount) || 0;
     const paidVal = (paid_amount !== undefined && paid_amount !== null)
-        ? new Decimal(paid_amount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-        : (status === 'Pagato' ? amountVal : new Decimal(0));
+        ? parseFloat(paid_amount)
+        : (status === 'Pagato' ? amountVal : 0);
     let payment_date = null;
     if (status === 'Pagato') {
         payment_date = new Date().toISOString().split('T')[0];
     }
     db.run(
         `UPDATE quotes SET amount = ?, paid_amount = ?, due_date = ?, status = ?, payment_date = COALESCE(payment_date, ?) WHERE id = ? AND condominio_id = ?`,
-        [amountVal.toFixed(2), paidVal.toFixed(2), due_date, status, payment_date, id, req.condominio_id],
+        [amountVal, paidVal, due_date, status, payment_date, id, req.condominio_id],
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             res.json({ success: true });
@@ -3172,53 +2943,30 @@ app.put('/api/quotes/:id', authenticateToken, requireCondominio, isAdmin, checkC
     );
 });
 
-// Registrazione Saldo / Acconto Quota Condominiale (Transazione ACID con Decimal.js e Lock Pessimistico)
-app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
+// Registrazione Saldo / Acconto Quota Condominiale
+app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     let { amount_paying, payment_amount, amount, payment_date, payment_method, note, notes, add_to_journal, create_journal_entry } = req.body || {};
     const inputPaying = (payment_amount !== undefined && payment_amount !== null) ? payment_amount : ((amount_paying !== undefined && amount_paying !== null) ? amount_paying : amount);
     const inputNote = notes || note;
     const shouldAddToJournal = (create_journal_entry !== undefined) ? create_journal_entry : (add_to_journal !== false && add_to_journal !== undefined ? add_to_journal : true);
 
-    let conn;
-    try {
-        conn = await db.getConnection();
-        await conn.beginTransaction();
+    db.get('SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome FROM quotes q LEFT JOIN anagrafica_persone p ON q.persona_id = p.id WHERE q.id = ? AND q.condominio_id = ?', [id, req.condominio_id], (err, quote) => {
+        if (err || !quote) return res.status(404).json({ success: false, message: 'Quota non trovata' });
 
-        const [rows] = await conn.query(
-            'SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome FROM quotes q LEFT JOIN anagrafica_persone p ON q.persona_id = p.id WHERE q.id = ? AND q.condominio_id = ? FOR UPDATE',
-            [id, req.condominio_id]
-        );
-        const quote = rows && rows[0];
-        if (!quote) {
-            await conn.rollback();
-            conn.release();
-            return res.status(404).json({ success: false, message: 'Quota non trovata' });
-        }
+        const totalAmount = parseFloat(quote.amount) || 0;
+        const alreadyPaid = (quote.paid_amount !== undefined && quote.paid_amount !== null)
+            ? parseFloat(quote.paid_amount)
+            : (quote.status === 'Pagato' ? totalAmount : 0);
+        const currentResidual = Math.max(0, Math.round((totalAmount - alreadyPaid) * 100) / 100);
 
-        const totalAmount = new Decimal(quote.amount || 0);
-        const alreadyPaid = new Decimal(
-            (quote.paid_amount !== undefined && quote.paid_amount !== null)
-                ? quote.paid_amount
-                : (quote.status === 'Pagato' ? quote.amount : 0)
-        );
-        const currentResidual = Decimal.max(0, totalAmount.minus(alreadyPaid));
+        let paying = parseFloat(inputPaying);
+        if (isNaN(paying) || paying <= 0) paying = currentResidual;
+        if (paying > currentResidual) paying = currentResidual;
+        paying = Math.round(paying * 100) / 100;
 
-        let paying = (inputPaying !== undefined && inputPaying !== null && String(inputPaying).trim() !== '')
-            ? new Decimal(inputPaying)
-            : currentResidual;
-
-        if (paying.isNaN() || paying.lte(0)) {
-            paying = currentResidual;
-        }
-        if (paying.gt(currentResidual)) {
-            paying = currentResidual;
-        }
-        paying = paying.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-        const newPaidAmount = Decimal.min(totalAmount, alreadyPaid.plus(paying)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const residualAfter = Decimal.max(0, totalAmount.minus(newPaidAmount)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const newStatus = residualAfter.lte(0.00) ? 'Pagato' : 'Parziale';
+        const newPaidAmount = Math.min(totalAmount, Math.round((alreadyPaid + paying) * 100) / 100);
+        const newStatus = newPaidAmount >= (totalAmount - 0.009) ? 'Pagato' : 'Parziale';
         const pDate = payment_date || new Date().toISOString().split('T')[0];
         const pMethod = payment_method || 'Bonifico Bancario';
         const pNote = inputNote || (newStatus === 'Pagato' ? 'Saldo Quota' : 'Acconto Quota');
@@ -3230,45 +2978,49 @@ app.post('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, c
         history.push({
             id: Date.now(),
             date: pDate,
-            amount: paying.toNumber(),
+            amount: paying,
             method: pMethod,
             note: pNote,
             registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
         });
 
-        await conn.query(
-            'UPDATE quotes SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?',
-            [newPaidAmount.toFixed(2), newStatus, pDate, JSON.stringify(history), id, req.condominio_id]
+        db.run(
+            `UPDATE quotes SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?`,
+            [newPaidAmount, newStatus, pDate, JSON.stringify(history), id, req.condominio_id],
+            function(updErr) {
+                if (updErr) return res.status(500).json({ success: false, message: updErr.message });
+
+                logAudit(req.user.id, req.condominio_id, `Registrato Incasso Quota (€ ${paying.toFixed(2)} - ${newStatus})`, 'quotes', id, null, req.ip);
+
+                // Registrazione automatica nel Libro Giornale (se richiesta)
+                if (shouldAddToJournal) {
+                    const desc = `Incasso Quota (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${quote.title}${pNote ? ' - ' + pNote : ''}`;
+                    const nominativo = quote.persona_cognome ? `${quote.persona_cognome} ${quote.persona_nome}` : 'Condòmino';
+                    db.run(
+                        `INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [req.condominio_id, pDate, 'AUTO', 'Incasso Quota', desc, paying, 0, nominativo],
+                        function() {
+                            res.json({
+                                success: true,
+                                message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                                newStatus,
+                                paid_amount: newPaidAmount,
+                                residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                            });
+                        }
+                    );
+                } else {
+                    res.json({
+                        success: true,
+                        message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                        newStatus,
+                        paid_amount: newPaidAmount,
+                        residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                    });
+                }
+            }
         );
-
-        if (shouldAddToJournal) {
-            const desc = `Incasso Quota (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${quote.title}${pNote ? ' - ' + pNote : ''}`;
-            const nominativo = quote.persona_cognome ? `${quote.persona_cognome} ${quote.persona_nome}` : 'Condòmino';
-            await conn.query(
-                'INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [req.condominio_id, pDate, 'AUTO', 'Incasso Quota', desc, paying.toFixed(2), 0, nominativo]
-            );
-        }
-
-        await conn.commit();
-        conn.release();
-
-        logAudit(req.user.id, req.condominio_id, `Registrato Incasso Quota (€ ${paying.toFixed(2)} - ${newStatus})`, 'quotes', id, null, req.ip);
-
-        return res.json({
-            success: true,
-            message: newStatus === 'Pagato' ? 'Quota saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${residualAfter.toFixed(2)})`,
-            newStatus,
-            paid_amount: newPaidAmount.toNumber(),
-            residual: residualAfter.toNumber()
-        });
-    } catch (err) {
-        if (conn) {
-            try { await conn.rollback(); } catch (_) {}
-            try { conn.release(); } catch (_) {}
-        }
-        return res.status(500).json({ success: false, message: 'Errore registrazione incasso: ' + err.message });
-    }
+    });
 });
 
 app.patch('/api/quotes/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
@@ -3570,53 +3322,30 @@ app.put('/api/supplier-payments/:id', authenticateToken, requireCondominio, isAd
         });
 });
 
-// Registrazione Saldo / Acconto Fattura Fornitore (Transazione ACID con Decimal.js e Lock Pessimistico)
-app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, async (req, res) => {
+// Registrazione Saldo / Acconto Fattura Fornitore
+app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
     const { id } = req.params;
     let { amount_paying, payment_amount, amount, payment_date, payment_method, note, notes, add_to_journal, create_journal_entry } = req.body || {};
     const inputPaying = (payment_amount !== undefined && payment_amount !== null) ? payment_amount : ((amount_paying !== undefined && amount_paying !== null) ? amount_paying : amount);
     const inputNote = notes || note;
     const shouldAddToJournal = (create_journal_entry !== undefined) ? create_journal_entry : (add_to_journal !== false && add_to_journal !== undefined ? add_to_journal : true);
 
-    let conn;
-    try {
-        conn = await db.getConnection();
-        await conn.beginTransaction();
+    db.get('SELECT * FROM supplier_payments WHERE id = ? AND condominio_id = ?', [id, req.condominio_id], (err, supplier) => {
+        if (err || !supplier) return res.status(404).json({ success: false, message: 'Fattura fornitore non trovata' });
 
-        const [rows] = await conn.query(
-            'SELECT * FROM supplier_payments WHERE id = ? AND condominio_id = ? FOR UPDATE',
-            [id, req.condominio_id]
-        );
-        const supplier = rows && rows[0];
-        if (!supplier) {
-            await conn.rollback();
-            conn.release();
-            return res.status(404).json({ success: false, message: 'Fattura fornitore non trovata' });
-        }
+        const totalAmount = parseFloat(supplier.amount) || 0;
+        const alreadyPaid = (supplier.paid_amount !== undefined && supplier.paid_amount !== null)
+            ? parseFloat(supplier.paid_amount)
+            : (supplier.status === 'Pagato' ? totalAmount : 0);
+        const currentResidual = Math.max(0, Math.round((totalAmount - alreadyPaid) * 100) / 100);
 
-        const totalAmount = new Decimal(supplier.amount || 0);
-        const alreadyPaid = new Decimal(
-            (supplier.paid_amount !== undefined && supplier.paid_amount !== null)
-                ? supplier.paid_amount
-                : (supplier.status === 'Pagato' ? supplier.amount : 0)
-        );
-        const currentResidual = Decimal.max(0, totalAmount.minus(alreadyPaid));
+        let paying = parseFloat(inputPaying);
+        if (isNaN(paying) || paying <= 0) paying = currentResidual;
+        if (paying > currentResidual) paying = currentResidual;
+        paying = Math.round(paying * 100) / 100;
 
-        let paying = (inputPaying !== undefined && inputPaying !== null && String(inputPaying).trim() !== '')
-            ? new Decimal(inputPaying)
-            : currentResidual;
-
-        if (paying.isNaN() || paying.lte(0)) {
-            paying = currentResidual;
-        }
-        if (paying.gt(currentResidual)) {
-            paying = currentResidual;
-        }
-        paying = paying.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-        const newPaidAmount = Decimal.min(totalAmount, alreadyPaid.plus(paying)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const residualAfter = Decimal.max(0, totalAmount.minus(newPaidAmount)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const newStatus = residualAfter.lte(0.00) ? 'Pagato' : 'Parziale';
+        const newPaidAmount = Math.min(totalAmount, Math.round((alreadyPaid + paying) * 100) / 100);
+        const newStatus = newPaidAmount >= (totalAmount - 0.009) ? 'Pagato' : 'Parziale';
         const pDate = payment_date || new Date().toISOString().split('T')[0];
         const pMethod = payment_method || 'Bonifico Bancario';
         const pNote = inputNote || (newStatus === 'Pagato' ? 'Saldo Fattura' : 'Acconto Fattura');
@@ -3628,44 +3357,48 @@ app.post('/api/supplier-payments/:id/pay', authenticateToken, requireCondominio,
         history.push({
             id: Date.now(),
             date: pDate,
-            amount: paying.toNumber(),
+            amount: paying,
             method: pMethod,
             note: pNote,
             registered_by: (req.user && req.user.nome) ? req.user.nome : 'Amministratore'
         });
 
-        await conn.query(
-            'UPDATE supplier_payments SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?',
-            [newPaidAmount.toFixed(2), newStatus, pDate, JSON.stringify(history), id, req.condominio_id]
+        db.run(
+            `UPDATE supplier_payments SET paid_amount = ?, status = ?, payment_date = ?, payment_history = ? WHERE id = ? AND condominio_id = ?`,
+            [newPaidAmount, newStatus, pDate, JSON.stringify(history), id, req.condominio_id],
+            function(updErr) {
+                if (updErr) return res.status(500).json({ success: false, message: updErr.message });
+
+                logAudit(req.user.id, req.condominio_id, `Registrato Pagamento Fornitore (€ ${paying.toFixed(2)} - ${newStatus})`, 'supplier_payments', id, null, req.ip);
+
+                // Registrazione automatica nel Libro Giornale (se richiesta)
+                if (shouldAddToJournal) {
+                    const desc = `Pagamento Fornitore (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${supplier.supplier_name} - Fatt. ${supplier.invoice_number || 'N/D'}${pNote ? ' - ' + pNote : ''}`;
+                    db.run(
+                        `INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [req.condominio_id, pDate, supplier.invoice_number || 'AUTO', 'Pagamento Fornitore', desc, 0, paying, supplier.supplier_name],
+                        function() {
+                            res.json({
+                                success: true,
+                                message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                                newStatus,
+                                paid_amount: newPaidAmount,
+                                residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                            });
+                        }
+                    );
+                } else {
+                    res.json({
+                        success: true,
+                        message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${(totalAmount - newPaidAmount).toFixed(2)})`,
+                        newStatus,
+                        paid_amount: newPaidAmount,
+                        residual: Math.max(0, Math.round((totalAmount - newPaidAmount) * 100) / 100)
+                    });
+                }
+            }
         );
-
-        if (shouldAddToJournal) {
-            const desc = `Pagamento Fornitore (${newStatus === 'Pagato' ? 'Saldo' : 'Acconto'}): ${supplier.supplier_name} - Fatt. ${supplier.invoice_number || 'N/D'}${pNote ? ' - ' + pNote : ''}`;
-            await conn.query(
-                'INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [req.condominio_id, pDate, supplier.invoice_number || 'AUTO', 'Pagamento Fornitore', desc, 0, paying.toFixed(2), supplier.supplier_name]
-            );
-        }
-
-        await conn.commit();
-        conn.release();
-
-        logAudit(req.user.id, req.condominio_id, `Registrato Pagamento Fornitore (€ ${paying.toFixed(2)} - ${newStatus})`, 'supplier_payments', id, null, req.ip);
-
-        return res.json({
-            success: true,
-            message: newStatus === 'Pagato' ? 'Fattura saldata interamente!' : `Acconto di € ${paying.toFixed(2)} registrato! (Residuo: € ${residualAfter.toFixed(2)})`,
-            newStatus,
-            paid_amount: newPaidAmount.toNumber(),
-            residual: residualAfter.toNumber()
-        });
-    } catch (err) {
-        if (conn) {
-            try { await conn.rollback(); } catch (_) {}
-            try { conn.release(); } catch (_) {}
-        }
-        return res.status(500).json({ success: false, message: 'Errore registrazione pagamento fornitore: ' + err.message });
-    }
+    });
 });
 
 
@@ -4287,31 +4020,46 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
     const { activeCondoName } = req.body;
     
     try {
-        db.get('SELECT q.*, u.nome, u.email, uc.unita FROM quotes q JOIN users u ON q.user_id = u.id JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = q.condominio_id WHERE q.id = ? AND q.condominio_id = ?', [quoteId, req.condominio_id], async (err, quote) => {
+        db.get('SELECT q.*, u.nome, u.email, uc.unita FROM quotes q JOIN users u ON q.user_id = u.id JOIN user_condominios uc ON u.id = uc.user_id AND uc.condominio_id = q.condominio_id WHERE q.id = ?', [quoteId], async (err, quote) => {
             if (err || !quote) return res.status(404).json({ success: false, message: 'Quota non trovata' });
             if (!quote.email) return res.status(400).json({ success: false, message: 'Nessuna email per questo condomino' });
             
             if (!transporter) throw new Error("Servizio email non pronto");
             
+            let browser;
             try {
-                const pdfBuffer = await pdfReceiptService.generateReceiptBuffer({
-                    ricevuta_codice: `REC-Q-${quote.id}`,
-                    condominio_nome: activeCondoName || 'Condominio',
-                    condominio_via: '',
-                    nome_condomino: quote.nome,
-                    unita_label: quote.unita || 'N/D',
-                    data_ora: new Date().toLocaleDateString('it-IT'),
-                    spesa_titolo: quote.title,
-                    importo_versato: Number(quote.amount || 0).toFixed(2),
-                    metodo_pagamento: 'Bonifico Bancario / Telematico'
-                });
+                browser = await puppeteer.launch(getPuppeteerLaunchOptions());
+                const page = await browser.newPage();
+                
+                const htmlContent = `
+                    <html>
+                    <body style="font-family: Arial; padding: 40px; color: #333;">
+                        <h2 style="text-align:center; border-bottom: 2px solid #333; padding-bottom:10px;">AMMINISTRAZIONE CONDOMINIO<br>${activeCondoName}</h2>
+                        <h1 style="text-align:center; color: #16a34a; margin-top:40px;">RICEVUTA DI PAGAMENTO</h1>
+                        <p style="text-align:right; margin-bottom:40px;">Data: ${new Date().toLocaleDateString('it-IT')}</p>
+                        <p>Si attesta di aver ricevuto dal Sig./Sig.ra <b>${quote.nome}</b> (Unità: ${quote.unita || 'N/D'})</p>
+                        <p>La somma di: <b style="font-size:24px;">€ ${quote.amount.toFixed(2)}</b></p>
+                        <p>A titolo di saldo per la seguente causale:</p>
+                        <div style="background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <strong>${quote.title}</strong><br>
+                            Tipo Quota: ${quote.type}<br>
+                            Scadenza originaria: ${new Date(quote.due_date).toLocaleDateString('it-IT')}
+                        </div>
+                        <p style="margin-top:50px; text-align:right;">L'Amministratore<br>___________________</p>
+                    </body>
+                    </html>
+                `;
+                
+                await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+                const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+                await browser.close();
                 
                 let info = await transporter.sendMail({
                     from: '"Amministrazione Condominio" <admin@condominio.it>',
                     to: quote.email,
-                    subject: 'Ricevuta di Pagamento - ' + (activeCondoName || 'Condominio'),
-                    html: '<p>Gent.le <b>' + quote.nome + '</b>,</p><p>La ringraziamo per il pagamento effettuato. In allegato trova la ricevuta ufficiale in formato PDF.</p><p>Cordiali saluti,<br><i>L\'Amministrazione</i></p>',
-                    attachments: [{ filename: `Ricevuta_Pagamento_${quote.id}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }]
+                    subject: 'Ricevuta di Pagamento - ' + activeCondoName,
+                    html: '<p>Gent.le <b>' + quote.nome + '</b>,</p><p>La ringraziamo per il pagamento effettuato. In allegato trova la ricevuta in formato PDF.</p><p>Cordiali saluti,<br><i>L\'Amministrazione</i></p>',
+                    attachments: [{ filename: 'Ricevuta_Pagamento.pdf', content: pdfBuffer, contentType: 'application/pdf' }]
                 });
 
                 const previewUrl = nodemailer.getTestMessageUrl(info) || '';
@@ -4323,18 +4071,19 @@ app.post('/api/quotes/:id/send-receipt', authenticateToken, requireCondominio, i
                     email: quote.email,
                     tipo: 'Ricevuta di Pagamento',
                     oggetto: `Ricevuta quota: ${quote.title} (€ ${Number(quote.amount).toFixed(2)})`,
-                    contenuto_html: `<p>Ricevuta pagamento per quota ${quote.title} (€ ${Number(quote.amount).toFixed(2)}) emessa per ${quote.nome}</p>`,
+                    contenuto_html: htmlContent,
                     preview_url: previewUrl
                 });
                 
-                return res.json({ success: true, message: 'Ricevuta inviata con successo!', previewUrl });
+                res.json({ success: true, message: 'Ricevuta inviata con successo!', previewUrl });
             } catch (e) {
-                console.error("Errore invio email ricevuta:", e);
-                return res.status(500).json({ success: false, message: 'Errore durante la generazione e invio della ricevuta: ' + e.message });
+                if(browser) await browser.close();
+                console.error(e);
+                res.status(500).json({ success: false, message: 'Errore generazione PDF' });
             }
         });
     } catch (err) {
-        return res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false });
     }
 });
 
@@ -5349,46 +5098,6 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
 
             // Tentativo 3: Se utente è Amministratore o Superuser, oppure non ha unità assegnata
             if (!condominoProfile) {
-                let isAdmin = req.user.is_superadmin || 
-                              req.user.ruolo === 'superuser' || 
-                              req.user.ruolo === 'amministratore' ||
-                              req.user.ruolo === 'admin' ||
-                              req.user.role === 'admin';
-
-                if (!isAdmin) {
-                    try {
-                        const [adm] = await connection.query(
-                            'SELECT id FROM condomini WHERE amministratore_id = ? UNION SELECT id FROM user_condominios WHERE user_id = ? AND role = "admin" LIMIT 1',
-                            [userId, userId]
-                        );
-                        if (adm && adm.length > 0) isAdmin = true;
-                    } catch (_) {}
-                }
-
-                if (!isAdmin) {
-                    connection.release();
-                    return res.json({
-                        success: true,
-                        datiPersonali: { interno: 'In attesa di associazione', millesimi: 0.00, pagamenti: [] },
-                        cassaComune: { residuiAttivi: 0, percentualeRiscossa: 100 },
-                        dati_personali: {
-                            condomino_id: userId,
-                            nome: req.user.nome || 'Condòmino',
-                            email: req.user.email || '',
-                            unita_immobiliare: { interno: 'In attesa di associazione', millesimi: 0.00 },
-                            riepilogo_personale: { totale_quote_dovute: 0, totale_versato: 0, saldo_in_corso: 0, stato: 'In regola con i versamenti' },
-                            scadenze: []
-                        },
-                        aggregato_cassa_stabile: {
-                            totale_gestione_preventivata: 0,
-                            totale_riscosso_fabbricato: 0,
-                            residui_attivi_gestione: 0,
-                            percentuale_avanzamento: 100,
-                            formula_informativa: 'In attesa di assegnazione quote.'
-                        }
-                    });
-                }
-
                 let targetCondoId = condoId;
                 let condoInfo = null;
                 if (targetCondoId) {
@@ -5405,6 +5114,7 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     if (cRows && cRows.length > 0) condoInfo = cRows[0];
                 }
 
+                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore';
                 condominoProfile = {
                     condominio_id: condoInfo ? condoInfo.id : (condoId || 1),
                     condominio_nome: condoInfo ? condoInfo.nome : 'Condominio',
@@ -5413,9 +5123,9 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     condomino_id: userId,
                     condomino_nome: req.user.nome || 'Utente',
                     condomino_email: req.user.email || '',
-                    interno: 'Studio Amministrazione',
+                    interno: isAdminUser ? 'Studio Amministrazione' : 'Unità Condominiale',
                     millesimi: 0.00,
-                    is_admin_view: true
+                    is_admin_view: isAdminUser
                 };
             }
 
@@ -5473,14 +5183,14 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 }
             }
 
-            // Calcolo totali personali con Decimal.js (Zero rounding drift)
-            let totaleQuoteDovute = new Decimal(0);
-            let totaleVersatoPersonale = new Decimal(0);
+            // Calcolo totali personali
+            let totaleQuoteDovute = 0;
+            let totaleVersatoPersonale = 0;
             (personalScadenze || []).forEach(item => {
-                totaleQuoteDovute = totaleQuoteDovute.plus(new Decimal(item.quota_dovuta || 0));
-                totaleVersatoPersonale = totaleVersatoPersonale.plus(new Decimal(item.importo_versato || 0));
+                totaleQuoteDovute += parseFloat(item.quota_dovuta || 0);
+                totaleVersatoPersonale += parseFloat(item.importo_versato || 0);
             });
-            const residuoPersonaleComplessivo = Decimal.max(0, totaleQuoteDovute.minus(totaleVersatoPersonale)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+            const residuoPersonaleComplessivo = Math.max(0, parseFloat((totaleQuoteDovute - totaleVersatoPersonale).toFixed(2)));
 
             let statoLabel = 'In regola con i versamenti';
             if (condominoProfile.is_admin_view) {
@@ -5503,11 +5213,11 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 WHERE s.condominio_id = ?
             `, [activeCondoId, activeCondoId]);
 
-            let totalePreventivato = new Decimal((globalStats && globalStats[0] && globalStats[0].totale_gestione_preventivata) || 0);
-            let totaleRiscosso = new Decimal((globalStats && globalStats[0] && globalStats[0].totale_riscosso_fabbricato) || 0);
+            let totalePreventivato = parseFloat((globalStats && globalStats[0] && globalStats[0].totale_gestione_preventivata) || 0);
+            let totaleRiscosso = parseFloat((globalStats && globalStats[0] && globalStats[0].totale_riscosso_fabbricato) || 0);
 
             // Fallback aggregato su tabella quotes se spese_scadenze non ha ancora importi
-            if (totalePreventivato.lte(0)) {
+            if (totalePreventivato === 0) {
                 const [quotesStats] = await connection.query(`
                     SELECT 
                         COALESCE(SUM(amount), 0.00) AS totale_preventivato,
@@ -5516,14 +5226,14 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     WHERE condominio_id = ?
                 `, [activeCondoId]);
                 if (quotesStats && quotesStats.length > 0) {
-                    totalePreventivato = new Decimal(quotesStats[0].totale_preventivato || 0);
-                    totaleRiscosso = new Decimal(quotesStats[0].totale_riscosso || 0);
+                    totalePreventivato = parseFloat(quotesStats[0].totale_preventivato || 0);
+                    totaleRiscosso = parseFloat(quotesStats[0].totale_riscosso || 0);
                 }
             }
 
-            const residuiAttiviGestione = Decimal.max(0, totalePreventivato.minus(totaleRiscosso)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
-            const percentualeAvanzamento = totalePreventivato.gt(0)
-                ? Decimal.min(100, totaleRiscosso.dividedBy(totalePreventivato).times(100)).round().toNumber()
+            const residuiAttiviGestione = Math.max(0, parseFloat((totalePreventivato - totaleRiscosso).toFixed(2)));
+            const percentualeAvanzamento = totalePreventivato > 0 
+                ? Math.min(100, Math.round((totaleRiscosso / totalePreventivato) * 100))
                 : 100;
 
             // Storico pagamenti del singolo condomino con codice ricevuta (per download PDF)
@@ -5588,8 +5298,8 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 },
                 // Dati aggregati a livello di fabbricato (GDPR Compliant - Nessun dato nominativo di terzi)
                 aggregato_cassa_stabile: {
-                    totale_gestione_preventivata: totalePreventivato.toNumber(),
-                    totale_riscosso_fabbricato: totaleRiscosso.toNumber(),
+                    totale_gestione_preventivata: totalePreventivato,
+                    totale_riscosso_fabbricato: totaleRiscosso,
                     residui_attivi_gestione: residuiAttiviGestione,
                     percentuale_avanzamento: percentualeAvanzamento,
                     formula_informativa: 'Valore matematico complessivo delle quote di gestione deliberate in fase di riscossione.'
@@ -5605,7 +5315,7 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINT GENERAZIONE RICEVUTA PDF (FAST IN-MEMORY PDFKIT ENGINE)
+// ENDPOINT GENERAZIONE RICEVUTA PDF CON PUPPETEER
 // ==========================================
 app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) => {
     const condominoId = req.user.id;
@@ -5616,19 +5326,17 @@ app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) 
         if (db.pool && typeof db.pool.promise === 'function') {
             connection = await db.getConnection();
 
-            const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin;
-            // Sicurezza: Recupera la ricevuta accertandosi che appartenga al condomino richiedente, all'amministratore dello stabile o al superuser
+            const isPrivileged = req.user.ruolo === 'superuser' || req.user.is_superadmin || req.user.ruolo === 'amministratore';
+            // Sicurezza: Recupera la ricevuta accertandosi che appartenga al condomino richiedente o ad utente autorizzato
             const [dati] = await connection.query(
                 `SELECT p.importo_versato, DATE_FORMAT(p.data_pagamento, '%d/%m/%Y %H:%i') AS data_ora, p.ricevuta_codice,
-                        s.titolo AS spesa_titolo, u.nome, COALESCE(u.cognome, '') AS cognome, c.nome AS condominio_nome, c.indirizzo AS condominio_via,
-                        COALESCE(c.codice_fiscale, '') AS condominio_cf, cc.interno
+                        s.titolo AS spesa_titolo, u.nome, COALESCE(u.cognome, '') AS cognome, c.nome AS condominio_nome, c.indirizzo AS condominio_via
                  FROM pagamenti_condomini p
                  JOIN spese_scadenze s ON p.spesa_id = s.id
                  JOIN users u ON p.condomino_id = u.id
                  JOIN condomini c ON s.condominio_id = c.id
-                 LEFT JOIN condomino_condominio cc ON cc.condomino_id = u.id AND cc.condominio_id = c.id
-                 WHERE (p.condomino_id = ? OR ? = 1 OR c.amministratore_id = ?) AND p.ricevuta_codice = ?`,
-                [condominoId, isSuper ? 1 : 0, condominoId, ricevuta_codice]
+                 WHERE (p.condomino_id = ? OR ?) AND p.ricevuta_codice = ?`,
+                [condominoId, isPrivileged ? 1 : 0, ricevuta_codice]
             );
 
             if (!dati || dati.length === 0) {
@@ -5637,19 +5345,70 @@ app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) 
 
             const r = dati[0];
 
-            // Generazione PDF ultra-veloce in memoria tramite PDFKit (Zero Chromium, Zero OOM)
-            const pdfBuffer = await pdfReceiptService.generateReceiptBuffer({
-                ricevuta_codice: r.ricevuta_codice,
-                condominio_nome: r.condominio_nome,
-                condominio_via: r.condominio_via,
-                condominio_cf: r.condominio_cf,
-                nome_condomino: `${r.nome || ''} ${r.cognome || ''}`.trim(),
-                unita_label: r.interno || 'Unità Condominiale',
-                data_ora: r.data_ora,
-                spesa_titolo: r.spesa_titolo,
-                importo_versato: r.importo_versato,
-                metodo_pagamento: 'Bonifico / Telematico'
-            });
+            // Struttura HTML del PDF
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Ricevuta ${r.ricevuta_codice}</title>
+                    <style>
+                        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px; margin: 0; }
+                        .header { border-bottom: 2px solid #4f46e5; padding-bottom: 20px; margin-bottom: 30px; }
+                        .title { font-size: 24px; font-weight: bold; color: #1e1b4b; }
+                        .details { margin-bottom: 40px; font-size: 14px; line-height: 1.6; }
+                        .table-Ricevuta { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        .table-Ricevuta th { background-color: #f3f4f6; text-align: left; padding: 12px; font-size: 14px; }
+                        .table-Ricevuta td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+                        .total-box { margin-top: 30px; text-align: right; font-size: 18px; font-weight: bold; color: #4f46e5; }
+                        .footer { margin-top: 60px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div class="title">RICEVUTA DI PAGAMENTO TELEMATICO</div>
+                        <div style="font-size: 12px; color: #6b7280; margin-top: 5px;">Documento generato automaticamente dalla piattaforma</div>
+                    </div>
+                    <div class="details">
+                        <strong>Condominio:</strong> ${r.condominio_nome}<br>
+                        <strong>Ubicazione:</strong> ${r.condominio_via}<br><br>
+                        <strong>Intestatario Unità:</strong> ${r.nome} ${r.cognome}<br>
+                        <strong>Data/Ora Transazione:</strong> ${r.data_ora}
+                    </div>
+                    <table class="table-Ricevuta">
+                        <thead>
+                            <tr>
+                                <th>Descrizione Causale</th>
+                                <th>Identificativo Ricevuta</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>${r.spesa_titolo}</td>
+                                <td><code>${r.ricevuta_codice}</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="total-box">
+                        Importo Corrisposto: € ${parseFloat(r.importo_versato).toFixed(2)}
+                    </div>
+                    <div class="footer">
+                        Il presente documento attesta l'avvenuto incasso del rateo indicato nella cassa comune del condominio.<br>
+                        Ai sensi del GDPR, i dati sensibili degli altri residenti sono protetti.
+                    </div>
+                </body>
+                </html>
+            `;
+
+            // Avvia Puppeteer con getPuppeteerLaunchOptions
+            const launchOpts = typeof getPuppeteerLaunchOptions === 'function'
+                ? getPuppeteerLaunchOptions()
+                : { headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+            const browser = await puppeteer.launch(launchOpts);
+            const page = await browser.newPage();
+            await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+            const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+            await browser.close();
 
             // Invia il file binario direttamente al browser per il download
             res.contentType("application/pdf");
@@ -5660,7 +5419,7 @@ app.get('/api/condomino/ricevuta/:ricevuta_codice', verifyJWT, async (req, res) 
         }
     } catch (error) {
         console.error('Errore generazione PDF:', error);
-        return res.status(500).json({ success: false, error: 'Errore durante la generazione del file PDF: ' + error.message });
+        return res.status(500).json({ success: false, error: 'Errore durante la generazione del file PDF.' });
     } finally {
         if (connection) connection.release();
     }
@@ -5690,97 +5449,19 @@ app.post('/api/amministratore/registra-pagamento', verifyJWT, checkAmministrator
     if (!condomino_id || !spesa_id || !importo_versato) {
         return res.status(400).json({ success: false, error: 'Tutti i campi sono obbligatori.' });
     }
-
-    let payingDec;
-    try {
-        payingDec = new Decimal(importo_versato).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        if (payingDec.lte(0)) {
-            return res.status(400).json({ success: false, error: 'L\'importo versato deve essere maggiore di zero.' });
-        }
-    } catch (_) {
-        return res.status(400).json({ success: false, error: 'Importo non valido.' });
-    }
-
     if (!ricevuta_codice) {
         ricevuta_codice = 'REC-' + new Date().getFullYear() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
     }
-
-    const pDate = data_pagamento || new Date().toISOString().slice(0, 10);
-    const isSuper = req.user.ruolo === 'superuser' || req.user.is_superadmin;
-    const adminId = req.user.id;
-
-    let conn;
     try {
-        conn = await db.getConnection();
-        await conn.beginTransaction();
-
-        // 1. Recupera spesa con lock e verifica autorizzazione amministratore (Tenant Boundary)
-        const [spese] = await conn.query(
-            `SELECT s.*, c.amministratore_id, c.nome as condominio_nome
-             FROM spese_scadenze s
-             JOIN condomini c ON s.condominio_id = c.id
-             WHERE s.id = ? FOR UPDATE`,
-            [spesa_id]
-        );
-        const spesa = spese && spese[0];
-        if (!spesa) {
-            await conn.rollback();
-            conn.release();
-            return res.status(404).json({ success: false, error: 'Spesa/Scadenza non trovata.' });
+        if (db.pool && typeof db.pool.promise === 'function') {
+            const [result] = await db.pool.promise().query(
+                'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento, ricevuta_codice) VALUES (?, ?, ?, ?, ?)',
+                [condomino_id, spesa_id, parseFloat(importo_versato), data_pagamento || new Date().toISOString().slice(0, 10), ricevuta_codice]
+            );
+            return res.status(201).json({ success: true, message: 'Pagamento registrato con successo.', pagamentoId: result.insertId, ricevuta_codice });
         }
-
-        if (!isSuper && spesa.amministratore_id !== adminId) {
-            await conn.rollback();
-            conn.release();
-            return res.status(403).json({ success: false, error: 'Non sei autorizzato a registrare pagamenti per questo stabile.' });
-        }
-
-        // 2. Verifica che il condòmino appartenga allo stabile
-        const [condoUsers] = await conn.query(
-            `SELECT u.id, u.nome, COALESCE(u.cognome, '') as cognome, cc.millesimi
-             FROM users u
-             LEFT JOIN condomino_condominio cc ON u.id = cc.condomino_id AND cc.condominio_id = ?
-             WHERE u.id = ? FOR UPDATE`,
-            [spesa.condominio_id, condomino_id]
-        );
-        const condomino = condoUsers && condoUsers[0];
-        if (!condomino) {
-            await conn.rollback();
-            conn.release();
-            return res.status(404).json({ success: false, error: 'Condòmino non trovato nello stabile.' });
-        }
-
-        // 3. Registrazione pagamento in pagamenti_condomini
-        const [result] = await conn.query(
-            'INSERT INTO pagamenti_condomini (condomino_id, spesa_id, importo_versato, data_pagamento, ricevuta_codice) VALUES (?, ?, ?, ?, ?)',
-            [condomino_id, spesa_id, payingDec.toFixed(2), pDate, ricevuta_codice]
-        );
-
-        // 4. Registrazione sincronizzata nel Libro Giornale (dare = incasso cassa)
-        const descGiornale = `Incasso Quota: ${spesa.titolo} (${ricevuta_codice})`;
-        const nominativo = `${condomino.cognome} ${condomino.nome}`.trim() || 'Condòmino';
-        await conn.query(
-            'INSERT INTO journal_entries (condominio_id, data, numero, tipo, descrizione, dare, avere, conto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [spesa.condominio_id, pDate, ricevuta_codice, 'Incasso Spesa', descGiornale, payingDec.toFixed(2), 0, nominativo]
-        ).catch(() => {});
-
-        await conn.commit();
-        conn.release();
-
-        logAudit(adminId, spesa.condominio_id, `Registrato Pagamento Spesa (€ ${payingDec.toFixed(2)} - ${ricevuta_codice})`, 'pagamenti_condomini', result.insertId, null, req.ip);
-
-        return res.status(201).json({
-            success: true,
-            message: 'Pagamento registrato con successo e sincronizzato a Libro Giornale.',
-            pagamentoId: result.insertId,
-            ricevuta_codice
-        });
     } catch (e) {
-        if (conn) {
-            try { await conn.rollback(); } catch (_) {}
-            try { conn.release(); } catch (_) {}
-        }
-        return res.status(500).json({ success: false, error: 'Errore registrazione pagamento: ' + e.message });
+        return res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -6321,16 +6002,7 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
         if (err || !doc) {
             return res.status(404).json({ success: false, message: 'Documento non trovato.' });
         }
-        async function sendDocResponse() {
-            let fileContent = doc.file_data || '';
-            if (doc.file_key) {
-                if (storageService.isS3Configured()) {
-                    const presigned = await storageService.getDownloadUrl(doc.file_key, doc.file_name, 120);
-                    if (presigned) fileContent = presigned;
-                } else {
-                    fileContent = `/api/documents/${doc.id}/raw`;
-                }
-            }
+        if (isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id)) {
             return res.json({
                 success: true,
                 data: {
@@ -6339,13 +6011,9 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
                     file_name: doc.file_name,
                     file_mime: doc.file_mime,
                     file_size: doc.file_size,
-                    file_data: fileContent
+                    file_data: doc.file_data
                 }
             });
-        }
-
-        if (isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id)) {
-            return sendDocResponse();
         }
         // Verifica corrispondenza tramite anagrafica_persone per i condòmini
         db.get('SELECT id, nome, email FROM users WHERE id = ?', [req.user.id], (errU, userRow) => {
@@ -6363,7 +6031,17 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
                     (doc.recipient_persona_id && matchedPersonaIds.includes(Number(doc.recipient_persona_id))) ||
                     (doc.sender_persona_id && matchedPersonaIds.includes(Number(doc.sender_persona_id)))
                 ) {
-                    return sendDocResponse();
+                    return res.json({
+                        success: true,
+                        data: {
+                            id: doc.id,
+                            title: doc.title,
+                            file_name: doc.file_name,
+                            file_mime: doc.file_mime,
+                            file_size: doc.file_size,
+                            file_data: doc.file_data
+                        }
+                    });
                 }
                 return res.status(403).json({ success: false, message: 'Non sei autorizzato a visualizzare questo documento riservato.' });
             });
@@ -6371,70 +6049,8 @@ app.get('/api/documents/:id/file', authenticateToken, requireCondominio, (req, r
     });
 });
 
-// Stream binario protetto di un singolo documento (con RBAC e Content-Disposition)
-app.get('/api/documents/:id/raw', authenticateToken, requireCondominio, async (req, res) => {
-    const docId = parseInt(req.params.id, 10);
-    const condoId = req.condominio_id;
-    const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
-
-    db.get('SELECT * FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], async (err, doc) => {
-        if (err || !doc) return res.status(404).send('Documento non trovato.');
-
-        let isAuthorized = isAdminUser || doc.recipient_type === 'all' || Number(doc.sender_user_id) === Number(req.user.id) || Number(doc.recipient_user_id) === Number(req.user.id);
-        if (!isAuthorized) {
-            const checkP = await new Promise(r => {
-                db.get('SELECT id, nome, email FROM users WHERE id = ?', [req.user.id], (errU, userRow) => {
-                    const userEmail = (userRow && userRow.email) ? userRow.email.trim().toLowerCase() : '';
-                    const userName = (userRow && userRow.nome) ? userRow.nome.trim().toLowerCase() : '';
-                    db.all('SELECT id, nome, cognome, email FROM anagrafica_persone WHERE condominio_id = ?', [condoId], (errP, persone) => {
-                        const matched = (persone || []).filter(p => {
-                            const pEmail = (p.email || '').trim().toLowerCase();
-                            const full1 = `${p.cognome || ''} ${p.nome || ''}`.trim().toLowerCase();
-                            const full2 = `${p.nome || ''} ${p.cognome || ''}`.trim().toLowerCase();
-                            return (userEmail && pEmail && userEmail === pEmail) || (userName && (userName === full1 || userName === full2));
-                        }).map(p => Number(p.id));
-                        r((doc.recipient_persona_id && matched.includes(Number(doc.recipient_persona_id))) || (doc.sender_persona_id && matched.includes(Number(doc.sender_persona_id))));
-                    });
-                });
-            });
-            isAuthorized = !!checkP;
-        }
-
-        if (!isAuthorized) {
-            return res.status(403).send('Accesso negato.');
-        }
-
-        // Se su S3, redirect a URL presigned
-        if (doc.file_key && storageService.isS3Configured()) {
-            const presigned = await storageService.getDownloadUrl(doc.file_key, doc.file_name, 120);
-            if (presigned) return res.redirect(presigned);
-        }
-
-        // Se salvato su storage locale protetto
-        if (doc.file_key) {
-            const buffer = await storageService.getLocalFileBuffer(doc.file_key);
-            if (buffer) {
-                res.setHeader('Content-Type', doc.file_mime || 'application/octet-stream');
-                res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.file_name || 'documento.pdf')}"`);
-                return res.send(buffer);
-            }
-        }
-
-        // Fallback su legacy base64
-        if (doc.file_data && doc.file_data.includes('base64,')) {
-            const rawBase64 = doc.file_data.split('base64,')[1];
-            const buffer = Buffer.from(rawBase64, 'base64');
-            res.setHeader('Content-Type', doc.file_mime || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.file_name || 'documento.pdf')}"`);
-            return res.send(buffer);
-        }
-
-        return res.status(404).send('Contenuto documento non disponibile.');
-    });
-});
-
 // Carica e Invia un nuovo Documento / Allegato (Bidirezionale: Admin -> Tutti/Singolo Condòmino, oppure Condòmino -> Admin)
-app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicenseWrite, async (req, res) => {
+app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicenseWrite, (req, res) => {
     const condoId = req.condominio_id;
     const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
     const {
@@ -6464,30 +6080,6 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
     const cleanFileMime = file_mime ? String(file_mime).trim() : 'application/octet-stream';
     const cleanFileSize = parseInt(file_size, 10) || 0;
 
-    let storageKey = null;
-    let storageType = 'inline';
-    let filePayload = file_data;
-
-    if (file_data && typeof file_data === 'string' && file_data.includes('base64,')) {
-        try {
-            const rawBase64 = file_data.split('base64,')[1];
-            const buffer = Buffer.from(rawBase64, 'base64');
-            const saved = await storageService.upload({
-                condominioId: condoId,
-                filename: cleanFileName,
-                mimeType: cleanFileMime,
-                buffer
-            });
-            storageKey = saved.key;
-            storageType = saved.storageType;
-            if (saved.storageType === 's3') {
-                filePayload = null; // Su S3 non memorizziamo mega stringhe base64 su database
-            }
-        } catch (sErr) {
-            console.warn('⚠️ [StorageService] Avviso upload documento:', sErr.message);
-        }
-    }
-
     // Caso 1: Caricamento da parte dell'Amministratore (o quando l'Admin registra un allegato ricevuto da un condòmino)
     const effectiveDirection = (isAdminUser && req.body.direction === 'from_condomino') ? 'condomino_to_admin' : (isAdminUser ? 'admin_to_condomini' : 'condomino_to_admin');
 
@@ -6497,9 +6089,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
         if (recType === 'all') {
             db.run(`
                 INSERT INTO condo_documents
-                (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
-                VALUES (?, ?, 'admin', 'Studio Amministratore', 'all', 'Tutti i Condòmini (Bacheca Pubblica)', 'Intero Fabbricato', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pubblicato')
-            `, [condoId, req.user.id, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
+                (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                VALUES (?, ?, 'admin', 'Studio Amministratore', 'all', 'Tutti i Condòmini (Bacheca Pubblica)', 'Intero Fabbricato', ?, ?, ?, ?, ?, ?, ?, 'Pubblicato')
+            `, [condoId, req.user.id, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
                 if (errIns) return res.status(500).json({ success: false, message: 'Errore salvataggio documento: ' + errIns.message });
                 const newDocId = this.lastID;
                 logAudit(req.user.id, condoId, `Pubblica Documento in Bacheca: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
@@ -6532,9 +6124,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                 db.run(`
                     INSERT INTO condo_documents
-                    (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
-                    VALUES (?, ?, 'admin', 'Studio Amministratore', 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
-                `, [condoId, req.user.id, persona.id, recName, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
+                    (condominio_id, sender_user_id, sender_role, sender_name, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                    VALUES (?, ?, 'admin', 'Studio Amministratore', 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
+                `, [condoId, req.user.id, persona.id, recName, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
                     if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
                     const newDocId = this.lastID;
                     logAudit(req.user.id, condoId, `Invia Documento a ${recName}: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
@@ -6565,9 +6157,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                 db.run(`
                     INSERT INTO condo_documents
-                    (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
-                    VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
-                `, [condoId, req.user.id, sName, persona ? persona.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
+                    (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                    VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                `, [condoId, req.user.id, sName, persona ? persona.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
                     if (errIns) return res.status(500).json({ success: false, message: 'Errore caricamento documento: ' + errIns.message });
                     return res.json({
                         success: true,
@@ -6612,9 +6204,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                         db.run(`
                             INSERT INTO condo_documents
-                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
-                            VALUES (?, ?, 'condomino', ?, ?, 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
-                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, targetPeer ? targetPeer.id : null, recName, recUnitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
+                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_persona_id, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                            VALUES (?, ?, 'condomino', ?, ?, 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inviato')
+                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, targetPeer ? targetPeer.id : null, recName, recUnitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
                             if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento al condòmino: ' + errIns.message });
                             const newDocId = this.lastID;
                             logAudit(req.user.id, condoId, `Condòmino ${sName} invia allegato a condòmino ${recName}: "${cleanTitle}"`, 'condo_documents', newDocId, null, req.ip);
@@ -6634,9 +6226,9 @@ app.post('/api/documents', authenticateToken, requireCondominio, checkCondoLicen
 
                         db.run(`
                             INSERT INTO condo_documents
-                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, file_key, storage_type, status)
-                            VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
-                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, filePayload, storageKey, storageType], function(errIns) {
+                            (condominio_id, sender_user_id, sender_role, sender_name, sender_persona_id, recipient_type, recipient_name, unita_label, category, title, notes, file_name, file_mime, file_size, file_data, status)
+                            VALUES (?, ?, 'condomino', ?, ?, 'admin', 'Studio Amministratore', ?, ?, ?, ?, ?, ?, ?, ?, 'Da visionare')
+                        `, [condoId, req.user.id, sName, matchedP ? matchedP.id : null, unitaLabel, cleanCategory, cleanTitle, cleanNotes, cleanFileName, cleanFileMime, cleanFileSize, file_data], function(errIns) {
                             if (errIns) return res.status(500).json({ success: false, message: 'Errore invio documento: ' + errIns.message });
                             const newDocId = this.lastID;
                             logAudit(req.user.id, condoId, `Condòmino ${sName} invia documento allo Studio: "${cleanTitle}" (${cleanFileName})`, 'condo_documents', newDocId, null, req.ip);
@@ -6673,16 +6265,13 @@ app.delete('/api/documents/:id', authenticateToken, requireCondominio, checkCond
     const condoId = req.condominio_id;
     const isAdminUser = (req.user.is_superadmin || req.role_in_condominio === 'admin');
 
-    db.get('SELECT id, title, sender_user_id, status, file_key FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], (err, doc) => {
+    db.get('SELECT id, title, sender_user_id, status FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], (err, doc) => {
         if (err || !doc) return res.status(404).json({ success: false, message: 'Documento non trovato.' });
         if (!isAdminUser && (Number(doc.sender_user_id) !== Number(req.user.id) || doc.status !== 'Da visionare')) {
             return res.status(403).json({ success: false, message: 'Non hai i permessi per eliminare questo documento.' });
         }
         db.run('DELETE FROM condo_documents WHERE id = ? AND condominio_id = ?', [docId, condoId], function(errDel) {
             if (errDel) return res.status(500).json({ success: false, message: 'Errore eliminazione documento: ' + errDel.message });
-            if (doc.file_key) {
-                storageService.delete(doc.file_key).catch(() => {});
-            }
             logAudit(req.user.id, condoId, `Elimina Documento: "${doc.title}"`, 'condo_documents', docId, null, req.ip);
             return res.json({ success: true, message: 'Documento eliminato con successo.' });
         });
@@ -6964,7 +6553,7 @@ app.use('/api', (req, res) => {
 
 // Fallback Frontend SPA
 app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads') && req.path !== '/healthz') {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
         return res.sendFile(path.join(__dirname, 'public', 'index.html'));
     }
     next();
@@ -6983,54 +6572,172 @@ app.use((err, req, res, next) => {
 
 
 
-const server = app.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`====================================================`);
-    console.log(`🏢 MULTI-TENANT CONDO ONLINE (SaaS) - PRODUCTION CLOUD READY`);
+    console.log(`🏢 MULTI-TENANT CONDO ONLINE (SaaS) - STEP 1 & 2`);
     console.log(`🚀 Server in ascolto su: http://localhost:${PORT}`);
     console.log(`====================================================`);
 });
 
-// ============================================================================
-// STATELESS GRACEFUL SHUTDOWN (SIGTERM / SIGINT)
-// ============================================================================
-let isShuttingDown = false;
+module.exports = app;
 
-function gracefulShutdown(signal) {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
-    console.log(`🛑 [Shutdown] Ricevuto segnale ${signal}. Avvio procedura di chiusura controllata...`);
 
-    // Timeout di sicurezza forzato (15 secondi)
-    const forceExitTimer = setTimeout(() => {
-        console.error('⚠️ [Shutdown] Timeout superato (15s), forzatura terminazione processo.');
-        process.exit(1);
-    }, 15000);
-    forceExitTimer.unref();
+async function selfHealCondoData() {
+    if (db.type !== 'mysql') return;
+    let conn;
+    try {
+        conn = await db.getConnection();
 
-    server.close((err) => {
-        if (err) {
-            console.error('❌ [Shutdown] Errore durante la chiusura del server HTTP:', err);
-        } else {
-            console.log('✅ [Shutdown] Server HTTP chiuso. Nessuna nuova richiesta accettata.');
-        }
+        // 1. Assicura che condominios abbia Condominio Ma.Ca. con ID 1
+        await conn.query(`
+            INSERT INTO condominios (id, nome, indirizzo, cf, scala)
+            VALUES (1, 'Condominio Ma.Ca.', 'Via Vittorio Alfieri, 4 - 81020 San Nicola la Strada (Ce)', '9304301615', 'Scale A e B')
+            ON DUPLICATE KEY UPDATE nome = VALUES(nome), indirizzo = VALUES(indirizzo), cf = VALUES(cf), scala = VALUES(scala)
+        `).catch(() => {});
 
-        // Chiusura connessione database
-        try {
-            if (db && typeof db.close === 'function') {
-                db.close(() => {
-                    console.log('✅ [Shutdown] Pool database chiuso correttamente.');
-                    process.exit(0);
-                });
-                return;
+        // 2. Assicura associazione per Studio Rossi (admin) su Condominio Ma.Ca.
+        await conn.query(`
+            INSERT INTO user_condominios (user_id, condominio_id, role, unita)
+            SELECT u.id, 1, 'admin', 'Ufficio'
+            FROM users u WHERE LOWER(u.email) = 'admin@condominio.it'
+            ON DUPLICATE KEY UPDATE role = 'admin'
+        `).catch(() => {});
+
+        // 3. Assicura che tutti i condòmini registrati siano in anagrafica_persone
+        const [condoUsers] = await conn.query(`
+            SELECT u.id as user_id, u.nome, u.email, u.telefono, uc.condominio_id, uc.unita, uc.role
+            FROM users u
+            JOIN user_condominios uc ON u.id = uc.user_id
+            WHERE uc.condominio_id = 1 OR uc.role = 'condomino'
+        `).catch(() => [[]]);
+
+        for (const u of (condoUsers || [])) {
+            if (u.role === 'admin' || !u.nome) continue;
+            let nome = u.nome.trim();
+            let cognome = '';
+            const sp = nome.split(/\s+/);
+            if (sp.length > 1) {
+                nome = sp[0];
+                cognome = sp.slice(1).join(' ');
             }
-        } catch (dbErr) {
-            console.warn('⚠️ [Shutdown] Avviso chiusura DB:', dbErr.message);
+
+            const [pRows] = await conn.query(`
+                SELECT id FROM anagrafica_persone
+                WHERE condominio_id = ? AND (
+                    (email IS NOT NULL AND email != '' AND LOWER(email) = LOWER(?))
+                    OR (LOWER(nome) = LOWER(?) AND LOWER(cognome) = LOWER(?))
+                )
+            `, [u.condominio_id, u.email || '', nome, cognome]).catch(() => [[]]);
+
+            let personaId;
+            if (!pRows || pRows.length === 0) {
+                const [pIns] = await conn.query(`
+                    INSERT INTO anagrafica_persone 
+                    (condominio_id, nome, cognome, email, cellulare, ruolo_default, created_at)
+                    VALUES (?, ?, ?, ?, ?, 'Proprietario', NOW())
+                `, [u.condominio_id, nome, cognome, u.email || '', u.telefono || '']).catch(() => [{}]);
+                personaId = pIns ? pIns.insertId : null;
+            } else {
+                personaId = pRows[0].id;
+                if (u.email) {
+                    await conn.query(`UPDATE anagrafica_persone SET email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?`, [u.email, personaId]).catch(() => {});
+                }
+            }
+
+            if (!personaId) continue;
+
+            const unitaLabel = u.unita || 'Int. 1';
+            let scala = null, piano = null, interno = null;
+            const mSc = unitaLabel.match(/Scala\s+([A-Za-z0-9]+)/i);
+            if (mSc) scala = mSc[1];
+            const mPi = unitaLabel.match(/Piano\s+([A-Za-z0-9°]+)/i);
+            if (mPi) piano = mPi[1];
+            const mIn = unitaLabel.match(/Int\.?\s*([A-Za-z0-9]+)/i);
+            if (mIn) interno = mIn[1];
+            else interno = unitaLabel;
+
+            const [uRows] = await conn.query(`
+                SELECT id FROM unita_immobiliari 
+                WHERE condominio_id = ? AND (proprietario_id = ? OR user_id = ?)
+            `, [u.condominio_id, personaId, u.user_id]).catch(() => [[]]);
+
+            let unitaId;
+            if (!uRows || uRows.length === 0) {
+                const [uIns] = await conn.query(`
+                    INSERT INTO unita_immobiliari
+                    (condominio_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, created_at)
+                    VALUES (?, ?, 'Appartamento', ?, ?, ?, ?, 100.00, 100.00, 100.00, ?, NOW())
+                `, [u.condominio_id, u.user_id, unitaLabel, scala, piano, interno, personaId]).catch(() => [{}]);
+                unitaId = uIns ? uIns.insertId : null;
+            } else {
+                unitaId = uRows[0].id;
+                await conn.query(`
+                    UPDATE unita_immobiliari 
+                    SET proprietario_id = COALESCE(proprietario_id, ?), user_id = COALESCE(user_id, ?)
+                    WHERE id = ?
+                `, [personaId, u.user_id, unitaId]).catch(() => {});
+            }
+
+            const [qRows] = await conn.query(`
+                SELECT id FROM quotes WHERE condominio_id = ? AND (persona_id = ? OR unita_id = ?)
+            `, [u.condominio_id, personaId, unitaId]).catch(() => [[]]);
+
+            if (!qRows || qRows.length === 0) {
+                await conn.query(`
+                    INSERT INTO quotes 
+                    (condominio_id, persona_id, unita_id, user_id, type, title, due_date, amount, paid_amount, status, created_at)
+                    VALUES (?, ?, ?, ?, 'ordinaria', 'RATA ORDINARIA GESTIONE', '2026-11-15', 75.00, 0.00, 'In sospeso', NOW())
+                `, [u.condominio_id, personaId, unitaId, u.user_id]).catch(() => {});
+            } else {
+                await conn.query(`
+                    UPDATE quotes 
+                    SET persona_id = COALESCE(persona_id, ?), unita_id = COALESCE(unita_id, ?)
+                    WHERE id = ?
+                `, [personaId, unitaId, qRows[0].id]).catch(() => {});
+            }
         }
-        process.exit(0);
-    });
+
+        const [supp] = await conn.query(`SELECT id FROM suppliers WHERE condominio_id = 1`).catch(() => [[]]);
+        if (!supp || supp.length === 0) {
+            await conn.query(`
+                INSERT INTO suppliers (condominio_id, name, piva, cf, address, created_at)
+                VALUES (1, 'La veloce tutto lind srl', '0158945221444', 'dddfrc85b62f839c', 'Via dei Matti, n° 0', NOW())
+            `).catch(() => {});
+            await conn.query(`
+                INSERT INTO supplier_payments (condominio_id, supplier_name, category, invoice_number, amount, paid_amount, due_date, status, created_at)
+                VALUES (1, 'La veloce tutto lind srl', 'Pulizia Scale', '1257', 250.00, 250.00, '2026-09-30', 'Pagato', NOW())
+            `).catch(() => {});
+        }
+
+        const [bank] = await conn.query(`SELECT id FROM bank_accounts WHERE condominio_id = 1`).catch(() => [[]]);
+        if (!bank || bank.length === 0) {
+            await conn.query(`
+                INSERT INTO bank_accounts (condominio_id, bank_name, iban, account_holder, created_at)
+                VALUES (1, 'Banca Intesa Sanpaolo', 'IT30000000123456789012345', 'Condominio Ma.Ca.', NOW())
+            `).catch(() => {});
+        }
+
+        await conn.query(`
+            UPDATE condominios SET
+                dati_bancari = COALESCE(NULLIF(dati_bancari, ''), 'Banca Intesa - IBAN: IT30000000123456789012345'),
+                admin_nome = COALESCE(NULLIF(admin_nome, ''), 'Tizio'),
+                admin_cognome = COALESCE(NULLIF(admin_cognome, ''), 'Caio'),
+                admin_titolo = COALESCE(NULLIF(admin_titolo, ''), 'Avv.'),
+                admin_telefono = COALESCE(NULLIF(admin_telefono, ''), '018890192456'),
+                admin_cellulare = COALESCE(NULLIF(admin_cellulare, ''), '3357985406'),
+                admin_emergenze = COALESCE(NULLIF(admin_emergenze, ''), '34879512689'),
+                admin_email = COALESCE(NULLIF(admin_email, ''), 'test@gmail.com'),
+                admin_pec = COALESCE(NULLIF(admin_pec, ''), 'test@pec.it')
+            WHERE id = 1
+        `).catch(() => {});
+
+        console.log('✅ [Self-Heal] Sincronizzazione automatica e ripristino dati Condominio Ma.Ca. completati.');
+    } catch (e) {
+        console.warn('⚠️ [Self-Heal] Errore:', e.message);
+    } finally {
+        if (conn) {
+            try { conn.release(); } catch (_) {}
+        }
+    }
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-module.exports = app;

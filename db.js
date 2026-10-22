@@ -34,34 +34,6 @@ if (DB_TYPE === 'sqlite') {
             else console.log('✅ Connesso al database SQLite');
         });
         db.type = 'sqlite';
-        db.getConnection = async () => {
-            return {
-                async beginTransaction() {
-                    return new Promise((res, rej) => db.run('BEGIN TRANSACTION', err => err ? rej(err) : res()));
-                },
-                async query(sql, params = []) {
-                    const isSelect = /^\s*SELECT/i.test(sql);
-                    return new Promise((res, rej) => {
-                        if (isSelect) {
-                            const clean = sql.replace(/\s+FOR\s+UPDATE/gi, '');
-                            db.all(clean, params, (err, rows) => err ? rej(err) : res([rows || []]));
-                        } else {
-                            db.run(sql, params, function(err) {
-                                if (err) return rej(err);
-                                res([{ insertId: this.lastID, affectedRows: this.changes }]);
-                            });
-                        }
-                    });
-                },
-                async commit() {
-                    return new Promise((res, rej) => db.run('COMMIT', err => err ? rej(err) : res()));
-                },
-                async rollback() {
-                    return new Promise((res, rej) => db.run('ROLLBACK', err => err ? rej(err) : res()));
-                },
-                release() {}
-            };
-        };
     } catch (e) {
         console.error('❌ Modulo sqlite3 non disponibile. Usa MySQL impostando DB_TYPE=mysql.');
         throw e;
