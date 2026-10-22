@@ -45,6 +45,12 @@
             header, footer, nav, aside { display: none !important; }
         }
     </style>
+    <style>
+        .admin-mode #section-condomino-posizione-individuale,
+        body[data-role="admin"] #section-condomino-posizione-individuale {
+            display: none !important;
+        }
+    </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
@@ -1384,7 +1390,7 @@
                 </div>
 
                 <!-- Sezione Dettaglio Personale del Condòmino -->
-                <div id="section-condomino-posizione-individuale" class="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-xl text-slate-100">
+                <div id="section-condomino-posizione-individuale" class="hidden bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-xl text-slate-100">
                     <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-6 pb-4 border-b border-white/10">
                         <div>
                             <h4 class="text-lg font-bold text-white flex items-center gap-2">
@@ -4470,7 +4476,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261022_v2"></script>
+    <script src="app_v4.js?v=20261022_v3"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

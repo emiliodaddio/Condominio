@@ -5114,7 +5114,8 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                     if (cRows && cRows.length > 0) condoInfo = cRows[0];
                 }
 
-                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore';
+                const isAdminUser = req.user.is_superadmin || req.user.ruolo === 'superuser' || req.user.ruolo === 'amministratore' || req.user.role === 'admin' || (condominoProfile && condominoProfile.role === 'admin');
+                if (condominoProfile && isAdminUser) condominoProfile.is_admin_view = true;
                 condominoProfile = {
                     condominio_id: condoInfo ? condoInfo.id : (condoId || 1),
                     condominio_nome: condoInfo ? condoInfo.nome : 'Condominio',

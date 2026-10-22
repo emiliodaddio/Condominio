@@ -178,6 +178,15 @@ function setupUIForRole() {
     
     // FISSA IL RUOLO NELLO STATE
     state.currentUser.role = isAdmin ? 'admin' : 'condomino';
+    if (isAdmin) {
+        document.body.classList.add('admin-mode');
+        document.body.setAttribute('data-role', 'admin');
+        const _secInd = document.getElementById('section-condomino-posizione-individuale');
+        if (_secInd) _secInd.classList.add('hidden');
+    } else {
+        document.body.classList.remove('admin-mode');
+        document.body.removeAttribute('data-role');
+    }
 
     if (currentCondo) {
         const headerCondoName = document.getElementById('header-condo-name');
@@ -8971,7 +8980,8 @@ function updateAdminPanelVisibility() {
     const user = window.state && window.state.currentUser;
     if (!user) return;
     const isSuper = user.is_superadmin || user.ruolo === 'superuser';
-    const isAdmin = isSuper || user.ruolo === 'amministratore' || (user.condomini && user.condomini.some(c => c.role === 'admin'));
+    const isAdmin = isSuper || user.role === 'admin' || user.ruolo === 'amministratore' || (user.condomini && user.condomini.some(c => c.role === 'admin'));
+    if (isAdmin) { document.body.classList.add('admin-mode'); document.body.setAttribute('data-role', 'admin'); }
     
     const bDesk = document.getElementById('btn-admin-desk');
     if (bDesk) {
@@ -9063,7 +9073,8 @@ window.loadCondominoFinanceDashboard = async function() {
         const pers = data.dati_personali || {};
         const user = window.state && window.state.currentUser;
         const isSuper = user && (user.is_superadmin || user.ruolo === 'superuser');
-        const isAdmin = user && (isSuper || user.ruolo === 'amministratore' || (user.condomini && user.condomini.some(c => c.role === 'admin')));
+        const isAdmin = user && (isSuper || user.role === 'admin' || user.ruolo === 'amministratore' || (user.condomini && user.condomini.some(c => c.role === 'admin')));
+        if (isAdmin || isSuper) { document.body.classList.add('admin-mode'); document.body.setAttribute('data-role', 'admin'); }
         const hasUnit = pers.unita_immobiliare && parseFloat(pers.unita_immobiliare.millesimi || 0) > 0 && pers.unita_immobiliare.interno !== 'Studio Amministrazione';
         if (elPosizioneIndividuale) {
             if ((isAdmin || isSuper || pers.is_admin_view) && !hasUnit) {
