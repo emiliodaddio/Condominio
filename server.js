@@ -1667,6 +1667,11 @@ function requireCondominio(req, res, next) {
         req.role_in_condominio = 'admin'; 
         return next();
     }
+    if (req.user.is_demo || req.user.id === 9999) {
+        req.condominio_id = req.headers['x-condominio-id'] || 1;
+        req.role_in_condominio = 'condomino';
+        return next();
+    }
     
     const cId = req.headers['x-condominio-id'];
     if (!cId) return res.status(400).json({ success: false, message: 'Condominio non selezionato' });
@@ -2082,80 +2087,12 @@ app.post('/api/auth/demo', (req, res) => {
         }
     ];
 
-    const jwtToken = jwt.sign(demoPayload, JWT_SECRET, { expiresIn: '2h' });
+    const jwtToken = jwt.sign(demoPayload, JWT_SECRET, { expiresIn: '4h' });
     return res.json({
         success: true,
         token: jwtToken,
         user: { ...demoPayload, condomini: demoCondos }
     });
-});
-
-app.get('/api/auth/condominios', (req, res) => {
-    db.all('SELECT id, nome, indirizzo, cf, scala FROM condominios ORDER BY nome ASC', [], (err, rows) => {
-        if (err) return res.status(500).json({ success: false, message: 'Errore recupero lista condomini' });
-        res.json({ success: true, data: rows || [] });
-    });
-});
-
-app.post('/api/auth/register', (req, res) => {
-    const { nome, email, password, telefono, condominio_id, unita } = req.body;
-
-    if (!nome || !email || !password) {
-        return res.status(400).json({ success: false, message: 'Nome, email e password sono obbligatori.' });
-    }
-
-    const trimmedEmail = email.trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-        return res.status(400).json({ success: false, message: 'Formato email non valido.' });
-    }
-
-    const pwdRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
-    if (!pwdRegex.test(password)) {
-        return res.status(400).json({ 
-            success: false, 
-            message: 'La password deve contenere almeno 8 caratteri, una maiuscola, un numero e un carattere speciale.' 
-        });
-    }
-
-    const hash = bcrypt.hashSync(password, 10);
-
-    db.run(
-        'INSERT INTO users (nome, email, password_hash, telefono) VALUES (?, ?, ?, ?)',
-        [nome.trim(), trimmedEmail, hash, telefono ? telefono.trim() : null],
-        function (err) {
-            if (err) {
-                const isDup = err.code === 'ER_DUP_ENTRY' ||
-                    (err.message && (err.message.includes('UNIQUE constraint failed') || err.message.includes('Duplicate entry')));
-                if (isDup) {
-                    return res.status(409).json({ success: false, message: 'Un account con questa email è già registrato.' });
-                }
-                return res.status(500).json({ success: false, message: 'Errore durante la registrazione sul database.' });
-            }
-
-            const newUserId = this.lastID;
-
-            // Se è stato selezionato un condominio, crea subito il collegamento
-            if (condominio_id) {
-                db.run(
-                    'INSERT INTO user_condominios (user_id, condominio_id, role, unita) VALUES (?, ?, ?, ?)',
-                    [newUserId, parseInt(condominio_id, 10), 'condomino', unita ? unita.trim() : 'Da assegnare'],
-                    (errCondo) => {
-                        if (errCondo) console.error('Errore associazione condominio in registrazione:', errCondo);
-                    }
-                );
-            }
-
-            logAudit(newUserId, condominio_id || null, 'Registrazione Portale', 'users', newUserId, null, req.ip);
-            db.run('INSERT INTO security_logs (user_id, action) VALUES (?, ?)', [newUserId, 'Registrazione completata sul portale']);
-
-            return res.json({ 
-                success: true, 
-                message: 'Registrazione completata con successo! Ora puoi accedere.',
-                userId: newUserId 
-            });
-        }
-    );
 });
 
 // ==========================================
@@ -2396,6 +2333,34 @@ function deliverActivationEmail(userId, email, nome, condoNome, req, res) {
 // RESTORED: /api/auth/me
 // ==========================================
 app.get('/api/auth/me', authenticateToken, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        const demoCondos = [
+            {
+                id: 1,
+                nome: 'Condominio Ma.Ca. (Demo)',
+                indirizzo: 'Via Vittorio Alfieri, 4 - San Nicola la Strada (CE)',
+                cf: '9304301615',
+                scala: 'Scale A e B',
+                role: 'condomino',
+                unita: 'Interno 3 - Piano 1'
+            }
+        ];
+        return res.json({
+            success: true,
+            user: {
+                id: 9999,
+                nome: 'Ospite Dimostrativo',
+                email: 'demo@condominiotrasparente.com',
+                is_superadmin: 0,
+                two_factor_enabled: 0,
+                privacy_accepted: 1,
+                role: 'condomino',
+                unita: 'Interno 3 - Piano 1',
+                condomini: demoCondos,
+                is_demo: true
+            }
+        });
+    }
     db.get('SELECT id, nome, email, is_superadmin, two_factor_enabled, privacy_accepted FROM users WHERE id = ?', [req.user.id], (err, user) => {
         if (!user) return res.status(404).json({ success: false });
         const fetchCondosQuery = user.is_superadmin
@@ -5180,6 +5145,56 @@ app.post('/api/superuser/crea-condominio', verifyJWT, checkSuperuser, async (req
 // DASHBOARD PRIVATA CONDOMINO & CARD RIEPILOGO FINANZIARIO RISERVATO
 // ============================================================================
 app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            datiPersonali: {
+                interno: 'Interno 3 - Piano 1',
+                millesimi: 65.50,
+                pagamenti: [
+                    { id: 101, titolo: 'Rata Ordinaria 1° Trimestre', importo_versato: 120.00, data: '15/01/2026', ricevuta_codice: 'REC-2026-DEMO01' },
+                    { id: 102, titolo: 'Fondo Manutenzione Ascensore', importo_versato: 55.00, data: '10/02/2026', ricevuta_codice: 'REC-2026-DEMO02' }
+                ]
+            },
+            cassaComune: {
+                residuiAttivi: 1450.00,
+                percentualeRiscossa: 89
+            },
+            dati_personali: {
+                is_admin_view: false,
+                condomino_id: 9999,
+                nome: 'Ospite Dimostrativo',
+                email: 'demo@condominiotrasparente.com',
+                condominio: {
+                    id: 1,
+                    nome: 'Condominio Ma.Ca. (Demo)',
+                    indirizzo: 'Via Vittorio Alfieri, 4 - San Nicola la Strada (CE)',
+                    codice_fiscale: '9304301615'
+                },
+                unita_immobiliare: {
+                    interno: 'Interno 3 - Piano 1',
+                    millesimi: 65.50
+                },
+                riepilogo_personale: {
+                    totale_quote_dovute: 295.00,
+                    totale_versato: 175.00,
+                    saldo_in_corso: 120.00,
+                    stato: 'Quote in corso di regolazione'
+                },
+                scadenze: [
+                    { spesa_id: 201, titolo: 'Rata Ordinaria 1° Trimestre', data_scadenza: '2026-01-31', quota_dovuta: 120.00, importo_versato: 120.00, residuo_individuale: 0.00, stato_contabile: 'Regolarizzato' },
+                    { spesa_id: 202, titolo: 'Fondo Manutenzione Ascensore', data_scadenza: '2026-02-28', quota_dovuta: 55.00, importo_versato: 55.00, residuo_individuale: 0.00, stato_contabile: 'Regolarizzato' },
+                    { spesa_id: 203, titolo: 'Rata Ordinaria 2° Trimestre', data_scadenza: '2026-04-30', quota_dovuta: 120.00, importo_versato: 0.00, residuo_individuale: 120.00, stato_contabile: 'In corso di riscossione' }
+                ]
+            },
+            aggregato_cassa_stabile: {
+                totale_gestione_preventivata: 15400.00,
+                totale_riscosso_fabbricato: 13950.00,
+                residui_attivi_gestione: 1450.00,
+                percentuale_avanzamento: 89
+            }
+        });
+    }
     const userId = req.user.id;
     let condoId = req.query.condominio_id || req.headers['x-condominio-id'];
 
@@ -6750,6 +6765,19 @@ async function selfHealCondoData() {
             SELECT u.id, 1, 'admin', 'Ufficio'
             FROM users u WHERE LOWER(u.email) = 'admin@condominio.it'
             ON DUPLICATE KEY UPDATE role = 'admin'
+        `).catch(() => {});
+
+        // 2b. Assicura esistenza utente Demo per la modalità dimostrativa
+        await conn.query(`
+            INSERT INTO users (id, nome, email, password_hash, is_superadmin, privacy_accepted)
+            VALUES (9999, 'Ospite Dimostrativo', 'demo@condominiotrasparente.com', '$2b$10$demoguestpasswordhashnotused1234567890123456789012', 0, 1)
+            ON DUPLICATE KEY UPDATE nome = VALUES(nome), privacy_accepted = 1
+        `).catch(() => {});
+
+        await conn.query(`
+            INSERT INTO user_condominios (user_id, condominio_id, role, unita)
+            VALUES (9999, 1, 'condomino', 'Interno 3 - Piano 1')
+            ON DUPLICATE KEY UPDATE role = 'condomino', unita = 'Interno 3 - Piano 1'
         `).catch(() => {});
 
         // 3. Assicura che tutti i condòmini registrati siano in anagrafica_persone

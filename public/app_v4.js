@@ -177,6 +177,16 @@ function setupUIForRole() {
     }
     
     // FISSA IL RUOLO NELLO STATE
+    if (user && user.is_demo) {
+        let demoBanner = document.getElementById('demo-mode-badge-banner');
+        if (!demoBanner) {
+            demoBanner = document.createElement('div');
+            demoBanner.id = 'demo-mode-badge-banner';
+            demoBanner.className = 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white text-xs font-bold py-2 px-4 text-center shadow-md flex items-center justify-center gap-2 relative z-50 sticky top-0';
+            demoBanner.innerHTML = '<i class="fa-solid fa-compass text-amber-300"></i> <span>Modalità Dimostrativa Attiva (Dati fittizi di prova - Sola Lettura)</span> <button onclick="logout()" class="ml-4 px-2.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-black transition cursor-pointer">Esci dalla Demo</button>';
+            document.body.prepend(demoBanner);
+        }
+    }
     state.currentUser.role = isAdmin ? 'admin' : 'condomino';
     if (isAdmin) {
         document.body.classList.add('admin-mode');
