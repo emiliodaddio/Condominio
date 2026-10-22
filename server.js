@@ -2068,7 +2068,7 @@ app.post('/api/auth/magic-link-verify', (req, res) => {
 app.post('/api/auth/demo', (req, res) => {
     const demoPayload = {
         id: 9999,
-        nome: 'Ospite Dimostrativo',
+        nome: 'Mario Rossi (Ospite Demo)',
         email: 'demo@condominiotrasparente.com',
         is_superadmin: 0,
         role: 'condomino',
@@ -2077,13 +2077,13 @@ app.post('/api/auth/demo', (req, res) => {
     };
     const demoCondos = [
         {
-            id: 1,
-            nome: 'Condominio Ma.Ca. (Demo)',
-            indirizzo: 'Via Vittorio Alfieri, 4 - San Nicola la Strada (CE)',
-            cf: '9304301615',
-            scala: 'Scale A e B',
+            id: 9999,
+            nome: 'Condominio Belvedere - Sole e Pini',
+            indirizzo: 'Via dei Giardini Fioriti, 12 - 00100 Roma (RM)',
+            cf: '90099887766',
+            scala: 'Scale A e B (Palazzina 1)',
             role: 'condomino',
-            unita: 'Interno 3 - Piano 1'
+            unita: 'Interno 4 - Piano 2'
         }
     ];
 
