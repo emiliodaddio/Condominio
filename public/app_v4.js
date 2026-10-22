@@ -124,13 +124,12 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 function getAuthHeaders() {
+    const condoId = state.activeCondominioId || sessionStorage.getItem('active_Condominio_id') || (state.currentUser && state.currentUser.condomini && state.currentUser.condomini[0] && state.currentUser.condomini[0].id) || 1;
     const headers = {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + state.token
+        'Authorization': 'Bearer ' + state.token,
+        'X-Condominio-Id': String(condoId)
     };
-    if (state.activeCondominioId) {
-        headers['X-Condominio-Id'] = state.activeCondominioId;
-    }
     return headers;
 }
 
@@ -5639,6 +5638,10 @@ window.enterCondo = function(id, targetTab = 'dashboard') {
     switchTab(targetTab);
     loadTicketsBadge();
     loadAnagrafica();
+    if (state.currentUser && state.currentUser.role === 'admin') {
+        loadUsersList();
+        loadRubrica();
+    }
     if (typeof window.loadCondominoFinanceDashboard === 'function') window.loadCondominoFinanceDashboard();
 };
 

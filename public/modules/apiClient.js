@@ -25,7 +25,7 @@
             return (window.state && window.state.activeCondominioId) ||
                    sessionStorage.getItem('active_Condominio_id') ||
                    (window.state && window.state.currentUser && window.state.currentUser.condomini && window.state.currentUser.condomini[0] && window.state.currentUser.condomini[0].id) ||
-                   null;
+                   1;
         }
 
         buildHeaders(customHeaders = {}, isFormData = false) {
