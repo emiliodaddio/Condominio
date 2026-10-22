@@ -1056,7 +1056,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-18 items-center py-3">
                 <!-- Logo & Dati Condominio -->
-                <div class="flex items-center space-x-3 sm:space-x-4 cursor-pointer group" onclick="switchTab('dashboard')" title="Torna alla Dashboard">
+                <div class="flex items-center space-x-3 sm:space-x-4 cursor-pointer group" onclick="handleHomeClick()" title="Torna a La tua Scrivania">
                     <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0 group-hover:scale-105 transition-transform">
                         <i class="fa-solid fa-building text-xl"></i>
                     </div>
@@ -1070,11 +1070,7 @@
 
                 <!-- Profilo Utente Autenticato & Pulsanti Azione -->
                 <div class="flex items-center space-x-2 sm:space-x-3">
-                    <!-- Tasto Torna alla Dashboard (visibile nelle sotto-sezioni) -->
-                    <button id="btn-header-back-dash" onclick="switchTab('dashboard')" class="hidden no-print px-3.5 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs" title="Torna alla Dashboard">
-                        <i class="fa-solid fa-arrow-left text-[11px]"></i>
-                        <span>Torna alla Dashboard</span>
-                    </button>
+
 
                     <!-- Card Profilo Utente -->
                     <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-50 border border-slate-200/80">
@@ -1106,9 +1102,9 @@
                         <span class="hidden sm:inline">Sicurezza (2FA)</span>
                     </button>
 
-                    <button onclick="handleHomeClick()" class="no-print p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5" title="Home (I Miei Condomìni)">
-                        <i class="fa-solid fa-house text-slate-400"></i>
-                        <span class="hidden sm:inline">Home</span>
+                    <button id="btn-header-scrivania" onclick="returnToAgencyDashboard()" class="hidden no-print px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition-all flex items-center gap-1.5 shadow-2xs" title="La tua Scrivania (Tutti i Condomìni)">
+                        <i class="fa-solid fa-table-cells-large text-indigo-500"></i>
+                        <span class="hidden sm:inline">La tua Scrivania</span>
                     </button>
 
                     <button id="btn-nuovo-accesso" onclick="window.open('login.html?new_session=1', '_blank', 'noopener,noreferrer')" class="hidden no-print p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5" title="Nuovo Accesso">
@@ -1135,14 +1131,14 @@
             <div class="flex items-center gap-2 text-xs font-semibold text-slate-500">
                 <button onclick="switchTab('dashboard')" class="hover:text-blue-600 flex items-center gap-1.5 text-slate-600 font-bold transition-colors">
                     <i class="fa-solid fa-gauge-high text-blue-600 text-sm"></i>
-                    <span>Dashboard</span>
+                    <span>Dashboard Condominio</span>
                 </button>
                 <i class="fa-solid fa-chevron-right text-[10px] text-slate-400"></i>
                 <span id="breadcrumb-current-page" class="text-slate-900 font-extrabold">Area Contabile</span>
             </div>
             <button onclick="switchTab('dashboard')" class="px-3.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-2xs">
                 <i class="fa-solid fa-arrow-left text-[11px] text-blue-600"></i>
-                <span>Torna alla Dashboard</span>
+                <span>Torna al Condominio</span>
             </button>
         </div>
 
@@ -4476,7 +4472,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261022_v3"></script>
+    <script src="app_v4.js?v=20261022_v4"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

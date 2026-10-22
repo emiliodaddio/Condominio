@@ -167,7 +167,7 @@ function setupUIForRole() {
     }
     const isAdmin = user.is_superadmin || (currentCondo && currentCondo.role === 'admin');
 
-    const btnReturnDash = document.getElementById('btn-return-dashboard');
+    const btnReturnDash = document.getElementById('btn-header-scrivania');
     if (btnReturnDash) {
         if (user.condomini && user.condomini.length > 1) {
             btnReturnDash.classList.remove('hidden');
