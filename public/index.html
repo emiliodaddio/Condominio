@@ -3196,6 +3196,38 @@
                                     <input type="text" id="persona-unita-catastali" placeholder="es. Fg. 14, Part. 235, Sub. 4, Cat. A/2" class="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
                                 </div>
                             </div>
+
+                            <!-- Sezione Locazione diretta nella scheda Condòmino -->
+                            <div class="mt-4 pt-3 border-t border-slate-200/90 bg-amber-50/70 p-3 rounded-xl border border-amber-200/80">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-xs font-bold text-amber-950 flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" id="persona-unita-locazione-attiva" onchange="togglePersonaLocazione(this.checked)" class="rounded text-amber-600 focus:ring-amber-500 w-4 h-4">
+                                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-file-contract text-amber-600"></i> Immobile con Contratto di Locazione Attivo</span>
+                                    </label>
+                                    <span class="text-[11px] font-bold text-amber-800" id="persona-loc-badge">Non locato</span>
+                                </div>
+                                <div id="persona-locazione-box" class="hidden mt-3 pt-3 border-t border-amber-200/60 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
+                                    <div>
+                                        <label class="block font-bold text-slate-700 mb-1">Data Inizio</label>
+                                        <input type="date" id="persona-unita-loc-inizio" class="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-700 mb-1">Data Fine</label>
+                                        <input type="date" id="persona-unita-loc-fine" class="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-700 mb-1">Criterio Riparto</label>
+                                        <select id="persona-unita-loc-criterio" class="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs">
+                                            <option value="confedilizia">Confedilizia (Art. 9 L. 392/78)</option>
+                                            <option value="codice_civile">Codice Civile Artt. 1004-1005</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-700 mb-1">Canone (€/mese)</label>
+                                        <input type="number" step="0.01" id="persona-unita-loc-canone" placeholder="es. 650.00" class="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- SEZIONE 4: Tabelle Millesimali -->
@@ -3546,13 +3578,16 @@
     </div>
 
     <!-- Modale Unità -->
-    <div id="unita-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 class="font-bold text-slate-800" id="unita-modal-title">Nuova Unità</h3>
-                <button onclick="closeUnitaModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+    <div id="unita-modal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
+                <div>
+                    <h3 class="font-bold text-slate-800 text-base" id="unita-modal-title">Scheda Unità Immobiliare &amp; Locazione</h3>
+                    <p class="text-[11px] text-slate-500">Configura identificativo, proprietario, inquilino e contratto di locazione</p>
+                </div>
+                <button type="button" onclick="closeUnitaModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
-            <form id="unita-form" onsubmit="saveUnita(event)" class="p-6 space-y-4">
+            <form id="unita-form" onsubmit="saveUnita(event)" class="p-6 space-y-4 overflow-y-auto flex-1">
                 <input type="hidden" id="unita-id">
                 
                 <div class="grid grid-cols-2 gap-4">
@@ -4734,7 +4769,7 @@
         </div>
     </div>
 
-    <script src="app_v4.js?v=20261022_v5"></script>
+    <script src="app_v4.js?v=20261023_v12"></script>
 
     <!-- Modale Generazione Convocazione Assemblea -->
     <div id="convocazione-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

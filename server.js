@@ -2535,10 +2535,11 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
         }
         
         if (existing) {
-            const updateSql = isConduttore
-                ? `UPDATE unita_immobiliari SET conduttore_id = ?, identificativo = ?, tipo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, dati_catastali = ? WHERE id = ?`
-                : `UPDATE unita_immobiliari SET proprietario_id = ?, identificativo = ?, tipo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, dati_catastali = ? WHERE id = ?`;
-            db.run(updateSql, [
+            let updateSql = isConduttore
+                ? `UPDATE unita_immobiliari SET conduttore_id = ?, identificativo = ?, tipo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, dati_catastali = ?`
+                : `UPDATE unita_immobiliari SET proprietario_id = ?, identificativo = ?, tipo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, dati_catastali = ?`;
+            
+            const params = [
                 personaId, 
                 ident, 
                 uData.tipo || 'Appartamento', 
@@ -2548,9 +2549,24 @@ function handleSyncPersonaUnita(condominio_id, personaId, ruolo, uData, callback
                 parseFloat(uData.millesimi_proprieta) || 0, 
                 parseFloat(uData.millesimi_scale) || 0, 
                 parseFloat(uData.millesimi_ascensore) || 0, 
-                uData.dati_catastali || '', 
-                existing.id
-            ], (uErr) => {
+                uData.dati_catastali || ''
+            ];
+
+            if (uData.locazione_attiva !== undefined && uData.locazione_attiva !== null) {
+                updateSql += `, locazione_attiva = ?, locazione_inizio = ?, locazione_fine = ?, locazione_canone = ?, locazione_criterio = ?`;
+                params.push(
+                    uData.locazione_attiva ? 1 : 0,
+                    uData.locazione_inizio || null,
+                    uData.locazione_fine || null,
+                    parseFloat(uData.locazione_canone) || 0,
+                    uData.locazione_criterio || 'confedilizia'
+                );
+            }
+
+            updateSql += ` WHERE id = ?`;
+            params.push(existing.id);
+
+            db.run(updateSql, params, (uErr) => {
                 if (uErr) {
                     if (!isRetry && (uErr.code === 'ER_BAD_FIELD_ERROR' || (uErr.message && uErr.message.includes('Unknown column')))) {
                         console.log('🔄 Rilevate colonne unità mancanti in update sync, esecuzione migrazione fail-safe...');
@@ -2633,7 +2649,12 @@ app.get('/api/anagrafica-persone', authenticateToken, requireCondominio, (req, r
                    (SELECT millesimi_proprieta FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_prop,
                    (SELECT millesimi_scale FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_scale,
                    (SELECT millesimi_ascensore FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_mill_asc,
-                   (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_dati_catastali
+                   (SELECT dati_catastali FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_dati_catastali,
+                   (SELECT locazione_attiva FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_locazione_attiva,
+                   (SELECT locazione_inizio FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_locazione_inizio,
+                   (SELECT locazione_fine FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_locazione_fine,
+                   (SELECT locazione_canone FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_locazione_canone,
+                   (SELECT locazione_criterio FROM unita_immobiliari WHERE (proprietario_id = p.id OR conduttore_id = p.id) AND condominio_id = p.condominio_id ORDER BY id DESC LIMIT 1) as unita_locazione_criterio
             FROM anagrafica_persone p
             WHERE p.condominio_id = ?`;
         const params = [req.condominio_id];
@@ -2702,7 +2723,12 @@ app.post('/api/anagrafica-persone', authenticateToken, requireCondominio, isAdmi
                     millesimi_proprieta: unita_mill_prop,
                     millesimi_scale: unita_mill_scale,
                     millesimi_ascensore: unita_mill_asc,
-                    dati_catastali: unita_dati_catastali
+                    dati_catastali: unita_dati_catastali,
+                    locazione_attiva: req.body.unita_locazione_attiva,
+                    locazione_inizio: req.body.unita_locazione_inizio,
+                    locazione_fine: req.body.unita_locazione_fine,
+                    locazione_canone: req.body.unita_locazione_canone,
+                    locazione_criterio: req.body.unita_locazione_criterio
                 }, (errSync) => {
                     logAudit(req.user.id, req.condominio_id, 'Creata Persona in Anagrafica', 'anagrafica_persone', personaId, null, req.ip);
 

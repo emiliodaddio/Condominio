@@ -1,4 +1,17 @@
 
+window.togglePersonaLocazione = function(checked) {
+    const box = document.getElementById('persona-locazione-box');
+    const badge = document.getElementById('persona-loc-badge');
+    if (box) {
+        if (checked) box.classList.remove('hidden');
+        else box.classList.add('hidden');
+    }
+    if (badge) {
+        badge.textContent = checked ? 'Locato (Attivo)' : 'Non locato';
+    }
+};
+
+
 window.toggleUnitaLocazioneFields = function(checked) {
     const box = document.getElementById('unita-locazione-box');
     const label = document.getElementById('unita-locazione-attiva-label');
@@ -4167,14 +4180,31 @@ async function loadUnita() {
     }
 }
 
-async function openUnitaModal(uId = null) {
+window.openUnitaModal = async function(uId = null) {
     if (typeof isLicenseReadOnly === 'function' && isLicenseReadOnly()) {
         showToast("Condominio in Sola Lettura: censimento o modifica unità bloccata.", "warning");
         return;
     }
+    
+    // Assicura che le unità siano caricate in memoria
+    if (!state.unitaList || state.unitaList.length === 0) {
+        try {
+            const resU = await fetch('/api/unita', { headers: getAuthHeaders() });
+            const dataU = await resU.json();
+            if (dataU.success) state.unitaList = dataU.data;
+        } catch (_) {}
+    }
+
     let u = null;
     if (uId && state.unitaList) {
-        u = state.unitaList.find(x => x.id === uId);
+        u = state.unitaList.find(x => String(x.id) === String(uId));
+    }
+    // Se non è stato passato uId ma abbiamo selezionato un'unità nel menu a tendina del riparto
+    if (!u && !uId) {
+        const curSel = document.getElementById('riparto-loc-unita-select')?.value;
+        if (curSel && state.unitaList) {
+            u = state.unitaList.find(x => String(x.id) === String(curSel));
+        }
     }
 
     // 1. Carica la rubrica persone per i select Proprietario e Conduttore
@@ -4300,9 +4330,12 @@ async function saveUnita(e) {
         
         if (res.ok) {
             closeUnitaModal();
-            loadUnita();
+            await loadUnita();
             if (typeof loadRubrica === 'function') loadRubrica();
-            showToast(id ? "Unità aggiornata con successo." : "Nuova unità censita con successo.", "success");
+            if (typeof loadRipartizioneLocazioneData === 'function') {
+                loadRipartizioneLocazioneData();
+            }
+            showToast(id ? "Unità e contratto di locazione aggiornati con successo." : "Nuova unità censita con successo.", "success");
         } else {
             const errData = await res.json().catch(() => ({}));
             alert(errData.message || "Errore salvataggio unità");
@@ -6018,6 +6051,18 @@ function openPersonaModal(id = null) {
     
     document.getElementById('persona-notes').value = p ? (p.notes || '') : '';
     
+    // Campi locazione persona
+    const isPersonaLoc = !!(p && (p.unita_locazione_attiva == 1 || p.unita_locazione_attiva === true));
+    const chkPersonaLoc = document.getElementById('persona-unita-locazione-attiva');
+    if (chkPersonaLoc) {
+        chkPersonaLoc.checked = isPersonaLoc;
+        togglePersonaLocazione(isPersonaLoc);
+    }
+    if (document.getElementById('persona-unita-loc-inizio')) document.getElementById('persona-unita-loc-inizio').value = p ? (p.unita_locazione_inizio || '') : '';
+    if (document.getElementById('persona-unita-loc-fine')) document.getElementById('persona-unita-loc-fine').value = p ? (p.unita_locazione_fine || '') : '';
+    if (document.getElementById('persona-unita-loc-canone')) document.getElementById('persona-unita-loc-canone').value = (p && p.unita_locazione_canone) ? p.unita_locazione_canone : '';
+    if (document.getElementById('persona-unita-loc-criterio')) document.getElementById('persona-unita-loc-criterio').value = p ? (p.unita_locazione_criterio || 'confedilizia') : 'confedilizia';
+    
     document.getElementById('modal-persona').classList.remove('hidden');
 }
 
@@ -6055,6 +6100,11 @@ async function savePersona(e) {
         unita_mill_prop: parseFloat(document.getElementById('persona-unita-mill-prop').value) || 0,
         unita_mill_scale: parseFloat(document.getElementById('persona-unita-mill-scale').value) || 0,
         unita_mill_asc: parseFloat(document.getElementById('persona-unita-mill-asc').value) || 0,
+        unita_locazione_attiva: document.getElementById('persona-unita-locazione-attiva')?.checked ? 1 : 0,
+        unita_locazione_inizio: document.getElementById('persona-unita-loc-inizio')?.value || null,
+        unita_locazione_fine: document.getElementById('persona-unita-loc-fine')?.value || null,
+        unita_locazione_canone: parseFloat(document.getElementById('persona-unita-loc-canone')?.value) || 0,
+        unita_locazione_criterio: document.getElementById('persona-unita-loc-criterio')?.value || 'confedilizia',
         
         notes: document.getElementById('persona-notes').value.trim()
     };
@@ -9491,23 +9541,51 @@ window.loadRipartizioneLocazioneData = async function() {
         currentRipartizioneLocazioneData = data;
 
         if (data.length === 0) {
+            let unitaDisponibiliHtml = '';
+            try {
+                const uRes = await fetch('/api/unita', { headers: getAuthHeaders() });
+                const uData = await uRes.json();
+                const uList = uData.data || [];
+                if (uList.length > 0) {
+                    unitaDisponibiliHtml = `
+                        <div class="mt-4 pt-4 border-t border-amber-200/80 text-left">
+                            <h5 class="text-xs font-extrabold uppercase tracking-wider text-amber-900 mb-2.5 flex items-center gap-1.5">
+                                <i class="fa-solid fa-list-check text-amber-600"></i>
+                                Unità censite in questo condominio (Clicca su Configura per attivare):
+                            </h5>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                                ${uList.map(u => `
+                                    <div class="p-3 bg-white border border-amber-300/80 rounded-xl flex items-center justify-between shadow-2xs">
+                                        <div class="min-w-0 pr-2">
+                                            <div class="font-extrabold text-slate-900 text-xs truncate">${u.identificativo} <span class="text-[10px] text-slate-500 font-normal">(${u.tipo})</span></div>
+                                            <div class="text-[11px] text-slate-600 truncate">Prop: ${u.prop_cognome ? u.prop_cognome + ' ' + (u.prop_nome || '') : 'Non assegnato'}</div>
+                                        </div>
+                                        <button type="button" onclick="openUnitaModal(${u.id})" class="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition shadow-xs shrink-0 cursor-pointer">
+                                            Configura &rarr;
+                                        </button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (_) {}
+
             if (soggettiBanner) soggettiBanner.innerHTML = `
-                <div class="p-6 text-center bg-amber-50 rounded-2xl border border-amber-200 space-y-3">
+                <div class="p-6 bg-gradient-to-br from-amber-50 to-orange-50/50 rounded-2xl border border-amber-300 shadow-sm space-y-3 text-center">
                     <div class="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center text-xl mx-auto shadow-xs">
                         <i class="fa-solid fa-file-contract"></i>
                     </div>
-                    <h4 class="text-sm font-bold text-amber-950">Nessuna unità con contratto di locazione attivo</h4>
+                    <h4 class="text-base font-extrabold text-amber-950">Attiva la Ripartizione Spese tra Locatore e Inquilino</h4>
                     <p class="text-xs text-amber-800 max-w-lg mx-auto leading-relaxed">
-                        Per calcolare automaticamente il riparto tra <b>Locatore</b> (straordinaria) e <b>Inquilino</b> (oneri accessori), basta aprire la scheda dell'unità e spuntare <b>"Locato (Attivo)"</b> assegnando il proprietario e l'inquilino.
+                        Nessun appartamento ha ancora il contratto di locazione abilitato. Clicca su <b>"Configura &rarr;"</b> accanto all'unità desiderata per assegnare l'inquilino e attivare il riparto degli oneri accessori.
                     </p>
-                    <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
-                        <button type="button" onclick="openUnitaModal(document.getElementById('riparto-loc-unita-select')?.value || null)" class="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-2">
-                            <i class="fa-solid fa-pen-to-square"></i> Configura Ora l'Unità in Locazione
-                        </button>
-                        <button type="button" onclick="closeRipartizioneLocazioneModal(); switchTab('anagrafica');" class="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-2xs transition flex items-center gap-2">
-                            <i class="fa-solid fa-users"></i> Vai in Anagrafica Condominio
+                    <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
+                        <button type="button" onclick="openUnitaModal()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer">
+                            <i class="fa-solid fa-plus"></i> Censimento Nuova Unità
                         </button>
                     </div>
+                    ${unitaDisponibiliHtml}
                 </div>
             `;
             if (tbInq) tbInq.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Nessuna spesa accessoria registrata.</td></tr>';
