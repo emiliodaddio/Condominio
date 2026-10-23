@@ -5152,7 +5152,7 @@ function openArchivedCommDocument(logId) {
                     <p style="margin: 8px 0;"><strong>Tipologia:</strong> ${item.tipo}</p>
                     <p style="margin: 8px 0;"><strong>Oggetto / Causale:</strong> ${item.oggetto}</p>
                 </div>
-                <p style="font-size: 12px; color: #64748b; text-align: center;">Documento generato dall'Archivio Storico Comunicazioni Inviate della piattaforma CondoTransparent.</p>
+                <p style="font-size: 12px; color: #64748b; text-align: center;">Documento generato dall'Archivio Storico Comunicazioni Inviate della piattaforma Condominio Trasparente.</p>
             </div>
         `;
 
