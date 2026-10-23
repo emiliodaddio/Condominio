@@ -1334,6 +1334,12 @@ function ensureAnagraficaAndUnitaColumns(callback) {
         { table: 'unita_immobiliari', col: 'dati_catastali', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'unita_immobiliari', col: 'proprietario_id', defMysql: 'INT', defSqlite: 'INTEGER' },
         { table: 'unita_immobiliari', col: 'conduttore_id', defMysql: 'INT', defSqlite: 'INTEGER' },
+        { table: 'unita_immobiliari', col: 'locazione_attiva', defMysql: 'TINYINT(1) DEFAULT 0', defSqlite: 'INTEGER DEFAULT 0' },
+        { table: 'unita_immobiliari', col: 'locazione_inizio', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'unita_immobiliari', col: 'locazione_fine', defMysql: 'VARCHAR(50)', defSqlite: 'TEXT' },
+        { table: 'unita_immobiliari', col: 'locazione_canone', defMysql: 'DECIMAL(10,2) DEFAULT 0.00', defSqlite: 'REAL DEFAULT 0.00' },
+        { table: 'unita_immobiliari', col: 'locazione_criterio', defMysql: "VARCHAR(100) DEFAULT 'confedilizia'", defSqlite: "TEXT DEFAULT 'confedilizia'" },
+        { table: 'quotes', col: 'competenza_locazione', defMysql: "VARCHAR(50) DEFAULT 'inquilino'", defSqlite: "TEXT DEFAULT 'inquilino'" },
         { table: 'convocations_log', col: 'tipo', defMysql: 'VARCHAR(100)', defSqlite: 'TEXT' },
         { table: 'convocations_log', col: 'oggetto', defMysql: 'VARCHAR(255)', defSqlite: 'TEXT' },
         { table: 'convocations_log', col: 'contenuto_html', defMysql: 'LONGTEXT', defSqlite: 'TEXT' },
@@ -2847,7 +2853,12 @@ app.get('/api/unita', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali } = req.body;
+    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali, locazione_attiva, locazione_inizio, locazione_fine, locazione_canone, locazione_criterio } = req.body;
+    const locAttiva = (locazione_attiva === true || locazione_attiva === 1 || locazione_attiva === '1') ? 1 : 0;
+    const locInizio = locazione_inizio || null;
+    const locFine = locazione_fine || null;
+    const locCanone = parseFloat(locazione_canone) || 0;
+    const locCriterio = locazione_criterio || 'confedilizia';
     
     // Controllo limite massimo unità consentite dalla licenza
     db.get('SELECT max_units FROM condo_licenses WHERE condominio_id = ?', [req.condominio_id], (errLic, licRow) => {
@@ -2861,9 +2872,9 @@ app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, checkCondo
                 });
             }
 
-            db.run(`INSERT INTO unita_immobiliari (condominio_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, conduttore_id, dati_catastali) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [req.condominio_id, user_id || null, tipo || 'Appartamento', identificativo, scala, piano, interno || null, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, dati_catastali || null], 
+            db.run(`INSERT INTO unita_immobiliari (condominio_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, proprietario_id, conduttore_id, dati_catastali, locazione_attiva, locazione_inizio, locazione_fine, locazione_canone, locazione_criterio) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [req.condominio_id, user_id || null, tipo || 'Appartamento', identificativo, scala, piano, interno || null, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, dati_catastali || null, locAttiva, locInizio, locFine, locCanone, locCriterio], 
                 function(err) {
                     if (err) return res.status(500).json({ success: false, message: err.message });
                     logAudit(req.user.id, req.condominio_id, 'Creata Unità Immobiliare', 'unita_immobiliari', this.lastID, null, req.ip);
@@ -2874,11 +2885,16 @@ app.post('/api/unita', authenticateToken, requireCondominio, isAdmin, checkCondo
 });
 
 app.put('/api/unita/:id', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali } = req.body;
+    const { proprietario_id, conduttore_id, user_id, tipo, identificativo, scala, piano, interno, millesimi_proprieta, millesimi_scale, millesimi_ascensore, dati_catastali, locazione_attiva, locazione_inizio, locazione_fine, locazione_canone, locazione_criterio } = req.body;
+    const locAttiva = (locazione_attiva === true || locazione_attiva === 1 || locazione_attiva === '1') ? 1 : 0;
+    const locInizio = locazione_inizio || null;
+    const locFine = locazione_fine || null;
+    const locCanone = parseFloat(locazione_canone) || 0;
+    const locCriterio = locazione_criterio || 'confedilizia';
     db.run(`UPDATE unita_immobiliari 
-            SET user_id = ?, tipo = ?, identificativo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, proprietario_id = ?, conduttore_id = ?, dati_catastali = ?
+            SET user_id = ?, tipo = ?, identificativo = ?, scala = ?, piano = ?, interno = ?, millesimi_proprieta = ?, millesimi_scale = ?, millesimi_ascensore = ?, proprietario_id = ?, conduttore_id = ?, dati_catastali = ?, locazione_attiva = ?, locazione_inizio = ?, locazione_fine = ?, locazione_canone = ?, locazione_criterio = ?
             WHERE id = ? AND condominio_id = ?`,
-        [user_id || null, tipo || 'Appartamento', identificativo, scala, piano, interno || null, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, dati_catastali || null, req.params.id, req.condominio_id], 
+        [user_id || null, tipo || 'Appartamento', identificativo, scala, piano, interno || null, millesimi_proprieta || 0, millesimi_scale || 0, millesimi_ascensore || 0, proprietario_id || null, conduttore_id || null, dati_catastali || null, locAttiva, locInizio, locFine, locCanone, locCriterio, req.params.id, req.condominio_id], 
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             logAudit(req.user.id, req.condominio_id, 'Modificata Unità Immobiliare', 'unita_immobiliari', req.params.id, null, req.ip);
@@ -2984,6 +3000,19 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
                 )
             )`;
             params.push(req.user.email || '', req.user.id, req.condominio_id, req.user.id, req.condominio_id, req.user.id, req.condominio_id);
+
+            // Se l'utente è Inquilino (conduttore) e non proprietario, filtra solo le quote di stretta pertinenza (oneri accessori),
+            // oscurando le spese straordinarie spettanti unicamente al proprietario locatore (Art. 1005 C.C.)
+            query += ` AND (
+                NOT EXISTS (
+                    SELECT 1 FROM anagrafica_persone ap
+                    WHERE ap.id = q.persona_id
+                      AND ap.ruolo_default = 'Conduttore'
+                      AND LOWER(TRIM(COALESCE(ap.email, ''))) = LOWER(TRIM(?))
+                )
+                OR (COALESCE(q.competenza_locazione, 'inquilino') != 'proprietario' AND COALESCE(q.type, 'ordinaria') != 'straordinaria')
+            )`;
+            params.push(req.user.email || '');
         }
 
         query += ` ORDER BY q.due_date ASC, q.id DESC`;
@@ -3003,8 +3032,10 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
                 if (r.unita_piano) locParts.push(`P. ${r.unita_piano}`);
                 if (r.unita_interno) locParts.push(`Int. ${r.unita_interno}`);
                 const unitaDisplay = locParts.length > 0 ? locParts.join(' | ') : (r.condomino_unita || '-');
+                const compLoc = r.competenza_locazione || (r.type === 'straordinaria' ? 'proprietario' : 'inquilino');
                 return {
                     ...r, 
+                    competenza_locazione: compLoc,
                     amount: total,
                     paid_amount: paid,
                     residual: residual,
@@ -3019,7 +3050,11 @@ app.get('/api/quotes', authenticateToken, requireCondominio, (req, res) => {
 });
 
 app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { persona_id, unita_id, type, title, amount, due_date, paid_amount, payment_method, notes, description } = req.body;
+    const { persona_id, unita_id, type, title, amount, due_date, paid_amount, payment_method, notes, description, competenza_locazione } = req.body;
+    let compLoc = competenza_locazione;
+    if (!compLoc || compLoc === 'auto') {
+        compLoc = (type === 'straordinaria') ? 'proprietario' : 'inquilino';
+    }
     const personaVal = (persona_id !== undefined && persona_id !== '' && persona_id !== null) ? parseInt(persona_id, 10) : null;
     const unitaVal = (unita_id !== undefined && unita_id !== '' && unita_id !== null) ? parseInt(unita_id, 10) : null;
     const amountVal = parseFloat(amount) || 0;
@@ -3045,8 +3080,8 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCond
     }
 
     db.run(
-        `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description, payment_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', title, amountVal, paidVal, due_date, status, description || notes || null, history.length > 0 ? JSON.stringify(history) : null],
+        `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description, payment_history, competenza_locazione) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', title, amountVal, paidVal, due_date, status, description || notes || null, history.length > 0 ? JSON.stringify(history) : null, compLoc],
         function(err) {
             if (err) return res.status(500).json({ success: false, message: err.message });
             logAudit(req.user.id, req.condominio_id, `Assegnazione Quota (€ ${amountVal.toFixed(2)})`, 'quotes', this.lastID, null, req.ip);
@@ -3056,7 +3091,7 @@ app.post('/api/quotes', authenticateToken, requireCondominio, isAdmin, checkCond
 });
 
 app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, checkCondoLicenseWrite, (req, res) => {
-    const { type, title, due_date, items } = req.body;
+    const { type, title, due_date, items, competenza_locazione } = req.body;
     if (!title || !due_date || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ success: false, message: 'Titolo, data di scadenza ed elenco quote sono obbligatori.' });
     }
@@ -3081,9 +3116,13 @@ app.post('/api/quotes/batch', authenticateToken, requireCondominio, isAdmin, che
             return;
         }
 
+        let itemComp = item.competenza_locazione || competenza_locazione;
+        if (!itemComp || itemComp === 'auto') {
+            itemComp = (type === 'straordinaria') ? 'proprietario' : 'inquilino';
+        }
         db.run(
-            `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'In sospeso', ?)`,
-            [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountVal, due_date, descVal],
+            `INSERT INTO quotes (condominio_id, persona_id, unita_id, type, title, amount, paid_amount, due_date, status, description, competenza_locazione) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'In sospeso', ?, ?)`,
+            [req.condominio_id, personaVal, unitaVal, type || 'ordinaria', itemTitle, amountVal, due_date, descVal, itemComp],
             function(err) {
                 if (err) errors++;
                 else inserted++;
@@ -5658,6 +5697,57 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                 }
             }
 
+            // Verifica rapporto di locazione e differenziazione Inquilino / Proprietario
+            let [locazioneRows] = await connection.query(`
+                SELECT u.id, u.identificativo, u.locazione_attiva, u.locazione_inizio, u.locazione_fine, u.locazione_canone, u.locazione_criterio,
+                       u.proprietario_id, u.conduttore_id,
+                       p.email as prop_email, p.nome as prop_nome, p.cognome as prop_cognome,
+                       c.email as cond_email, c.nome as cond_nome, c.cognome as cond_cognome
+                FROM unita_immobiliari u
+                LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id
+                LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
+                WHERE u.condominio_id = ?
+                  AND (u.user_id = ? 
+                       OR (p.email IS NOT NULL AND LOWER(TRIM(p.email)) = LOWER(TRIM(?)))
+                       OR (c.email IS NOT NULL AND LOWER(TRIM(c.email)) = LOWER(TRIM(?))))
+                ORDER BY u.id DESC
+                LIMIT 1
+            `, [activeCondoId, userId, condominoProfile.condomino_email, condominoProfile.condomino_email]);
+
+            let datiLocazione = null;
+            let isUserTenantOnly = false;
+            if (locazioneRows && locazioneRows.length > 0) {
+                const lr = locazioneRows[0];
+                const userEmailClean = (condominoProfile.condomino_email || '').toLowerCase().trim();
+                const isCond = lr.cond_email && lr.cond_email.toLowerCase().trim() === userEmailClean;
+                const isProp = lr.prop_email && lr.prop_email.toLowerCase().trim() === userEmailClean;
+                if (isCond && !isProp) {
+                    isUserTenantOnly = true;
+                }
+                if (lr.locazione_attiva || (lr.proprietario_id && lr.conduttore_id)) {
+                    datiLocazione = {
+                        unita_id: lr.id,
+                        unita_identificativo: lr.identificativo,
+                        ruolo_utente: isUserTenantOnly ? 'conduttore' : (isProp ? 'locatore' : 'condomino'),
+                        attiva: !!lr.locazione_attiva,
+                        inizio: lr.locazione_inizio,
+                        fine: lr.locazione_fine,
+                        canone: parseFloat(lr.locazione_canone || 0),
+                        criterio: lr.locazione_criterio || 'confedilizia',
+                        locatore_nome: `${lr.prop_cognome || ''} ${lr.prop_nome || ''}`.trim(),
+                        conduttore_nome: `${lr.cond_cognome || ''} ${lr.cond_nome || ''}`.trim()
+                    };
+                }
+            }
+
+            // Se l'utente è Inquilino, filtra unicamente gli oneri accessori ordinari oscurando le spese straordinarie del proprietario (Art. 1005 C.C.)
+            if (isUserTenantOnly && personalScadenze && personalScadenze.length > 0) {
+                personalScadenze = personalScadenze.filter(item => {
+                    const comp = item.competenza_locazione || (item.tipo_quota === 'straordinaria' ? 'proprietario' : 'inquilino');
+                    return comp !== 'proprietario' && item.tipo_quota !== 'straordinaria';
+                });
+            }
+
             // Calcolo totali personali
             let totaleQuoteDovute = 0;
             let totaleVersatoPersonale = 0;
@@ -5770,7 +5860,8 @@ app.get('/api/condomino/dashboard', verifyJWT, async (req, res) => {
                         saldo_in_corso: residuoPersonaleComplessivo,
                         stato: statoLabel
                     },
-                    scadenze: personalScadenze || []
+                    scadenze: personalScadenze || [],
+                    locazione: datiLocazione
                 },
                 // Dati aggregati a livello di fabbricato (GDPR Compliant - Nessun dato nominativo di terzi)
                 aggregato_cassa_stabile: {
@@ -7270,3 +7361,188 @@ async function selfHealCondoData() {
     }
 }
 
+
+
+// ============================================================================
+// MODULO RIPARTIZIONE SPESE LOCATORE / CONDUTTORE & CONGUAGLIO ONERI ACCESSORI
+// A norma dell'Art. 9 Legge 392/1978, Artt. 1004-1005 C.C. e Tabelle Confedilizia-Sunia
+// ============================================================================
+app.get('/api/locazione/ripartizione', authenticateToken, requireCondominio, (req, res) => {
+    const unitaId = req.query.unita_id ? parseInt(req.query.unita_id, 10) : null;
+    const anno = req.query.anno ? parseInt(req.query.anno, 10) : null;
+    const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
+
+    // Recupera le unità con rapporto di locazione attivo o aventi locatore e conduttore censiti
+    let sqlUnita = `
+        SELECT u.*, 
+               p.id as prop_id, p.nome as prop_nome, p.cognome as prop_cognome, p.email as prop_email, p.cellulare as prop_telefono, p.codice_fiscale as prop_cf,
+               c.id as cond_id, c.nome as cond_nome, c.cognome as cond_cognome, c.email as cond_email, c.cellulare as cond_telefono, c.codice_fiscale as cond_cf
+        FROM unita_immobiliari u
+        LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id
+        LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
+        WHERE u.condominio_id = ? AND (u.locazione_attiva = 1 OR (u.proprietario_id IS NOT NULL AND u.conduttore_id IS NOT NULL))
+    `;
+    const paramsUnita = [req.condominio_id];
+
+    if (unitaId) {
+        sqlUnita += ` AND u.id = ?`;
+        paramsUnita.push(unitaId);
+    }
+
+    if (!isAdminUser) {
+        const userEmail = (req.user && req.user.email) ? req.user.email.trim().toLowerCase() : '';
+        sqlUnita += ` AND (u.user_id = ? OR LOWER(TRIM(COALESCE(p.email, ''))) = ? OR LOWER(TRIM(COALESCE(c.email, ''))) = ?)`;
+        paramsUnita.push(req.user.id, userEmail, userEmail);
+    }
+
+    sqlUnita += ` ORDER BY u.identificativo ASC`;
+
+    db.all(sqlUnita, paramsUnita, (errU, unitaRows) => {
+        if (errU) return res.status(500).json({ success: false, message: errU.message });
+        if (!unitaRows || unitaRows.length === 0) {
+            return res.json({
+                success: true,
+                data: [],
+                message: 'Nessuna unità immobiliare con rapporto di locazione configurato.'
+            });
+        }
+
+        const unitaIds = unitaRows.map(u => u.id);
+        const placeholders = unitaIds.map(() => '?').join(',');
+
+        let sqlQuotes = `
+            SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome, p.ruolo_default
+            FROM quotes q
+            LEFT JOIN anagrafica_persone p ON q.persona_id = p.id
+            WHERE q.condominio_id = ? AND q.unita_id IN (${placeholders})
+        `;
+        const paramsQuotes = [req.condominio_id, ...unitaIds];
+
+        if (anno) {
+            sqlQuotes += (db.type === 'mysql') 
+                ? ` AND YEAR(q.due_date) = ?` 
+                : ` AND strftime('%Y', q.due_date) = ?`;
+            paramsQuotes.push(anno);
+        }
+
+        sqlQuotes += ` ORDER BY q.due_date ASC, q.id ASC`;
+
+        db.all(sqlQuotes, paramsQuotes, (errQ, quotesRows) => {
+            if (errQ) return res.status(500).json({ success: false, message: errQ.message });
+
+            const userEmail = (req.user && req.user.email) ? req.user.email.trim().toLowerCase() : '';
+            const isUserTenantOnly = !isAdminUser && unitaRows.some(u => 
+                u.cond_email && u.cond_email.trim().toLowerCase() === userEmail &&
+                (!u.prop_email || u.prop_email.trim().toLowerCase() !== userEmail)
+            );
+
+            const result = unitaRows.map(u => {
+                const uQuotes = (quotesRows || []).filter(q => q.unita_id === u.id);
+
+                let totaleSpeseUnita = 0;
+                let totaleProprietario = 0;
+                let totaleInquilino = 0;
+                let versatoInquilino = 0;
+                let versatoProprietario = 0;
+
+                const dettaglioProprietario = [];
+                const dettaglioInquilino = [];
+
+                uQuotes.forEach(q => {
+                    const amt = parseFloat(q.amount) || 0;
+                    const paid = parseFloat(q.paid_amount) || (q.status === 'Pagato' ? amt : 0);
+                    totaleSpeseUnita += amt;
+
+                    // Classificazione di legge
+                    const comp = q.competenza_locazione || (q.type === 'straordinaria' ? 'proprietario' : 'inquilino');
+                    const isStraord = comp === 'proprietario' || q.type === 'straordinaria';
+
+                    if (isStraord) {
+                        totaleProprietario += amt;
+                        versatoProprietario += paid;
+                        dettaglioProprietario.push({
+                            id: q.id,
+                            titolo: q.title,
+                            competenza: 'Locatore (Proprietario)',
+                            normativa: 'Art. 1005 C.C. (Manutenzioni straordinarie, rifacimento parti strutturali)',
+                            data_scadenza: q.due_date,
+                            importo: amt,
+                            versato: paid,
+                            residuo: Math.max(0, Math.round((amt - paid) * 100) / 100),
+                            status: q.status
+                        });
+                    } else {
+                        totaleInquilino += amt;
+                        versatoInquilino += paid;
+                        dettaglioInquilino.push({
+                            id: q.id,
+                            titolo: q.title,
+                            competenza: 'Conduttore (Inquilino)',
+                            normativa: 'Art. 9 L. 392/1978 (Oneri accessori, pulizia, consumi e gestione ordinaria)',
+                            data_scadenza: q.due_date,
+                            importo: amt,
+                            versato: paid,
+                            residuo: Math.max(0, Math.round((amt - paid) * 100) / 100),
+                            status: q.status
+                        });
+                    }
+                });
+
+                const conguaglioInquilino = Math.round((totaleInquilino - versatoInquilino) * 100) / 100;
+                let statoConguaglio = 'In Pareggio';
+                if (conguaglioInquilino > 0.009) statoConguaglio = 'A Debito del Conduttore';
+                else if (conguaglioInquilino < -0.009) statoConguaglio = 'A Credito del Conduttore';
+
+                return {
+                    unita: {
+                        id: u.id,
+                        identificativo: u.identificativo,
+                        tipo: u.tipo,
+                        scala: u.scala,
+                        piano: u.piano,
+                        interno: u.interno,
+                        dati_catastali: u.dati_catastali,
+                        millesimi_proprieta: u.millesimi_proprieta,
+                        locazione_attiva: !!u.locazione_attiva,
+                        locazione_inizio: u.locazione_inizio,
+                        locazione_fine: u.locazione_fine,
+                        locazione_canone: parseFloat(u.locazione_canone || 0),
+                        locazione_criterio: u.locazione_criterio || 'confedilizia'
+                    },
+                    locatore: {
+                        id: u.prop_id,
+                        nome: u.prop_nome,
+                        cognome: u.prop_cognome,
+                        nominativo: `${u.prop_cognome || ''} ${u.prop_nome || ''}`.trim() || 'Proprietario non registrato',
+                        email: u.prop_email,
+                        cellulare: u.prop_telefono,
+                        codice_fiscale: u.prop_cf
+                    },
+                    conduttore: {
+                        id: u.cond_id,
+                        nome: u.cond_nome,
+                        cognome: u.cond_cognome,
+                        nominativo: `${u.cond_cognome || ''} ${u.cond_nome || ''}`.trim() || 'Inquilino non registrato',
+                        email: u.cond_email,
+                        cellulare: u.cond_telefono,
+                        codice_fiscale: u.cond_cf
+                    },
+                    riepilogo: {
+                        totale_spese_unita: Math.round(totaleSpeseUnita * 100) / 100,
+                        spettanza_locatore: Math.round(totaleProprietario * 100) / 100,
+                        versato_locatore: Math.round(versatoProprietario * 100) / 100,
+                        spettanza_conduttore: Math.round(totaleInquilino * 100) / 100,
+                        versato_conduttore: Math.round(versatoInquilino * 100) / 100,
+                        conguaglio_conduttore: conguaglioInquilino,
+                        stato_conguaglio: statoConguaglio,
+                        riferimenti_legge: 'Ripartizione conforme all\'Accordo Nazionale Confedilizia-Sunia, Artt. 1004-1005 C.C. e Art. 9 Legge 392/1978.'
+                    },
+                    dettaglio_conduttore: dettaglioInquilino,
+                    dettaglio_locatore: isUserTenantOnly ? [] : dettaglioProprietario
+                };
+            });
+
+            res.json({ success: true, data: result });
+        });
+    });
+});

@@ -1,3 +1,30 @@
+
+window.toggleUnitaLocazioneFields = function(checked) {
+    const box = document.getElementById('unita-locazione-box');
+    const label = document.getElementById('unita-locazione-attiva-label');
+    if (box) {
+        if (checked) box.classList.remove('hidden');
+        else box.classList.add('hidden');
+    }
+    if (label) {
+        label.textContent = checked ? 'Locato (Attivo)' : 'Non locato';
+    }
+};
+
+window.onQuoteTypeChange = function(type) {
+    const selComp = document.getElementById('quote-competenza-locazione');
+    if (selComp && selComp.value === 'auto') {
+        // Gestione automatica
+    }
+};
+
+window.onMillQuoteTypeChange = function(type) {
+    const selComp = document.getElementById('mill-calc-quote-competenza');
+    if (selComp && selComp.value === 'auto') {
+        // Gestione automatica
+    }
+};
+
 /**
  * ============================================================================
  * GESTIONE CondominiALE - Logica Client-Side RBAC (Vanilla JavaScript)
@@ -833,6 +860,10 @@ function renderQuotesTable() {
 
         const isOrd = q.type === 'ordinaria';
         const typeBadge = isOrd ? '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700">Ordinaria</span>' : '<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-700">Straordinaria</span>';
+        const compLoc = q.competenza_locazione || (isOrd ? 'inquilino' : 'proprietario');
+        const compBadge = compLoc === 'proprietario' 
+            ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200" title="Competenza Proprietario / Locatore (Art. 1005 C.C.)"><i class="fa-solid fa-user-tie text-[9px] mr-0.5"></i>Proprietario</span>'
+            : '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200" title="Oneri Accessori Inquilino (Art. 9 L. 392/78)"><i class="fa-solid fa-user text-[9px] mr-0.5"></i>Inquilino</span>';
         const displayUnita = q.unita || q.condomino_unita || '';
 
         const versatoResiduoCell = `
@@ -867,7 +898,7 @@ function renderQuotesTable() {
                         <div class="font-bold text-slate-900">${q.persona_cognome ? q.persona_cognome + ' ' + (q.persona_nome || '') : (q.condomino_nome || 'Sconosciuto')}</div>
                         <div class="text-xs text-slate-500">${displayUnita}</div>
                     </td>
-                    <td class="py-3.5 px-4">${typeBadge}</td>
+                    <td class="py-3.5 px-4"><div class="flex flex-col gap-1 items-start">${typeBadge}${compBadge}</div></td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
                     <td class="py-3.5 px-4 text-xs text-slate-500 font-mono">${formatDate(q.due_date)}</td>
                     <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(amt)}</td>
@@ -879,7 +910,7 @@ function renderQuotesTable() {
         } else {
             return `
                 <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="py-3.5 px-4">${typeBadge}</td>
+                    <td class="py-3.5 px-4"><div class="flex flex-col gap-1 items-start">${typeBadge}${compBadge}</div></td>
                     <td class="py-3.5 px-4 font-medium text-slate-900">${q.title}</td>
                     <td class="py-3.5 px-4 text-xs text-slate-500 font-mono">${formatDate(q.due_date)}</td>
                     <td class="py-3.5 px-4 text-right font-bold text-slate-900">${formatCurrency(amt)}</td>
@@ -2294,6 +2325,7 @@ async function handleCreateQuote(event) {
     const amountVal = parseFloat(document.getElementById('quote-amount').value) || 0;
     const paidVal = parseFloat(document.getElementById('quote-paid-amount')?.value) || 0;
 
+    const compVal = document.getElementById('quote-competenza-locazione') ? document.getElementById('quote-competenza-locazione').value : 'auto';
     const payload = {
         persona_id: personaVal ? parseInt(personaVal, 10) : null,
         unita_id: unitaVal ? parseInt(unitaVal, 10) : null,
@@ -2301,7 +2333,8 @@ async function handleCreateQuote(event) {
         title: document.getElementById('quote-title').value.trim(),
         amount: amountVal,
         paid_amount: paidVal,
-        due_date: document.getElementById('quote-due-date').value
+        due_date: document.getElementById('quote-due-date').value,
+        competenza_locazione: compVal
     };
 
     try {
@@ -4205,6 +4238,18 @@ async function openUnitaModal(uId = null) {
     if(document.getElementById('unita-conduttore')) document.getElementById('unita-conduttore').value = u ? (u.conduttore_id || '') : '';
     if(document.getElementById('unita-user-id')) document.getElementById('unita-user-id').value = u ? (u.user_id || '') : '';
     
+    // Gestione campi locazione
+    const isLoc = !!(u && (u.locazione_attiva == 1 || u.locazione_attiva === true));
+    const chkLoc = document.getElementById('unita-locazione-attiva');
+    if (chkLoc) {
+        chkLoc.checked = isLoc;
+        toggleUnitaLocazioneFields(isLoc);
+    }
+    if (document.getElementById('unita-locazione-inizio')) document.getElementById('unita-locazione-inizio').value = u ? (u.locazione_inizio || '') : '';
+    if (document.getElementById('unita-locazione-fine')) document.getElementById('unita-locazione-fine').value = u ? (u.locazione_fine || '') : '';
+    if (document.getElementById('unita-locazione-criterio')) document.getElementById('unita-locazione-criterio').value = u ? (u.locazione_criterio || 'confedilizia') : 'confedilizia';
+    if (document.getElementById('unita-locazione-canone')) document.getElementById('unita-locazione-canone').value = (u && u.locazione_canone) ? u.locazione_canone : '';
+    
     document.getElementById('unita-modal').classList.remove('hidden');
 }
 
@@ -4235,7 +4280,12 @@ async function saveUnita(e) {
         millesimi_ascensore: parseFloat(document.getElementById('unita-mill-asc').value) || 0,
         proprietario_id: propVal ? parseInt(propVal, 10) : null,
         conduttore_id: condVal ? parseInt(condVal, 10) : null,
-        user_id: userVal ? parseInt(userVal, 10) : null
+        user_id: userVal ? parseInt(userVal, 10) : null,
+        locazione_attiva: document.getElementById('unita-locazione-attiva') ? (document.getElementById('unita-locazione-attiva').checked ? 1 : 0) : 0,
+        locazione_inizio: document.getElementById('unita-locazione-inizio') ? document.getElementById('unita-locazione-inizio').value : null,
+        locazione_fine: document.getElementById('unita-locazione-fine') ? document.getElementById('unita-locazione-fine').value : null,
+        locazione_criterio: document.getElementById('unita-locazione-criterio') ? document.getElementById('unita-locazione-criterio').value : 'confedilizia',
+        locazione_canone: document.getElementById('unita-locazione-canone') ? (parseFloat(document.getElementById('unita-locazione-canone').value) || 0) : 0
     };
 
     const method = id ? 'PUT' : 'POST';
@@ -7457,11 +7507,12 @@ window.submitBatchMillesimiQuotes = async function() {
         return;
     }
 
+    const competenza_locazione = document.getElementById('mill-calc-quote-competenza') ? document.getElementById('mill-calc-quote-competenza').value : 'auto';
     try {
         const res = await fetch('/api/quotes/batch', {
             method: 'POST',
             headers: getAuthHeaders(),
-            body: JSON.stringify({ type, title, due_date, items })
+            body: JSON.stringify({ type, title, due_date, items, competenza_locazione })
         });
         const data = await res.json();
         if (res.ok && data.success) {
@@ -9247,6 +9298,45 @@ async function caricaDashboardCondomino() {
                 if (elResidui) elResidui.innerText = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(data.cassaComune.residuiAttivi || 0);
             }
 
+            // Aggiorna card Rapporto di Locazione se presente
+            const locCard = document.getElementById('condomino-locazione-card');
+            const locData = data.dati_personali?.locazione;
+            if (locCard) {
+                if (locData && locData.attiva) {
+                    locCard.classList.remove('hidden');
+                    const elTitolo = document.getElementById('condomino-locazione-ruolo-titolo');
+                    const elDesc = document.getElementById('condomino-locazione-descrizione');
+                    const elKpiSpett = document.getElementById('cond-loc-kpi-spettanza');
+                    const elKpiVers = document.getElementById('cond-loc-kpi-versato');
+                    const elKpiSaldo = document.getElementById('cond-loc-kpi-saldo');
+
+                    const isTenant = locData.ruolo_utente === 'conduttore';
+                    if (elTitolo) {
+                        elTitolo.textContent = isTenant 
+                            ? `Oneri Accessori di tua Competenza (Inquilino - ${locData.unita_identificativo || 'Unità'})`
+                            : `Gestione Spese Locazione (Proprietario - ${locData.unita_identificativo || 'Unità'})`;
+                    }
+                    if (elDesc) {
+                        elDesc.textContent = isTenant
+                            ? 'Visualizzazione filtrata: include esclusivamente le spese ordinarie e oneri accessori ex Art. 9 Legge 392/1978.'
+                            : `Riepilogo globale spese per la tua unità locata a ${locData.conduttore_nome || 'Inquilino'} (distinzione tra quote tue e oneri inquilino).`;
+                    }
+                    if (elKpiSpett) {
+                        elKpiSpett.textContent = formatCurrency(data.dati_personali?.riepilogo_personale?.totale_quote_dovute || 0);
+                    }
+                    if (elKpiVers) {
+                        elKpiVers.textContent = formatCurrency(data.dati_personali?.riepilogo_personale?.totale_versato || 0);
+                    }
+                    if (elKpiSaldo) {
+                        const saldo = data.dati_personali?.riepilogo_personale?.saldo_in_corso || 0;
+                        elKpiSaldo.textContent = saldo > 0.009 ? `Debito: ${formatCurrency(saldo)}` : 'In Pareggio';
+                        elKpiSaldo.className = `text-base font-black mt-0.5 ${saldo > 0.009 ? 'text-amber-400' : 'text-emerald-400'}`;
+                    }
+                } else {
+                    locCard.classList.add('hidden');
+                }
+            }
+
             // 3. Popola lo storico dei pagamenti personali
             const corpoTabella = document.getElementById('tabella-pagamenti-corpo');
             if (corpoTabella) {
@@ -9322,3 +9412,402 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 700);
 });
+
+
+// ============================================================================
+// MODULO FRONTEND RIPARTIZIONE SPESE LOCATORE / CONDUTTORE
+// Conforme a Confedilizia-Sunia, Legge 392/1978 (Art. 9) e Codice Civile (Artt. 1004-1005)
+// ============================================================================
+let currentRipartizioneLocazioneData = null;
+
+window.openRipartizioneLocazioneModal = async function(preselectUnitaId = null) {
+    const modal = document.getElementById('modal-ripartizione-locazione');
+    if (!modal) return;
+
+    // Popola select delle unità
+    const selUnita = document.getElementById('riparto-loc-unita-select');
+    if (selUnita) {
+        selUnita.innerHTML = '<option value="">Caricamento unità...</option>';
+        try {
+            const res = await fetch('/api/unita', { headers: getAuthHeaders() });
+            const json = await res.json();
+            if (res.ok && json.success) {
+                const list = json.data || [];
+                if (list.length === 0) {
+                    selUnita.innerHTML = '<option value="">Nessuna unità presente</option>';
+                } else {
+                    let opts = '<option value="">-- Tutte le Unità con Locazione --</option>';
+                    list.forEach(u => {
+                        const isLoc = !!(u.locazione_attiva == 1 || (u.proprietario_id && u.conduttore_id));
+                        const locBadge = isLoc ? ' [Locata]' : '';
+                        opts += `<option value="${u.id}">${u.identificativo}${locBadge} - ${u.tipo}</option>`;
+                    });
+                    selUnita.innerHTML = opts;
+                    if (preselectUnitaId) {
+                        selUnita.value = String(preselectUnitaId);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Errore caricamento unità per riparto locazione:', e);
+        }
+    }
+
+    modal.classList.remove('hidden');
+    window.loadRipartizioneLocazioneData();
+};
+
+window.closeRipartizioneLocazioneModal = function() {
+    const modal = document.getElementById('modal-ripartizione-locazione');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.loadRipartizioneLocazioneData = async function() {
+    const unitaId = document.getElementById('riparto-loc-unita-select')?.value || '';
+    const anno = document.getElementById('riparto-loc-anno-select')?.value || '';
+
+    const tbInq = document.getElementById('riparto-loc-table-inquilino');
+    const tbProp = document.getElementById('riparto-loc-table-locatore');
+    const soggettiBanner = document.getElementById('riparto-loc-soggetti-banner');
+
+    if (tbInq) tbInq.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Caricamento quote in corso...</td></tr>';
+    if (tbProp) tbProp.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Caricamento quote in corso...</td></tr>';
+
+    try {
+        let url = '/api/locazione/ripartizione?';
+        if (unitaId) url += `unita_id=${encodeURIComponent(unitaId)}&`;
+        if (anno) url += `anno=${encodeURIComponent(anno)}&`;
+
+        const res = await fetch(url, { headers: getAuthHeaders() });
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+            showToast(json.message || 'Errore nel caricamento del prospetto di locazione.', 'error');
+            return;
+        }
+
+        const data = json.data || [];
+        currentRipartizioneLocazioneData = data;
+
+        if (data.length === 0) {
+            if (soggettiBanner) soggettiBanner.innerHTML = `
+                <div class="text-center py-4 text-xs text-amber-800">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-600 text-lg mb-1 block"></i>
+                    Nessuna unità con rapporto di locazione attivo trovato per i filtri selezionati.<br>
+                    Per attivare la ripartizione, apri la scheda dell'Unità Immobiliare e spunta "Locato (Attivo)".
+                </div>
+            `;
+            if (tbInq) tbInq.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Nessuna spesa accessoria registrata.</td></tr>';
+            if (tbProp) tbProp.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Nessuna spesa straordinaria registrata.</td></tr>';
+            resetLocazioneKpis();
+            return;
+        }
+
+        // Se è selezionata una specifica unità o prendiamo la prima
+        const unitData = data[0];
+
+        // Banner Soggetti
+        if (soggettiBanner) {
+            const u = unitData.unita;
+            const loc = unitData.locatore;
+            const cond = unitData.conduttore;
+            const criterioNome = u.locazione_criterio === 'confedilizia' 
+                ? 'Tabella Nazionale Confedilizia - Sunia (Art. 9 L. 392/78)'
+                : (u.locazione_criterio === 'codice_civile' ? 'Codice Civile Artt. 1004-1005' : 'Accordo Contrattuale Speciale');
+
+            soggettiBanner.innerHTML = `
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded bg-amber-200/80 text-amber-900 font-extrabold text-[11px] uppercase">${u.identificativo} - ${u.tipo}</span>
+                            <span class="text-xs font-bold text-slate-700">Millesimi Proprietà: ${u.millesimi_proprieta || 0}</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-800 pt-1">
+                            <div><i class="fa-solid fa-user-tie text-purple-700 mr-1.5"></i><b>Locatore (Proprietario):</b> ${loc.nominativo} ${loc.codice_fiscale ? '(' + loc.codice_fiscale + ')' : ''}</div>
+                            <div><i class="fa-solid fa-user text-amber-700 mr-1.5"></i><b>Conduttore (Inquilino):</b> ${cond.nominativo} ${cond.codice_fiscale ? '(' + cond.codice_fiscale + ')' : ''}</div>
+                        </div>
+                    </div>
+                    <div class="text-right text-[11px] text-slate-600 sm:border-l sm:border-amber-200 sm:pl-4">
+                        <div><b>Criterio:</b> ${criterioNome}</div>
+                        ${u.locazione_inizio ? `<div><b>Periodo:</b> dal ${formatDate(u.locazione_inizio)} ${u.locazione_fine ? 'al ' + formatDate(u.locazione_fine) : ''}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Totali KPI
+        let totSpese = 0;
+        let totProp = 0;
+        let totInq = 0;
+        let versInq = 0;
+
+        data.forEach(item => {
+            totSpese += item.riepilogo.totale_spese_unita;
+            totProp += item.riepilogo.spettanza_locatore;
+            totInq += item.riepilogo.spettanza_conduttore;
+            versInq += item.riepilogo.versato_conduttore;
+        });
+
+        const saldoInq = Math.round((totInq - versInq) * 100) / 100;
+
+        document.getElementById('kpi-loc-totale').textContent = formatCurrency(totSpese);
+        document.getElementById('kpi-loc-proprietario').textContent = formatCurrency(totProp);
+        document.getElementById('kpi-loc-inquilino').textContent = formatCurrency(totInq);
+        document.getElementById('kpi-loc-versato-inq').textContent = formatCurrency(versInq);
+
+        const elSaldo = document.getElementById('kpi-loc-saldo');
+        const elSaldoBadge = document.getElementById('kpi-loc-saldo-badge');
+        const cardSaldo = document.getElementById('kpi-loc-saldo-card');
+
+        if (elSaldo) elSaldo.textContent = formatCurrency(Math.abs(saldoInq));
+        if (elSaldoBadge && cardSaldo) {
+            if (saldoInq > 0.009) {
+                elSaldoBadge.textContent = 'A Debito Inquilino';
+                elSaldoBadge.className = 'inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800';
+                cardSaldo.className = 'col-span-2 lg:col-span-1 bg-amber-50/50 p-3.5 rounded-2xl border border-amber-300 shadow-2xs';
+            } else if (saldoInq < -0.009) {
+                elSaldoBadge.textContent = 'A Credito Inquilino';
+                elSaldoBadge.className = 'inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800';
+                cardSaldo.className = 'col-span-2 lg:col-span-1 bg-sky-50/50 p-3.5 rounded-2xl border border-sky-300 shadow-2xs';
+            } else {
+                elSaldoBadge.textContent = 'In Pareggio';
+                elSaldoBadge.className = 'inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800';
+                cardSaldo.className = 'col-span-2 lg:col-span-1 bg-white p-3.5 rounded-2xl border border-emerald-300 shadow-2xs';
+            }
+        }
+
+        // Subtotali header tabelle
+        document.getElementById('riparto-loc-subtotale-inq').textContent = `Subtotale Dovuto: ${formatCurrency(totInq)} | Versato: ${formatCurrency(versInq)}`;
+        document.getElementById('riparto-loc-subtotale-prop').textContent = `Subtotale: ${formatCurrency(totProp)}`;
+
+        // Tabella Inquilino
+        const rowsInq = [];
+        data.forEach(item => {
+            (item.dettaglio_conduttore || []).forEach(q => rowsInq.push(q));
+        });
+
+        if (tbInq) {
+            if (rowsInq.length === 0) {
+                tbInq.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Nessuna spesa ordinaria di competenza inquilino registrata.</td></tr>';
+            } else {
+                tbInq.innerHTML = rowsInq.map(r => `
+                    <tr class="hover:bg-amber-50/40 transition-colors">
+                        <td class="py-2.5 px-3 font-semibold text-slate-900">${r.titolo}</td>
+                        <td class="py-2.5 px-3 text-[11px] text-slate-500">${r.normativa}</td>
+                        <td class="py-2.5 px-3 text-center text-slate-500 font-mono">${formatDate(r.data_scadenza)}</td>
+                        <td class="py-2.5 px-3 text-right font-bold text-slate-900">${formatCurrency(r.importo)}</td>
+                        <td class="py-2.5 px-3 text-right font-medium text-emerald-600">${formatCurrency(r.versato)}</td>
+                        <td class="py-2.5 px-3 text-right font-bold ${r.residuo > 0.009 ? 'text-amber-600' : 'text-slate-400'}">${formatCurrency(r.residuo)}</td>
+                        <td class="py-2.5 px-3 text-center">
+                            ${r.status === 'Pagato' || r.residuo <= 0.009 
+                                ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Saldata</span>'
+                                : (r.versato > 0.009 
+                                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Acconto</span>'
+                                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">Da Saldare</span>')}
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Tabella Proprietario
+        const bloccoProp = document.getElementById('riparto-loc-blocco-locatore');
+        const rowsProp = [];
+        data.forEach(item => {
+            (item.dettaglio_locatore || []).forEach(q => rowsProp.push(q));
+        });
+
+        // Se l'utente è un inquilino, dettaglio_locatore sarà vuoto dal backend e oscuriamo il blocco
+        if (state.currentUser?.role !== 'admin' && rowsProp.length === 0 && rowsInq.length > 0) {
+            if (bloccoProp) bloccoProp.classList.add('hidden');
+        } else {
+            if (bloccoProp) bloccoProp.classList.remove('hidden');
+            if (tbProp) {
+                if (rowsProp.length === 0) {
+                    tbProp.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Nessuna spesa straordinaria a carico del locatore registrata.</td></tr>';
+                } else {
+                    tbProp.innerHTML = rowsProp.map(r => `
+                        <tr class="hover:bg-purple-50/40 transition-colors">
+                            <td class="py-2.5 px-3 font-semibold text-slate-900">${r.titolo}</td>
+                            <td class="py-2.5 px-3 text-[11px] text-slate-500">${r.normativa}</td>
+                            <td class="py-2.5 px-3 text-center text-slate-500 font-mono">${formatDate(r.data_scadenza)}</td>
+                            <td class="py-2.5 px-3 text-right font-bold text-slate-900">${formatCurrency(r.importo)}</td>
+                            <td class="py-2.5 px-3 text-right font-medium text-emerald-600">${formatCurrency(r.versato)}</td>
+                            <td class="py-2.5 px-3 text-right font-bold ${r.residuo > 0.009 ? 'text-purple-600' : 'text-slate-400'}">${formatCurrency(r.residuo)}</td>
+                            <td class="py-2.5 px-3 text-center">
+                                ${r.status === 'Pagato' || r.residuo <= 0.009 
+                                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Saldata</span>'
+                                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">In Attesa</span>'}
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            }
+        }
+
+    } catch (e) {
+        console.error('Errore ripartizione locazione:', e);
+        showToast('Errore di connessione durante il recupero dei dati di ripartizione.', 'error');
+    }
+};
+
+function resetLocazioneKpis() {
+    ['kpi-loc-totale', 'kpi-loc-proprietario', 'kpi-loc-inquilino', 'kpi-loc-versato-inq', 'kpi-loc-saldo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '€ 0,00';
+    });
+}
+
+window.stampaRipartizioneLocazione = function() {
+    if (!currentRipartizioneLocazioneData || currentRipartizioneLocazioneData.length === 0) {
+        showToast('Nessun prospetto contabile da stampare.', 'warning');
+        return;
+    }
+
+    const condoName = state.condominioInfo?.nome || sessionStorage.getItem('active_Condominio_nome') || 'Condominio Trasparente';
+    const nowStr = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    let printHtml = `
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+            <meta charset="UTF-8">
+            <title>Estratto Conto e Conguaglio Locazione - ${condoName}</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 25px; color: #1e293b; font-size: 12px; line-height: 1.4; }
+                .header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+                .header h1 { margin: 0; font-size: 18px; color: #0f172a; text-transform: uppercase; }
+                .header p { margin: 3px 0 0; color: #64748b; font-size: 11px; }
+                .card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+                .card-title { font-weight: bold; font-size: 13px; color: #0f172a; margin-bottom: 6px; }
+                .grid { display: flex; justify-content: space-between; gap: 12px; }
+                .kpi-box { flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; text-align: center; }
+                .kpi-label { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+                .kpi-val { font-size: 14px; font-weight: bold; margin-top: 4px; color: #0f172a; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 16px; }
+                th { background: #f1f5f9; text-align: left; padding: 7px 8px; border-bottom: 1.5px solid #cbd5e1; font-size: 11px; color: #334155; }
+                td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+                .text-right { text-align: right; }
+                .text-center { text-align: center; }
+                .legal-footer { font-size: 10px; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 10px; margin-top: 20px; line-height: 1.4; }
+                @media print { body { margin: 10mm; } }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>${condoName} &bull; Estratto Conto e Conguaglio Oneri Locazione</h1>
+                <p>Documento Ufficiale di Ripartizione Spese Proprietario / Inquilino generato il ${nowStr}</p>
+            </div>
+    `;
+
+    currentRipartizioneLocazioneData.forEach(item => {
+        const u = item.unita;
+        const loc = item.locatore;
+        const cond = item.conduttore;
+        const rep = item.riepilogo;
+
+        printHtml += `
+            <div class="card">
+                <div class="card-title">UNITÀ IMMOBILIARE: ${u.identificativo} (${u.tipo}) - Millesimi: ${u.millesimi_proprieta}</div>
+                <div style="font-size: 11px; margin-bottom: 8px;">
+                    <b>Locatore (Proprietario):</b> ${loc.nominativo} ${loc.codice_fiscale ? '[' + loc.codice_fiscale + ']' : ''} &bull; 
+                    <b>Conduttore (Inquilino):</b> ${cond.nominativo} ${cond.codice_fiscale ? '[' + cond.codice_fiscale + ']' : ''}
+                </div>
+                <div class="grid">
+                    <div class="kpi-box">
+                        <div class="kpi-label">Totale Spese Unità</div>
+                        <div class="kpi-val">${formatCurrency(rep.totale_spese_unita)}</div>
+                    </div>
+                    <div class="kpi-box">
+                        <div class="kpi-label">Spettanza Locatore</div>
+                        <div class="kpi-val">${formatCurrency(rep.spettanza_locatore)}</div>
+                    </div>
+                    <div class="kpi-box">
+                        <div class="kpi-label">Oneri Accessori Inquilino</div>
+                        <div class="kpi-val">${formatCurrency(rep.spettanza_conduttore)}</div>
+                    </div>
+                    <div class="kpi-box">
+                        <div class="kpi-label">Versato da Inquilino</div>
+                        <div class="kpi-val">${formatCurrency(rep.versato_conduttore)}</div>
+                    </div>
+                    <div class="kpi-box" style="background: ${rep.conguaglio_conduttore > 0.009 ? '#fffbeb' : '#f0fdf4'};">
+                        <div class="kpi-label">Saldo Conguaglio Inquilino</div>
+                        <div class="kpi-val" style="color: ${rep.conguaglio_conduttore > 0.009 ? '#b45309' : '#15803d'};">${formatCurrency(rep.conguaglio_conduttore)}</div>
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="font-size: 12px; margin: 12px 0 4px; text-transform: uppercase;">1. Prospetto Oneri Accessori a Carico dell'Inquilino (Art. 9 L. 392/78)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Causale Spesa</th>
+                        <th>Riferimento Legge</th>
+                        <th class="text-center">Scadenza</th>
+                        <th class="text-right">Dovuto (€)</th>
+                        <th class="text-right">Versato (€)</th>
+                        <th class="text-right">Residuo (€)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${(item.dettaglio_conduttore || []).map(r => `
+                        <tr>
+                            <td><b>${r.titolo}</b></td>
+                            <td style="font-size: 10px; color: #64748b;">${r.normativa}</td>
+                            <td class="text-center">${formatDate(r.data_scadenza)}</td>
+                            <td class="text-right">${formatCurrency(r.importo)}</td>
+                            <td class="text-right">${formatCurrency(r.versato)}</td>
+                            <td class="text-right font-bold">${formatCurrency(r.residuo)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        if (item.dettaglio_locatore && item.dettaglio_locatore.length > 0) {
+            printHtml += `
+                <h3 style="font-size: 12px; margin: 16px 0 4px; text-transform: uppercase;">2. Prospetto Spese Straordinarie e Fabbricato a Carico del Locatore (Art. 1005 C.C.)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Causale Spesa</th>
+                            <th>Riferimento Legge</th>
+                            <th class="text-center">Scadenza</th>
+                            <th class="text-right">Importo a Carico Locatore (€)</th>
+                            <th class="text-right">Versato (€)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${item.dettaglio_locatore.map(r => `
+                            <tr>
+                                <td><b>${r.titolo}</b></td>
+                                <td style="font-size: 10px; color: #64748b;">${r.normativa}</td>
+                                <td class="text-center">${formatDate(r.data_scadenza)}</td>
+                                <td class="text-right">${formatCurrency(r.importo)}</td>
+                                <td class="text-right">${formatCurrency(r.versato)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+    });
+
+    printHtml += `
+            <div class="legal-footer">
+                <b>QUADRO NORMATIVO APPLICATO:</b> Ripartizione effettuata conformemente all'Accordo Nazionale Confedilizia-Sunia, all'Art. 9 della Legge 27 luglio 1978 n. 392 (Disciplina delle locazioni di immobili urbani) e agli Artt. 1004 e 1005 del Codice Civile. Il presente prospetto contabile costituisce rendiconto valido ai fini della determinazione e del conguaglio annuale delle spese accessorie tra Locatore e Conduttore.
+            </div>
+            <script>window.onload = function() { window.print(); };</script>
+        </body>
+        </html>
+    `;
+
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+        printWin.document.open();
+        printWin.document.write(printHtml);
+        printWin.document.close();
+    } else {
+        showToast('Abilita i pop-up del browser per la stampa del prospetto di locazione.', 'warning');
+    }
+};

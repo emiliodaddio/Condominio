@@ -296,6 +296,36 @@
             </div>
         </div>
 
+        <!-- Modulo Ripartizione Locatore / Inquilino (Se applicabile all'unità) -->
+        <div id="condomino-locazione-card" class="hidden bg-slate-900/50 backdrop-blur-md border border-amber-500/30 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                        <i class="fa-solid fa-file-contract"></i> Rapporto di Locazione Attivo
+                    </span>
+                    <h3 class="text-base font-bold text-white mt-1" id="condomino-locazione-ruolo-titolo">Ripartizione Spese e Oneri Accessori</h3>
+                    <p class="text-xs text-slate-300 mt-0.5" id="condomino-locazione-descrizione">Dettaglio spese accessorie calcolate a norma di legge (Art. 9 L. 392/78 & Artt. 1004-1005 C.C.).</p>
+                </div>
+                <button type="button" onclick="openRipartizioneLocazioneModal()" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shrink-0">
+                    <i class="fa-solid fa-receipt"></i> Prospetto & Conguaglio Locazione
+                </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-white/10" id="condomino-locazione-kpis">
+                <div class="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Quota Oneri Accessori</span>
+                    <div id="cond-loc-kpi-spettanza" class="text-base font-black text-amber-400 mt-0.5">€ 0,00</div>
+                </div>
+                <div class="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Versato Inquilino</span>
+                    <div id="cond-loc-kpi-versato" class="text-base font-black text-emerald-400 mt-0.5">€ 0,00</div>
+                </div>
+                <div class="bg-slate-950/40 p-3 rounded-xl border border-white/5">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Conguaglio Spese</span>
+                    <div id="cond-loc-kpi-saldo" class="text-base font-black text-white mt-0.5">In Pareggio</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Elenco Ricevute e Pagamenti Personali -->
         <div class="bg-slate-900/30 border border-white/5 rounded-2xl p-6">
             <h3 class="text-lg font-medium mb-4 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-slate-400"></i> Storico Versamenti Effettuati</h3>
@@ -1839,6 +1869,9 @@
                     </div>
                     <div class="flex items-center space-x-2">
                         <div id="admin-add-quote-btn-box" class="hidden flex flex-wrap items-center gap-2">
+                            <button onclick="openRipartizioneLocazioneModal()" class="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5">
+                                <i class="fa-solid fa-people-arrows"></i> Ripartizione Locatore / Inquilino
+                            </button>
                             <button onclick="openMillesimiCalculatorModal()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5">
                                 <i class="fa-solid fa-calculator"></i> Calcola & Ripartisci per Millesimi
                             </button>
@@ -3595,6 +3628,51 @@
                     <p class="text-[11px] text-slate-400 mt-1">Collega l'account registrato per consentire al condòmino l'accesso web alle sue quote.</p>
                 </div>
 
+                <hr class="border-slate-100">
+                <div class="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-sm font-bold text-amber-900 flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-contract text-amber-600"></i> Contratto & Rapporto di Locazione
+                        </h4>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="unita-locazione-attiva" class="sr-only peer" onchange="toggleUnitaLocazioneFields(this.checked)">
+                            <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+                            <span class="ml-2 text-xs font-bold text-slate-700" id="unita-locazione-attiva-label">Non locato</span>
+                        </label>
+                    </div>
+                    <div id="unita-locazione-box" class="hidden space-y-3 pt-2 border-t border-amber-200/60">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Data Inizio Locazione</label>
+                                <input type="date" id="unita-locazione-inizio" class="w-full p-2 border border-slate-300 rounded-xl text-xs bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Data Fine Locazione</label>
+                                <input type="date" id="unita-locazione-fine" class="w-full p-2 border border-slate-300 rounded-xl text-xs bg-white">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Criterio di Ripartizione</label>
+                                <select id="unita-locazione-criterio" class="w-full p-2 border border-slate-300 rounded-xl text-xs bg-white">
+                                    <option value="confedilizia">Tabella Nazionale Confedilizia - Sunia (Art. 9 L. 392/78)</option>
+                                    <option value="codice_civile">Codice Civile Artt. 1004-1005 (Ordinaria / Straordinaria)</option>
+                                    <option value="canone_concordato">Accordo Territoriale Canone Concordato</option>
+                                    <option value="personalizzato">Accordo Contrattuale Specifico</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Canone Mensile (€) (Opzionale)</label>
+                                <input type="number" step="0.01" id="unita-locazione-canone" placeholder="es. 650.00" class="w-full p-2 border border-slate-300 rounded-xl text-xs bg-white">
+                            </div>
+                        </div>
+                        <p class="text-[11px] text-amber-800">
+                            <i class="fa-solid fa-circle-info mr-1"></i>
+                            Attivando il contratto, la piattaforma calcola automaticamente la suddivisione tra oneri accessori a carico del conduttore e spese straordinarie a carico del locatore.
+                        </p>
+                    </div>
+                </div>
+
                 <button type="submit" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Salva Unità</button>
             </form>
         </div>
@@ -3866,7 +3944,7 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs font-semibold text-slate-700 mb-1">Tipologia *</label>
-                            <select id="quote-type" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                            <select id="quote-type" required onchange="onQuoteTypeChange(this.value)" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
                                 <option value="ordinaria">Ordinaria</option>
                                 <option value="straordinaria">Straordinaria</option>
                             </select>
@@ -3875,6 +3953,14 @@
                             <label class="block text-xs font-semibold text-slate-700 mb-1">Titolo / Causale *</label>
                             <input type="text" id="quote-title" required placeholder="Es: Rata Ordinaria / Riparto Spesa" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
                         </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Competenza Locazione (Oneri Accessori)</label>
+                        <select id="quote-competenza-locazione" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                            <option value="auto">Auto (Ordinaria &rarr; Inquilino, Straordinaria &rarr; Proprietario)</option>
+                            <option value="inquilino">A carico Inquilino (Oneri Accessori - Art. 9 L. 392/78)</option>
+                            <option value="proprietario">A carico Proprietario (Capitale / Straordinaria - Art. 1005 C.C.)</option>
+                        </select>
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
@@ -4005,22 +4091,30 @@
                             <i class="fa-solid fa-file-invoice-dollar text-indigo-600"></i>
                             Generazione Massiva Quote in Contabilità (Opzionale)
                         </h4>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div class="sm:col-span-1">
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                            <div class="sm:col-span-2">
                                 <label class="block text-xs font-bold text-slate-700 mb-1">Titolo / Causale Bolletta *</label>
                                 <input type="text" id="mill-calc-quote-title" value="Quota Spesa Condominiale (Riparto Millesimale)" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">Tipologia Spesa</label>
-                                <select id="mill-calc-quote-type" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <select id="mill-calc-quote-type" onchange="onMillQuoteTypeChange(this.value)" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
                                     <option value="ordinaria">Ordinaria</option>
                                     <option value="straordinaria">Straordinaria</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Data Scadenza Pagamento *</label>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Data Scadenza *</label>
                                 <input type="date" id="mill-calc-quote-due-date" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
                             </div>
+                        </div>
+                        <div class="mt-2.5">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Competenza Oneri Locazione (Confedilizia / Codice Civile)</label>
+                            <select id="mill-calc-quote-competenza" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
+                                <option value="auto">Auto (Ordinaria &rarr; Inquilino, Straordinaria &rarr; Proprietario)</option>
+                                <option value="inquilino">A carico Inquilino (Oneri Accessori ordinari - Art. 9 L. 392/78)</option>
+                                <option value="proprietario">A carico Proprietario (Spese straordinarie / capitale - Art. 1005 C.C.)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -4036,6 +4130,163 @@
                             <i class="fa-solid fa-check-double"></i> Assegna Quote ai Condòmini Selezionati
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- Modale Ripartizione Spese e Conguaglio Locazione (Locatore vs Conduttore) -->
+    <div id="modal-ripartizione-locazione" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="min-h-screen px-4 flex items-center justify-center p-4">
+            <div class="fixed inset-0 modal-backdrop" onclick="closeRipartizioneLocazioneModal()"></div>
+            <div class="bg-white rounded-3xl max-w-5xl w-full p-6 sm:p-8 shadow-2xl relative z-10 modal-content border border-slate-100 max-h-[92vh] flex flex-col">
+                <!-- Header -->
+                <div class="flex justify-between items-start pb-4 border-b border-slate-200 shrink-0">
+                    <div class="flex items-center gap-3">
+                        <span class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-lg font-bold">
+                            <i class="fa-solid fa-people-arrows"></i>
+                        </span>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-slate-900">Ripartizione Spese & Conguaglio Locazione</h3>
+                            <p class="text-xs text-slate-500">Prospetto contabile analitico Locatore (Proprietario) vs Conduttore (Inquilino) conforme all'Art. 9 L. 392/1978 e Artt. 1004-1005 C.C.</p>
+                        </div>
+                    </div>
+                    <button onclick="closeRipartizioneLocazioneModal()" class="text-slate-400 hover:text-slate-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+
+                <!-- Body scorrevole -->
+                <div class="overflow-y-auto flex-1 space-y-5 py-4 pr-1">
+                    <!-- Barra Selezione Unità e Anno -->
+                    <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex flex-wrap items-center gap-3 flex-1">
+                            <div class="min-w-[220px]">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Seleziona Unità Immobiliare</label>
+                                <select id="riparto-loc-unita-select" onchange="loadRipartizioneLocazioneData()" class="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white"></select>
+                            </div>
+                            <div class="w-32">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Anno / Esercizio</label>
+                                <select id="riparto-loc-anno-select" onchange="loadRipartizioneLocazioneData()" class="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white">
+                                    <option value="">Tutti gli anni</option>
+                                    <option value="2026" selected>2026</option>
+                                    <option value="2025">2025</option>
+                                    <option value="2024">2024</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="loadRipartizioneLocazioneData()" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition">
+                                <i class="fa-solid fa-rotate-right mr-1"></i> Aggiorna
+                            </button>
+                            <button type="button" onclick="stampaRipartizioneLocazione()" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-print"></i> Stampa Prospetto / PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Scheda Soggetti del Contratto -->
+                    <div id="riparto-loc-soggetti-banner" class="bg-gradient-to-r from-amber-50 to-orange-50/60 rounded-2xl p-4 border border-amber-200/80">
+                        <!-- Popolato dinamicamente -->
+                    </div>
+
+                    <!-- Indicatori Chiave (KPI Cards) -->
+                    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3" id="riparto-loc-kpi-grid">
+                        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                            <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1">Totale Spese Unità</span>
+                            <div id="kpi-loc-totale" class="text-base sm:text-lg font-black text-slate-800 font-mono">€ 0,00</div>
+                            <span class="text-[10px] text-slate-500">100% dell'immobile</span>
+                        </div>
+                        <div class="bg-white p-3.5 rounded-2xl border border-purple-200 shadow-2xs">
+                            <span class="text-[10px] uppercase font-bold text-purple-700 block mb-1">Spettanza Locatore</span>
+                            <div id="kpi-loc-proprietario" class="text-base sm:text-lg font-black text-purple-900 font-mono">€ 0,00</div>
+                            <span class="text-[10px] text-purple-600 font-medium">Straordinaria (C.C. 1005)</span>
+                        </div>
+                        <div class="bg-white p-3.5 rounded-2xl border border-amber-200 shadow-2xs">
+                            <span class="text-[10px] uppercase font-bold text-amber-700 block mb-1">Spettanza Inquilino</span>
+                            <div id="kpi-loc-inquilino" class="text-base sm:text-lg font-black text-amber-900 font-mono">€ 0,00</div>
+                            <span class="text-[10px] text-amber-600 font-medium">Oneri Accessori (L. 392/78)</span>
+                        </div>
+                        <div class="bg-white p-3.5 rounded-2xl border border-emerald-200 shadow-2xs">
+                            <span class="text-[10px] uppercase font-bold text-emerald-700 block mb-1">Versato Inquilino</span>
+                            <div id="kpi-loc-versato-inq" class="text-base sm:text-lg font-black text-emerald-700 font-mono">€ 0,00</div>
+                            <span class="text-[10px] text-emerald-600 font-medium">Acconti registrati</span>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 bg-white p-3.5 rounded-2xl border border-slate-300 shadow-2xs" id="kpi-loc-saldo-card">
+                            <span class="text-[10px] uppercase font-bold text-slate-500 block mb-1">Conguaglio Finale</span>
+                            <div id="kpi-loc-saldo" class="text-base sm:text-lg font-black text-slate-900 font-mono">€ 0,00</div>
+                            <span id="kpi-loc-saldo-badge" class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">In Calcolo</span>
+                        </div>
+                    </div>
+
+                    <!-- TABELLA 1: ONERI ACCESSORI CONDUTTORE (INQUILINO) -->
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div class="px-4 py-3 bg-amber-50/70 border-b border-amber-200 flex items-center justify-between">
+                            <h4 class="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                                <i class="fa-solid fa-user text-amber-700"></i>
+                                Spese di Competenza Inquilino (Oneri Accessori - Art. 9 Legge 392/1978)
+                            </h4>
+                            <span class="text-[11px] font-bold text-amber-900" id="riparto-loc-subtotale-inq">Subtotale: € 0,00</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                                    <tr>
+                                        <th class="py-2.5 px-3">Causale / Voce di Spesa</th>
+                                        <th class="py-2.5 px-3">Normativa di Riferimento</th>
+                                        <th class="py-2.5 px-3 text-center">Scadenza</th>
+                                        <th class="py-2.5 px-3 text-right">Quota Dovuta</th>
+                                        <th class="py-2.5 px-3 text-right">Versato</th>
+                                        <th class="py-2.5 px-3 text-right">Residuo</th>
+                                        <th class="py-2.5 px-3 text-center">Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="riparto-loc-table-inquilino" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- TABELLA 2: SPESE DI PROPRIETÀ LOCATORE (PROPRIETARIO) -->
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden" id="riparto-loc-blocco-locatore">
+                        <div class="px-4 py-3 bg-purple-50/70 border-b border-purple-200 flex items-center justify-between">
+                            <h4 class="text-xs font-black uppercase tracking-wider text-purple-950 flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-tie text-purple-700"></i>
+                                Spese di Esclusiva Spettanza Locatore (Straordinaria & Fabbricato - Art. 1005 C.C.)
+                            </h4>
+                            <span class="text-[11px] font-bold text-purple-900" id="riparto-loc-subtotale-prop">Subtotale: € 0,00</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                                    <tr>
+                                        <th class="py-2.5 px-3">Causale / Voce di Spesa</th>
+                                        <th class="py-2.5 px-3">Normativa di Riferimento</th>
+                                        <th class="py-2.5 px-3 text-center">Scadenza</th>
+                                        <th class="py-2.5 px-3 text-right">Quota Dovuta</th>
+                                        <th class="py-2.5 px-3 text-right">Versato</th>
+                                        <th class="py-2.5 px-3 text-right">Residuo</th>
+                                        <th class="py-2.5 px-3 text-center">Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="riparto-loc-table-locatore" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Note Legali & Normativa -->
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-[11px] text-slate-600 space-y-1">
+                        <div class="font-bold text-slate-800 flex items-center gap-1">
+                            <i class="fa-solid fa-scale-balanced text-amber-600"></i>
+                            Quadro Normativo della Ripartizione Oneri:
+                        </div>
+                        <p><b>1. A carico del Conduttore (Inquilino):</b> A norma dell'art. 9 della Legge 392/1978, sono interamente dovute le spese relative al servizio di pulizia, al funzionamento e all'ordinaria manutenzione dell'ascensore, alla fornitura dell'acqua, dell'energia elettrica per le parti comuni, del riscaldamento e condizionamento dell'aria, e allo spurgo dei pozzi neri e latrine.</p>
+                        <p><b>2. A carico del Locatore (Proprietario):</b> A norma degli Artt. 1004 e 1005 del Codice Civile, sono a carico esclusivo del proprietario le riparazioni straordinarie, la ricostruzione e sostituzione degli impianti comuni, le opere strutturali (facciate, coperture, lastrici solari) e l'assicurazione globale del fabbricato.</p>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="pt-4 border-t border-slate-200 flex justify-between items-center shrink-0">
+                    <span class="text-[11px] text-slate-400 font-medium">Condominio Trasparente &bull; Modulo Gestione Locazioni & Conguagli</span>
+                    <button type="button" onclick="closeRipartizioneLocazioneModal()" class="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl">Chiudi</button>
                 </div>
             </div>
         </div>
