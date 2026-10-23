@@ -7230,13 +7230,15 @@ app.get('/api/locazione/ripartizione', authenticateToken, requireCondominio, (re
         FROM unita_immobiliari u
         LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id
         LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
-        WHERE u.condominio_id = ? AND (u.locazione_attiva = 1 OR (u.proprietario_id IS NOT NULL AND u.conduttore_id IS NOT NULL))
+        WHERE u.condominio_id = ?
     `;
     const paramsUnita = [req.condominio_id];
 
     if (unitaId) {
         sqlUnita += ` AND u.id = ?`;
         paramsUnita.push(unitaId);
+    } else {
+        sqlUnita += ` AND (u.locazione_attiva = 1 OR (u.proprietario_id IS NOT NULL AND u.conduttore_id IS NOT NULL))`;
     }
 
     if (!isAdminUser) {

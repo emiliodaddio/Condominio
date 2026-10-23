@@ -3034,6 +3034,10 @@
                             <i class="fa-solid fa-calculator"></i>
                             <span>Calcola & Ripartisci Spesa per Millesimi</span>
                         </button>
+                        <button type="button" onclick="openUnitaModal()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5" title="Gestisci e modifica le unità immobiliari, abbinamento inquilini e contratti di locazione">
+                            <i class="fa-solid fa-building-user"></i>
+                            <span>Unità &amp; Contratti Locazione</span>
+                        </button>
                         <button type="button" onclick="openPersonaModal()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5">
                             <i class="fa-solid fa-plus"></i>
                             <span>Nuovo Condòmino / Unità</span>
@@ -4179,6 +4183,9 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
+                            <button type="button" onclick="openUnitaModal(document.getElementById('riparto-loc-unita-select')?.value || null)" class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="Apri scheda unità per configurare proprietario, inquilino e contratto">
+                                <i class="fa-solid fa-file-contract"></i> <span>Configura Locazione Unità</span>
+                            </button>
                             <button type="button" onclick="loadRipartizioneLocazioneData()" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-rotate-right mr-1"></i> Aggiorna
                             </button>

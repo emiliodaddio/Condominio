@@ -9492,10 +9492,22 @@ window.loadRipartizioneLocazioneData = async function() {
 
         if (data.length === 0) {
             if (soggettiBanner) soggettiBanner.innerHTML = `
-                <div class="text-center py-4 text-xs text-amber-800">
-                    <i class="fa-solid fa-triangle-exclamation text-amber-600 text-lg mb-1 block"></i>
-                    Nessuna unità con rapporto di locazione attivo trovato per i filtri selezionati.<br>
-                    Per attivare la ripartizione, apri la scheda dell'Unità Immobiliare e spunta "Locato (Attivo)".
+                <div class="p-6 text-center bg-amber-50 rounded-2xl border border-amber-200 space-y-3">
+                    <div class="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center text-xl mx-auto shadow-xs">
+                        <i class="fa-solid fa-file-contract"></i>
+                    </div>
+                    <h4 class="text-sm font-bold text-amber-950">Nessuna unità con contratto di locazione attivo</h4>
+                    <p class="text-xs text-amber-800 max-w-lg mx-auto leading-relaxed">
+                        Per calcolare automaticamente il riparto tra <b>Locatore</b> (straordinaria) e <b>Inquilino</b> (oneri accessori), basta aprire la scheda dell'unità e spuntare <b>"Locato (Attivo)"</b> assegnando il proprietario e l'inquilino.
+                    </p>
+                    <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
+                        <button type="button" onclick="openUnitaModal(document.getElementById('riparto-loc-unita-select')?.value || null)" class="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-2">
+                            <i class="fa-solid fa-pen-to-square"></i> Configura Ora l'Unità in Locazione
+                        </button>
+                        <button type="button" onclick="closeRipartizioneLocazioneModal(); switchTab('anagrafica');" class="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-2xs transition flex items-center gap-2">
+                            <i class="fa-solid fa-users"></i> Vai in Anagrafica Condominio
+                        </button>
+                    </div>
                 </div>
             `;
             if (tbInq) tbInq.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Nessuna spesa accessoria registrata.</td></tr>';
@@ -9516,7 +9528,13 @@ window.loadRipartizioneLocazioneData = async function() {
                 ? 'Tabella Nazionale Confedilizia - Sunia (Art. 9 L. 392/78)'
                 : (u.locazione_criterio === 'codice_civile' ? 'Codice Civile Artt. 1004-1005' : 'Accordo Contrattuale Speciale');
 
-            soggettiBanner.innerHTML = `
+            const nonAttivoAvviso = !u.locazione_attiva ? `
+                <div class="mb-3 px-3 py-2 rounded-xl bg-amber-100/80 border border-amber-300 text-amber-900 text-xs flex flex-wrap items-center justify-between gap-2">
+                    <span class="flex items-center gap-1.5 font-medium"><i class="fa-solid fa-circle-info text-amber-600"></i> Questa unità ha quote caricate ma il flag "Locato (Attivo)" non è ancora abilitato.</span>
+                    <button type="button" onclick="openUnitaModal(${u.id})" class="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-[11px] font-bold">Attiva Locazione per questa Unità &rarr;</button>
+                </div>
+            ` : '';
+            soggettiBanner.innerHTML = nonAttivoAvviso + `
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div class="space-y-1">
                         <div class="flex items-center gap-2">
