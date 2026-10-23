@@ -7153,6 +7153,251 @@ app.post('/api/millesimi/tabelle/calcola-art1124', authenticateToken, requireCon
     });
 });
 
+// ============================================================================
+// MODULO RIPARTIZIONE SPESE LOCATORE / CONDUTTORE & CONGUAGLIO ONERI ACCESSORI
+// A norma dell'Art. 9 Legge 392/1978, Artt. 1004-1005 C.C. e Tabelle Confedilizia-Sunia
+// ============================================================================
+app.get('/api/locazione/ripartizione', authenticateToken, requireCondominio, (req, res) => {
+    if (req.user && (req.user.is_demo || req.user.id === 9999)) {
+        return res.json({
+            success: true,
+            data: [
+                {
+                    unita: {
+                        id: 9101,
+                        identificativo: 'Int. 4',
+                        tipo: 'Appartamento',
+                        scala: 'A',
+                        piano: '2',
+                        interno: '4',
+                        dati_catastali: 'Foglio 12, Part. 345, Sub. 4, Cat. A/2',
+                        millesimi_proprieta: 68.45,
+                        locazione_attiva: true,
+                        locazione_inizio: '2026-01-01',
+                        locazione_fine: '2029-12-31',
+                        locazione_canone: 750.00,
+                        locazione_criterio: 'confedilizia'
+                    },
+                    locatore: {
+                        id: 1,
+                        nome: 'Alessandro',
+                        cognome: 'Bianchi',
+                        nominativo: 'Bianchi Alessandro',
+                        email: 'alessandro.bianchi@example.com',
+                        cellulare: '3331122334',
+                        codice_fiscale: 'BNCALN80A01H501U'
+                    },
+                    conduttore: {
+                        id: 9999,
+                        nome: 'Mario',
+                        cognome: 'Rossi',
+                        nominativo: 'Rossi Mario (Ospite Demo)',
+                        email: 'demo@condominiotrasparente.com',
+                        cellulare: '3401234567',
+                        codice_fiscale: 'RSSMRA85M01H501Z'
+                    },
+                    riepilogo: {
+                        totale_spese_unita: 405.00,
+                        spettanza_locatore: 60.00,
+                        versato_locatore: 0.00,
+                        spettanza_conduttore: 345.00,
+                        versato_conduttore: 195.00,
+                        conguaglio_conduttore: 150.00,
+                        stato_conguaglio: 'A Debito del Conduttore',
+                        riferimenti_legge: 'Ripartizione conforme all\'Accordo Nazionale Confedilizia-Sunia, Artt. 1004-1005 C.C. e Art. 9 Legge 392/1978.'
+                    },
+                    dettaglio_conduttore: [
+                        { id: 201, titolo: 'Rata Ordinaria 1° Rata Gestione', competenza: 'Conduttore (Inquilino)', normativa: 'Art. 9 L. 392/1978 (Pulizia, energia comune, servizi ordinari)', data_scadenza: '2026-01-31', importo: 150.00, versato: 150.00, residuo: 0.00, status: 'Pagato' },
+                        { id: 202, titolo: 'Fondo Pulizia e Cura Giardino Condominiale', competenza: 'Conduttore (Inquilino)', normativa: 'Art. 9 L. 392/1978 (Manutenzione ordinaria del verde)', data_scadenza: '2026-02-28', importo: 45.00, versato: 45.00, residuo: 0.00, status: 'Pagato' },
+                        { id: 203, titolo: 'Rata Ordinaria 2° Rata Gestione', competenza: 'Conduttore (Inquilino)', normativa: 'Art. 9 L. 392/1978 (Servizi comuni e funzionamento impianti)', data_scadenza: '2026-04-30', importo: 150.00, versato: 0.00, residuo: 150.00, status: 'In attesa' }
+                    ],
+                    dettaglio_locatore: [
+                        { id: 204, titolo: 'Manutenzione Programmata Impianto Citofonico', competenza: 'Locatore (Proprietario)', normativa: 'Art. 1005 C.C. (Manutenzioni straordinarie e innovazioni)', data_scadenza: '2026-05-31', importo: 60.00, versato: 0.00, residuo: 60.00, status: 'In attesa' }
+                    ]
+                }
+            ]
+        });
+    }
+    const unitaId = req.query.unita_id ? parseInt(req.query.unita_id, 10) : null;
+    const anno = req.query.anno ? parseInt(req.query.anno, 10) : null;
+    const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
+
+    // Recupera le unità con rapporto di locazione attivo o aventi locatore e conduttore censiti
+    let sqlUnita = `
+        SELECT u.*, 
+               p.id as prop_id, p.nome as prop_nome, p.cognome as prop_cognome, p.email as prop_email, p.cellulare as prop_telefono, p.codice_fiscale as prop_cf,
+               c.id as cond_id, c.nome as cond_nome, c.cognome as cond_cognome, c.email as cond_email, c.cellulare as cond_telefono, c.codice_fiscale as cond_cf
+        FROM unita_immobiliari u
+        LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id
+        LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
+        WHERE u.condominio_id = ? AND (u.locazione_attiva = 1 OR (u.proprietario_id IS NOT NULL AND u.conduttore_id IS NOT NULL))
+    `;
+    const paramsUnita = [req.condominio_id];
+
+    if (unitaId) {
+        sqlUnita += ` AND u.id = ?`;
+        paramsUnita.push(unitaId);
+    }
+
+    if (!isAdminUser) {
+        const userEmail = (req.user && req.user.email) ? req.user.email.trim().toLowerCase() : '';
+        sqlUnita += ` AND (u.user_id = ? OR LOWER(TRIM(COALESCE(p.email, ''))) = ? OR LOWER(TRIM(COALESCE(c.email, ''))) = ?)`;
+        paramsUnita.push(req.user.id, userEmail, userEmail);
+    }
+
+    sqlUnita += ` ORDER BY u.identificativo ASC`;
+
+    db.all(sqlUnita, paramsUnita, (errU, unitaRows) => {
+        if (errU) return res.status(500).json({ success: false, message: errU.message });
+        if (!unitaRows || unitaRows.length === 0) {
+            return res.json({
+                success: true,
+                data: [],
+                message: 'Nessuna unità immobiliare con rapporto di locazione configurato.'
+            });
+        }
+
+        const unitaIds = unitaRows.map(u => u.id);
+        const placeholders = unitaIds.map(() => '?').join(',');
+
+        let sqlQuotes = `
+            SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome, p.ruolo_default
+            FROM quotes q
+            LEFT JOIN anagrafica_persone p ON q.persona_id = p.id
+            WHERE q.condominio_id = ? AND q.unita_id IN (${placeholders})
+        `;
+        const paramsQuotes = [req.condominio_id, ...unitaIds];
+
+        if (anno) {
+            sqlQuotes += (db.type === 'mysql') 
+                ? ` AND YEAR(q.due_date) = ?` 
+                : ` AND strftime('%Y', q.due_date) = ?`;
+            paramsQuotes.push(anno);
+        }
+
+        sqlQuotes += ` ORDER BY q.due_date ASC, q.id ASC`;
+
+        db.all(sqlQuotes, paramsQuotes, (errQ, quotesRows) => {
+            if (errQ) return res.status(500).json({ success: false, message: errQ.message });
+
+            const userEmail = (req.user && req.user.email) ? req.user.email.trim().toLowerCase() : '';
+            const isUserTenantOnly = !isAdminUser && unitaRows.some(u => 
+                u.cond_email && u.cond_email.trim().toLowerCase() === userEmail &&
+                (!u.prop_email || u.prop_email.trim().toLowerCase() !== userEmail)
+            );
+
+            const result = unitaRows.map(u => {
+                const uQuotes = (quotesRows || []).filter(q => q.unita_id === u.id);
+
+                let totaleSpeseUnita = 0;
+                let totaleProprietario = 0;
+                let totaleInquilino = 0;
+                let versatoInquilino = 0;
+                let versatoProprietario = 0;
+
+                const dettaglioProprietario = [];
+                const dettaglioInquilino = [];
+
+                uQuotes.forEach(q => {
+                    const amt = parseFloat(q.amount) || 0;
+                    const paid = parseFloat(q.paid_amount) || (q.status === 'Pagato' ? amt : 0);
+                    totaleSpeseUnita += amt;
+
+                    // Classificazione di legge
+                    const comp = q.competenza_locazione || (q.type === 'straordinaria' ? 'proprietario' : 'inquilino');
+                    const isStraord = comp === 'proprietario' || q.type === 'straordinaria';
+
+                    if (isStraord) {
+                        totaleProprietario += amt;
+                        versatoProprietario += paid;
+                        dettaglioProprietario.push({
+                            id: q.id,
+                            titolo: q.title,
+                            competenza: 'Locatore (Proprietario)',
+                            normativa: 'Art. 1005 C.C. (Manutenzioni straordinarie, rifacimento parti strutturali)',
+                            data_scadenza: q.due_date,
+                            importo: amt,
+                            versato: paid,
+                            residuo: Math.max(0, Math.round((amt - paid) * 100) / 100),
+                            status: q.status
+                        });
+                    } else {
+                        totaleInquilino += amt;
+                        versatoInquilino += paid;
+                        dettaglioInquilino.push({
+                            id: q.id,
+                            titolo: q.title,
+                            competenza: 'Conduttore (Inquilino)',
+                            normativa: 'Art. 9 L. 392/1978 (Oneri accessori, pulizia, consumi e gestione ordinaria)',
+                            data_scadenza: q.due_date,
+                            importo: amt,
+                            versato: paid,
+                            residuo: Math.max(0, Math.round((amt - paid) * 100) / 100),
+                            status: q.status
+                        });
+                    }
+                });
+
+                const conguaglioInquilino = Math.round((totaleInquilino - versatoInquilino) * 100) / 100;
+                let statoConguaglio = 'In Pareggio';
+                if (conguaglioInquilino > 0.009) statoConguaglio = 'A Debito del Conduttore';
+                else if (conguaglioInquilino < -0.009) statoConguaglio = 'A Credito del Conduttore';
+
+                return {
+                    unita: {
+                        id: u.id,
+                        identificativo: u.identificativo,
+                        tipo: u.tipo,
+                        scala: u.scala,
+                        piano: u.piano,
+                        interno: u.interno,
+                        dati_catastali: u.dati_catastali,
+                        millesimi_proprieta: u.millesimi_proprieta,
+                        locazione_attiva: !!u.locazione_attiva,
+                        locazione_inizio: u.locazione_inizio,
+                        locazione_fine: u.locazione_fine,
+                        locazione_canone: parseFloat(u.locazione_canone || 0),
+                        locazione_criterio: u.locazione_criterio || 'confedilizia'
+                    },
+                    locatore: {
+                        id: u.prop_id,
+                        nome: u.prop_nome,
+                        cognome: u.prop_cognome,
+                        nominativo: `${u.prop_cognome || ''} ${u.prop_nome || ''}`.trim() || 'Proprietario non registrato',
+                        email: u.prop_email,
+                        cellulare: u.prop_telefono,
+                        codice_fiscale: u.prop_cf
+                    },
+                    conduttore: {
+                        id: u.cond_id,
+                        nome: u.cond_nome,
+                        cognome: u.cond_cognome,
+                        nominativo: `${u.cond_cognome || ''} ${u.cond_nome || ''}`.trim() || 'Inquilino non registrato',
+                        email: u.cond_email,
+                        cellulare: u.cond_telefono,
+                        codice_fiscale: u.cond_cf
+                    },
+                    riepilogo: {
+                        totale_spese_unita: Math.round(totaleSpeseUnita * 100) / 100,
+                        spettanza_locatore: Math.round(totaleProprietario * 100) / 100,
+                        versato_locatore: Math.round(versatoProprietario * 100) / 100,
+                        spettanza_conduttore: Math.round(totaleInquilino * 100) / 100,
+                        versato_conduttore: Math.round(versatoInquilino * 100) / 100,
+                        conguaglio_conduttore: conguaglioInquilino,
+                        stato_conguaglio: statoConguaglio,
+                        riferimenti_legge: 'Ripartizione conforme all\'Accordo Nazionale Confedilizia-Sunia, Artt. 1004-1005 C.C. e Art. 9 Legge 392/1978.'
+                    },
+                    dettaglio_conduttore: dettaglioInquilino,
+                    dettaglio_locatore: isUserTenantOnly ? [] : dettaglioProprietario
+                };
+            });
+
+            res.json({ success: true, data: result });
+        });
+    });
+});
+
+
 // 404 per richieste API non trovate
 app.use('/api', (req, res) => {
     res.status(404).json({ success: false, message: 'Endpoint API non trovato' });
@@ -7360,189 +7605,3 @@ async function selfHealCondoData() {
         }
     }
 }
-
-
-
-// ============================================================================
-// MODULO RIPARTIZIONE SPESE LOCATORE / CONDUTTORE & CONGUAGLIO ONERI ACCESSORI
-// A norma dell'Art. 9 Legge 392/1978, Artt. 1004-1005 C.C. e Tabelle Confedilizia-Sunia
-// ============================================================================
-app.get('/api/locazione/ripartizione', authenticateToken, requireCondominio, (req, res) => {
-    const unitaId = req.query.unita_id ? parseInt(req.query.unita_id, 10) : null;
-    const anno = req.query.anno ? parseInt(req.query.anno, 10) : null;
-    const isAdminUser = req.user && (req.user.is_superadmin || req.role_in_condominio === 'admin');
-
-    // Recupera le unità con rapporto di locazione attivo o aventi locatore e conduttore censiti
-    let sqlUnita = `
-        SELECT u.*, 
-               p.id as prop_id, p.nome as prop_nome, p.cognome as prop_cognome, p.email as prop_email, p.cellulare as prop_telefono, p.codice_fiscale as prop_cf,
-               c.id as cond_id, c.nome as cond_nome, c.cognome as cond_cognome, c.email as cond_email, c.cellulare as cond_telefono, c.codice_fiscale as cond_cf
-        FROM unita_immobiliari u
-        LEFT JOIN anagrafica_persone p ON u.proprietario_id = p.id
-        LEFT JOIN anagrafica_persone c ON u.conduttore_id = c.id
-        WHERE u.condominio_id = ? AND (u.locazione_attiva = 1 OR (u.proprietario_id IS NOT NULL AND u.conduttore_id IS NOT NULL))
-    `;
-    const paramsUnita = [req.condominio_id];
-
-    if (unitaId) {
-        sqlUnita += ` AND u.id = ?`;
-        paramsUnita.push(unitaId);
-    }
-
-    if (!isAdminUser) {
-        const userEmail = (req.user && req.user.email) ? req.user.email.trim().toLowerCase() : '';
-        sqlUnita += ` AND (u.user_id = ? OR LOWER(TRIM(COALESCE(p.email, ''))) = ? OR LOWER(TRIM(COALESCE(c.email, ''))) = ?)`;
-        paramsUnita.push(req.user.id, userEmail, userEmail);
-    }
-
-    sqlUnita += ` ORDER BY u.identificativo ASC`;
-
-    db.all(sqlUnita, paramsUnita, (errU, unitaRows) => {
-        if (errU) return res.status(500).json({ success: false, message: errU.message });
-        if (!unitaRows || unitaRows.length === 0) {
-            return res.json({
-                success: true,
-                data: [],
-                message: 'Nessuna unità immobiliare con rapporto di locazione configurato.'
-            });
-        }
-
-        const unitaIds = unitaRows.map(u => u.id);
-        const placeholders = unitaIds.map(() => '?').join(',');
-
-        let sqlQuotes = `
-            SELECT q.*, p.nome as persona_nome, p.cognome as persona_cognome, p.ruolo_default
-            FROM quotes q
-            LEFT JOIN anagrafica_persone p ON q.persona_id = p.id
-            WHERE q.condominio_id = ? AND q.unita_id IN (${placeholders})
-        `;
-        const paramsQuotes = [req.condominio_id, ...unitaIds];
-
-        if (anno) {
-            sqlQuotes += (db.type === 'mysql') 
-                ? ` AND YEAR(q.due_date) = ?` 
-                : ` AND strftime('%Y', q.due_date) = ?`;
-            paramsQuotes.push(anno);
-        }
-
-        sqlQuotes += ` ORDER BY q.due_date ASC, q.id ASC`;
-
-        db.all(sqlQuotes, paramsQuotes, (errQ, quotesRows) => {
-            if (errQ) return res.status(500).json({ success: false, message: errQ.message });
-
-            const userEmail = (req.user && req.user.email) ? req.user.email.trim().toLowerCase() : '';
-            const isUserTenantOnly = !isAdminUser && unitaRows.some(u => 
-                u.cond_email && u.cond_email.trim().toLowerCase() === userEmail &&
-                (!u.prop_email || u.prop_email.trim().toLowerCase() !== userEmail)
-            );
-
-            const result = unitaRows.map(u => {
-                const uQuotes = (quotesRows || []).filter(q => q.unita_id === u.id);
-
-                let totaleSpeseUnita = 0;
-                let totaleProprietario = 0;
-                let totaleInquilino = 0;
-                let versatoInquilino = 0;
-                let versatoProprietario = 0;
-
-                const dettaglioProprietario = [];
-                const dettaglioInquilino = [];
-
-                uQuotes.forEach(q => {
-                    const amt = parseFloat(q.amount) || 0;
-                    const paid = parseFloat(q.paid_amount) || (q.status === 'Pagato' ? amt : 0);
-                    totaleSpeseUnita += amt;
-
-                    // Classificazione di legge
-                    const comp = q.competenza_locazione || (q.type === 'straordinaria' ? 'proprietario' : 'inquilino');
-                    const isStraord = comp === 'proprietario' || q.type === 'straordinaria';
-
-                    if (isStraord) {
-                        totaleProprietario += amt;
-                        versatoProprietario += paid;
-                        dettaglioProprietario.push({
-                            id: q.id,
-                            titolo: q.title,
-                            competenza: 'Locatore (Proprietario)',
-                            normativa: 'Art. 1005 C.C. (Manutenzioni straordinarie, rifacimento parti strutturali)',
-                            data_scadenza: q.due_date,
-                            importo: amt,
-                            versato: paid,
-                            residuo: Math.max(0, Math.round((amt - paid) * 100) / 100),
-                            status: q.status
-                        });
-                    } else {
-                        totaleInquilino += amt;
-                        versatoInquilino += paid;
-                        dettaglioInquilino.push({
-                            id: q.id,
-                            titolo: q.title,
-                            competenza: 'Conduttore (Inquilino)',
-                            normativa: 'Art. 9 L. 392/1978 (Oneri accessori, pulizia, consumi e gestione ordinaria)',
-                            data_scadenza: q.due_date,
-                            importo: amt,
-                            versato: paid,
-                            residuo: Math.max(0, Math.round((amt - paid) * 100) / 100),
-                            status: q.status
-                        });
-                    }
-                });
-
-                const conguaglioInquilino = Math.round((totaleInquilino - versatoInquilino) * 100) / 100;
-                let statoConguaglio = 'In Pareggio';
-                if (conguaglioInquilino > 0.009) statoConguaglio = 'A Debito del Conduttore';
-                else if (conguaglioInquilino < -0.009) statoConguaglio = 'A Credito del Conduttore';
-
-                return {
-                    unita: {
-                        id: u.id,
-                        identificativo: u.identificativo,
-                        tipo: u.tipo,
-                        scala: u.scala,
-                        piano: u.piano,
-                        interno: u.interno,
-                        dati_catastali: u.dati_catastali,
-                        millesimi_proprieta: u.millesimi_proprieta,
-                        locazione_attiva: !!u.locazione_attiva,
-                        locazione_inizio: u.locazione_inizio,
-                        locazione_fine: u.locazione_fine,
-                        locazione_canone: parseFloat(u.locazione_canone || 0),
-                        locazione_criterio: u.locazione_criterio || 'confedilizia'
-                    },
-                    locatore: {
-                        id: u.prop_id,
-                        nome: u.prop_nome,
-                        cognome: u.prop_cognome,
-                        nominativo: `${u.prop_cognome || ''} ${u.prop_nome || ''}`.trim() || 'Proprietario non registrato',
-                        email: u.prop_email,
-                        cellulare: u.prop_telefono,
-                        codice_fiscale: u.prop_cf
-                    },
-                    conduttore: {
-                        id: u.cond_id,
-                        nome: u.cond_nome,
-                        cognome: u.cond_cognome,
-                        nominativo: `${u.cond_cognome || ''} ${u.cond_nome || ''}`.trim() || 'Inquilino non registrato',
-                        email: u.cond_email,
-                        cellulare: u.cond_telefono,
-                        codice_fiscale: u.cond_cf
-                    },
-                    riepilogo: {
-                        totale_spese_unita: Math.round(totaleSpeseUnita * 100) / 100,
-                        spettanza_locatore: Math.round(totaleProprietario * 100) / 100,
-                        versato_locatore: Math.round(versatoProprietario * 100) / 100,
-                        spettanza_conduttore: Math.round(totaleInquilino * 100) / 100,
-                        versato_conduttore: Math.round(versatoInquilino * 100) / 100,
-                        conguaglio_conduttore: conguaglioInquilino,
-                        stato_conguaglio: statoConguaglio,
-                        riferimenti_legge: 'Ripartizione conforme all\'Accordo Nazionale Confedilizia-Sunia, Artt. 1004-1005 C.C. e Art. 9 Legge 392/1978.'
-                    },
-                    dettaglio_conduttore: dettaglioInquilino,
-                    dettaglio_locatore: isUserTenantOnly ? [] : dettaglioProprietario
-                };
-            });
-
-            res.json({ success: true, data: result });
-        });
-    });
-});

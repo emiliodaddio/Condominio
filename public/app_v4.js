@@ -9474,9 +9474,10 @@ window.loadRipartizioneLocazioneData = async function() {
     if (tbProp) tbProp.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Caricamento quote in corso...</td></tr>';
 
     try {
-        let url = '/api/locazione/ripartizione?';
-        if (unitaId) url += `unita_id=${encodeURIComponent(unitaId)}&`;
-        if (anno) url += `anno=${encodeURIComponent(anno)}&`;
+        const qParams = [];
+        if (unitaId) qParams.push(`unita_id=${encodeURIComponent(unitaId)}`);
+        if (anno) qParams.push(`anno=${encodeURIComponent(anno)}`);
+        const url = '/api/locazione/ripartizione' + (qParams.length > 0 ? '?' + qParams.join('&') : '');
 
         const res = await fetch(url, { headers: getAuthHeaders() });
         const json = await res.json();
