@@ -183,11 +183,11 @@
         <!-- ========================================== -->
         <!-- Colonna di Destra (Form di Accesso)       -->
         <!-- ========================================== -->
-        <div class="md:w-7/12 p-8 sm:p-12 flex flex-col justify-center bg-white">
+        <div class="md:w-7/12 p-5 sm:p-8 md:p-12 flex flex-col justify-center bg-white">
             <div class="max-w-[400px] w-full mx-auto">
                 
                 <!-- Logo mobile (visibile solo su schermi piccoli) -->
-                <div class="md:hidden flex items-center justify-center gap-2.5 mb-6">
+                <div class="md:hidden flex items-center justify-center gap-2.5 mb-4 sm:mb-6">
                     <div class="w-11 h-11 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-md">
                         <i class="fa-solid fa-building text-xl"></i>
                     </div>
@@ -200,7 +200,7 @@
                 <!-- Modulo di Login Standard -->
                 <div id="login-form-container">
                     <!-- Intestazione Form -->
-                    <div class="text-left mb-6">
+                    <div class="text-left mb-4 sm:mb-6">
                         <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
                             Bentornato <span class="text-2xl">👋</span>
                         </h1>
@@ -210,16 +210,16 @@
                     </div>
 
                     <!-- Box Notifica Errore -->
-                    <div id="error-alert" class="hidden mb-5 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800 text-sm shadow-xs" role="alert">
+                    <div id="error-alert" class="hidden mb-4 p-3.5 sm:p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800 text-sm shadow-xs" role="alert" aria-live="polite" aria-atomic="true">
                         <i class="fa-solid fa-circle-exclamation text-rose-600 text-base mt-0.5 shrink-0"></i>
                         <p id="error-message" class="font-medium text-sm leading-relaxed"></p>
                     </div>
 
-                    <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+                    <form id="login-form" onsubmit="handleLogin(event)" class="space-y-3.5 sm:space-y-4">
                         
                         <!-- Campo Username / Email -->
                         <div>
-                            <label for="email" class="block text-sm font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <label for="email" class="block text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                                 Indirizzo E-mail
                             </label>
                             <div class="relative">
@@ -231,7 +231,7 @@
                                     id="email" 
                                     required 
                                     autocomplete="username"
-                                    class="w-full pl-10 pr-4 py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 transition-all outline-none" 
+                                    class="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 transition-all outline-none" 
                                     placeholder="nome@condominio.it">
                             </div>
                         </div>
@@ -239,13 +239,13 @@
                         <!-- Campo Password -->
                         <div>
                             <div class="flex justify-between items-center mb-1.5">
-                                <label for="password" class="block text-sm font-bold text-slate-700 uppercase tracking-wider">
+                                <label for="password" class="block text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wider">
                                     Password
                                 </label>
                                 <button 
                                     type="button" 
                                     onclick="showForgotPassword()" 
-                                    class="text-sm text-blue-700 font-bold hover:text-blue-800 transition-colors hover:underline cursor-pointer">
+                                    class="text-xs sm:text-sm text-blue-700 font-bold hover:text-blue-800 transition-colors hover:underline cursor-pointer">
                                     Password dimenticata?
                                 </button>
                             </div>
@@ -258,7 +258,7 @@
                                     id="password" 
                                     required 
                                     autocomplete="current-password"
-                                    class="w-full pl-10 pr-12 py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 transition-all outline-none" 
+                                    class="w-full pl-10 pr-12 py-2.5 sm:py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 transition-all outline-none" 
                                     placeholder="••••••••••••">
                                 <button 
                                     type="button" 
@@ -272,11 +272,11 @@
                         </div>
 
                         <!-- Bottone Accedi -->
-                        <div class="pt-2">
+                        <div class="pt-1.5 sm:pt-2">
                             <button 
                                 type="submit" 
                                 id="btn-submit" 
-                                class="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 active:scale-[0.99] transition-all flex justify-center items-center gap-2 text-sm group cursor-pointer">
+                                class="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold py-3 sm:py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 active:scale-[0.99] transition-all flex justify-center items-center gap-2 text-sm group cursor-pointer">
                                 <span>Accedi al Portale</span>
                                 <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>
                             </button>
@@ -284,7 +284,7 @@
                     </form>
 
                     <!-- Divisore o Azioni Secondarie Passwordless -->
-                    <div class="relative my-4">
+                    <div class="relative my-3 sm:my-4">
                         <div class="absolute inset-0 flex items-center">
                             <div class="w-full border-t border-slate-200"></div>
                         </div>
@@ -298,38 +298,38 @@
                         <button 
                             type="button" 
                             onclick="showMagicLinkModal()" 
-                            class="w-full py-2.5 px-4 border border-blue-200 bg-blue-50/60 hover:bg-blue-100 text-blue-800 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-2xs cursor-pointer">
-                            <i class="fa-solid fa-wand-magic-sparkles text-blue-600 text-xs"></i>
-                            <span>Accedi con link via Email (senza password)</span>
+                            class="w-full py-2.5 px-3 sm:px-4 border border-blue-200 bg-blue-50/60 hover:bg-blue-100 text-blue-800 font-bold rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-2xs cursor-pointer">
+                            <i class="fa-solid fa-wand-magic-sparkles text-blue-600 text-xs shrink-0"></i>
+                            <span class="leading-snug">Accedi con link via Email (senza password)</span>
                         </button>
                     </div>
 
                     <!-- Sezione Unificata: Attivazione Account & Assistenza -->
-                    <div class="mt-6 pt-5 border-t border-slate-100 text-center space-y-3">
-                        <p class="text-sm text-slate-600 font-medium">
+                    <div class="mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-slate-100 text-center space-y-2.5 sm:space-y-3">
+                        <p class="text-xs sm:text-sm text-slate-600 font-medium">
                             Sei un nuovo residente o hai bisogno di supporto?
                         </p>
                         <button 
                             type="button" 
                             onclick="showActivationModal()" 
-                            class="w-full inline-flex items-center justify-center gap-2 text-sm font-bold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 px-4 py-2.5 rounded-xl border border-indigo-200 shadow-2xs transition-all cursor-pointer">
+                            class="w-full inline-flex items-center justify-center gap-2 text-xs sm:text-sm font-bold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 px-3 sm:px-4 py-2.5 rounded-xl border border-indigo-200 shadow-2xs transition-all cursor-pointer">
                             <i class="fa-solid fa-user-check text-xs"></i>
                             <span>Attiva Account / Primo Accesso o Assistenza</span>
                         </button>
 
                         <!-- Demo mobile button (visibile solo su mobile) -->
-                        <div class="md:hidden pt-1">
+                        <div class="md:hidden pt-0.5">
                             <button 
                                 type="button" 
                                 onclick="startDemoMode()" 
-                                class="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200">
+                                class="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 border border-slate-200">
                                 <i class="fa-solid fa-compass text-emerald-600"></i>
                                 <span>Esplora la Demo (Senza Registrazione)</span>
                             </button>
                         </div>
 
                         <!-- Indicatori di Sicurezza e Trasparenza Minimali -->
-                        <div class="pt-3 border-t border-slate-100 flex items-center justify-center gap-3.5 text-xs text-slate-500">
+                        <div class="pt-2.5 sm:pt-3 border-t border-slate-100 flex items-center justify-center gap-2.5 sm:gap-3.5 text-[11px] sm:text-xs text-slate-500">
                             <span class="flex items-center gap-1.5"><i class="fa-solid fa-lock text-emerald-600 text-xs"></i> SSL 256-bit</span>
                             <span class="text-slate-300">•</span>
                             <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-halved text-blue-600 text-xs"></i> 2FA Sicura</span>
@@ -339,7 +339,7 @@
                     </div>
 
                     <!-- Footer Legale e Conformità GDPR -->
-                    <div class="mt-5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-600">
+                    <div class="mt-3 sm:mt-5 pt-2.5 sm:pt-3 border-t border-slate-100 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 text-xs text-slate-600">
                         <button type="button" onclick="openLegalModal('privacy')" class="hover:text-blue-700 font-medium hover:underline cursor-pointer">
                             Privacy Policy
                         </button>
@@ -404,7 +404,7 @@
                         <div id="otp-test-link" class="text-center"></div>
 
                         <!-- Box Errore OTP -->
-                        <div id="otp-alert" class="hidden bg-rose-50 text-rose-800 text-sm font-semibold p-3.5 rounded-xl border border-rose-200 flex items-center justify-center gap-2" role="alert"></div>
+                        <div id="otp-alert" class="hidden bg-rose-50 text-rose-800 text-sm font-semibold p-3.5 rounded-xl border border-rose-200 flex items-center justify-center gap-2" role="alert" aria-live="polite" aria-atomic="true"></div>
 
                         <button 
                             type="submit" 
@@ -431,7 +431,7 @@
     <!-- ============================================================== -->
     <!-- MODALE UNIFICATA: ATTIVA ACCOUNT / PRIMO ACCESSO & ASSISTENZA  -->
     <!-- ============================================================== -->
-    <div id="modal-activation" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity overflow-y-auto">
+    <div id="modal-activation" role="dialog" aria-modal="true" aria-labelledby="modal-act-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity overflow-y-auto">
         <div class="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden relative p-6 sm:p-7 animate-scale-up my-6">
             <div class="flex justify-between items-start mb-4">
                 <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xl shadow-sm">
@@ -442,7 +442,7 @@
                 </button>
             </div>
             
-            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mb-1">
+            <h3 id="modal-act-title" class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mb-1">
                 Attiva Account / Primo Accesso
             </h3>
             <p class="text-sm text-slate-600 mb-5 leading-relaxed">
@@ -458,7 +458,7 @@
                     </p>
                 </div>
 
-                <div id="activation-alert" class="hidden mb-4 p-3.5 rounded-xl text-xs sm:text-sm flex items-start gap-2.5">
+                <div id="activation-alert" class="hidden mb-4 p-3.5 rounded-xl text-xs sm:text-sm flex items-start gap-2.5" role="alert" aria-live="polite" aria-atomic="true">
                     <i id="activation-alert-icon" class="fa-solid fa-circle-exclamation text-base shrink-0"></i>
                     <span id="activation-alert-msg" class="font-medium leading-relaxed"></span>
                 </div>
@@ -524,7 +524,7 @@
     <!-- ========================================== -->
     <!-- MODALE: ACCESSO RAPIDO MAGIC LINK          -->
     <!-- ========================================== -->
-    <div id="modal-magic-link" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity">
+    <div id="modal-magic-link" role="dialog" aria-modal="true" aria-labelledby="modal-magic-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity">
         <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative p-6 animate-scale-up">
             <div class="flex justify-between items-start mb-4">
                 <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center text-xl shadow-sm">
@@ -535,12 +535,12 @@
                 </button>
             </div>
             
-            <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Accesso Senza Password</h3>
+            <h3 id="modal-magic-title" class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Accesso Senza Password</h3>
             <p class="text-sm text-slate-600 mb-4 leading-relaxed">
                 Inserisci l'indirizzo email del tuo profilo. Ti invieremo un link monouso valido 15 minuti per accedere all'istante.
             </p>
 
-            <div id="magic-alert" class="hidden mb-4 p-3.5 rounded-xl text-sm flex items-start gap-2.5">
+            <div id="magic-alert" class="hidden mb-4 p-3.5 rounded-xl text-sm flex items-start gap-2.5" role="alert" aria-live="polite" aria-atomic="true">
                 <i id="magic-alert-icon" class="fa-solid fa-circle-check text-base shrink-0 mt-0.5"></i>
                 <span id="magic-alert-msg" class="font-medium leading-relaxed"></span>
             </div>
@@ -587,7 +587,7 @@
     <!-- ========================================== -->
     <!-- Modale Recupero Password                   -->
     <!-- ========================================== -->
-    <div id="modal-forgot-pwd" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity">
+    <div id="modal-forgot-pwd" role="dialog" aria-modal="true" aria-labelledby="modal-forgot-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity">
         <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative animate-scale-up">
             <div class="p-6 pb-2 flex justify-between items-start">
                 <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center text-xl shadow-sm">
@@ -598,7 +598,7 @@
                 </button>
             </div>
             <div class="px-6 pb-6">
-                <h3 class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Recupera la tua password</h3>
+                <h3 id="modal-forgot-title" class="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Recupera la tua password</h3>
                 <p class="text-sm text-slate-600 mb-5 leading-relaxed">
                     Inserisci l'indirizzo email associato alla tua utenza. Ti invieremo un link sicuro per reimpostare la tua password.
                 </p>
@@ -620,7 +620,7 @@
                         </div>
                     </div>
                     
-                    <div id="forgot-alert" class="hidden p-3.5 rounded-xl text-sm font-semibold border flex items-center gap-2"></div>
+                    <div id="forgot-alert" class="hidden p-3.5 rounded-xl text-sm font-semibold border flex items-center gap-2" role="alert" aria-live="polite" aria-atomic="true"></div>
                     <div id="forgot-test-link" class="text-center mt-2"></div>
                     
                     <div class="flex items-center gap-2 pt-2">
@@ -646,7 +646,7 @@
     <!-- ========================================== -->
     <!-- Modale Reimposta Password (tramite Token)  -->
     <!-- ========================================== -->
-    <div id="modal-reset-pwd" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-reset-pwd" role="dialog" aria-modal="true" aria-labelledby="reset-modal-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden relative">
             <div class="p-6">
                 <div id="reset-modal-icon" class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-xl mb-4 shadow-sm">
@@ -680,7 +680,7 @@
                             placeholder="••••••••••••">
                     </div>
                     
-                    <div id="reset-alert" class="hidden p-3.5 rounded-xl text-sm font-semibold border flex flex-col gap-1"></div>
+                    <div id="reset-alert" class="hidden p-3.5 rounded-xl text-sm font-semibold border flex flex-col gap-1" role="alert" aria-live="polite" aria-atomic="true"></div>
                     
                     <button 
                         type="submit" 
@@ -699,7 +699,7 @@
     <!-- ========================================== -->
 
     <!-- Modale Privacy Policy -->
-    <div id="modal-privacy" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
+    <div id="modal-privacy" role="dialog" aria-modal="true" aria-labelledby="modal-privacy-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
         <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden relative p-6 sm:p-8 my-6">
             <div class="flex justify-between items-start mb-4 border-b pb-3">
                 <div class="flex items-center gap-3">
@@ -707,11 +707,11 @@
                         <i class="fa-solid fa-shield-halved"></i>
                     </div>
                     <div>
-                        <h3 class="text-xl font-extrabold text-slate-900">Informativa sulla Privacy</h3>
+                        <h3 id="modal-privacy-title" class="text-xl font-extrabold text-slate-900">Informativa sulla Privacy</h3>
                         <p class="text-xs text-slate-500">Regolamento Generale sulla Protezione dei Dati (GDPR - UE 2016/679)</p>
                     </div>
                 </div>
-                <button onclick="closeModal('modal-privacy')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer">
+                <button onclick="closeModal('modal-privacy')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer" aria-label="Chiudi finestra">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
@@ -731,7 +731,7 @@
     </div>
 
     <!-- Modale Cookie Policy -->
-    <div id="modal-cookies" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
+    <div id="modal-cookies" role="dialog" aria-modal="true" aria-labelledby="modal-cookies-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
         <div class="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-slate-100 overflow-hidden relative p-6 sm:p-8 my-6">
             <div class="flex justify-between items-start mb-4 border-b pb-3">
                 <div class="flex items-center gap-3">
@@ -739,11 +739,11 @@
                         <i class="fa-solid fa-cookie-bite"></i>
                     </div>
                     <div>
-                        <h3 class="text-xl font-extrabold text-slate-900">Informativa sui Cookie</h3>
+                        <h3 id="modal-cookies-title" class="text-xl font-extrabold text-slate-900">Informativa sui Cookie</h3>
                         <p class="text-xs text-slate-500">Direttiva ePrivacy e Linee Guida Garante Privacy</p>
                     </div>
                 </div>
-                <button onclick="closeModal('modal-cookies')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer">
+                <button onclick="closeModal('modal-cookies')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer" aria-label="Chiudi finestra">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
@@ -761,7 +761,7 @@
     </div>
 
     <!-- Modale Termini di Servizio -->
-    <div id="modal-terms" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
+    <div id="modal-terms" role="dialog" aria-modal="true" aria-labelledby="modal-terms-title" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
         <div class="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-slate-100 overflow-hidden relative p-6 sm:p-8 my-6">
             <div class="flex justify-between items-start mb-4 border-b pb-3">
                 <div class="flex items-center gap-3">
@@ -769,11 +769,11 @@
                         <i class="fa-solid fa-file-contract"></i>
                     </div>
                     <div>
-                        <h3 class="text-xl font-extrabold text-slate-900">Termini di Servizio</h3>
+                        <h3 id="modal-terms-title" class="text-xl font-extrabold text-slate-900">Termini di Servizio</h3>
                         <p class="text-xs text-slate-500">Condizioni d'uso della piattaforma</p>
                     </div>
                 </div>
-                <button onclick="closeModal('modal-terms')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer">
+                <button onclick="closeModal('modal-terms')" class="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer" aria-label="Chiudi finestra">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
@@ -850,23 +850,68 @@
                 history.replaceState(null, null, window.location.pathname);
             }
 
-            // Auto-uppercase listener per campo Codice Fiscale
+            // Sanitizzazione e normalizzazione automatica input all'evento 'blur'
+            const emailInputs = ['email', 'magic-email', 'forgot-email'];
+            emailInputs.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('blur', function() {
+                        this.value = this.value.trim();
+                    });
+                }
+            });
+
+            // Auto-uppercase e trim listener per campo Codice Fiscale / Email Registrata
             const actInput = document.getElementById('act-identifier');
             if (actInput) {
                 actInput.addEventListener('input', function() {
-                    // Mantieni uppercase dinamico
                     const start = this.selectionStart;
                     const end = this.selectionEnd;
                     this.value = this.value.toUpperCase();
                     this.setSelectionRange(start, end);
                 });
+                actInput.addEventListener('blur', function() {
+                    this.value = this.value.trim().toUpperCase();
+                });
             }
+
+            // Chiusura modali con tasto ESC con ripristino focus sull'elemento attivatore
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' || e.keyCode === 27) {
+                    const visibleModals = document.querySelectorAll('[id^="modal-"]:not(.hidden)');
+                    if (visibleModals.length > 0) {
+                        const topModal = visibleModals[visibleModals.length - 1];
+                        closeModal(topModal.id);
+                    }
+                }
+            });
+
+            // Chiusura al click sul backdrop (area esterna scura) con ripristino focus
+            document.querySelectorAll('[id^="modal-"]').forEach(modal => {
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        closeModal(modal.id);
+                    }
+                });
+            });
         });
 
-        // MODALS HELPERS (Preservano i dati digitati in memoria)
+        // MODALS HELPERS (Preservano i dati digitati in memoria & ripristinano il focus)
+        let lastFocusedElement = null;
+
+        function rememberTriggerElement() {
+            lastFocusedElement = document.activeElement;
+        }
+
         function closeModal(id) {
             const el = document.getElementById(id);
             if (el) el.classList.add('hidden');
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                try {
+                    lastFocusedElement.focus();
+                } catch (_) {}
+                lastFocusedElement = null;
+            }
         }
 
         // Unificazione: showHelpInfo apre la modale unificata
@@ -875,6 +920,7 @@
         }
 
         function showActivationModal() {
+            rememberTriggerElement();
             const modal = document.getElementById('modal-activation');
             if (modal) modal.classList.remove('hidden');
             const alertBox = document.getElementById('activation-alert');
@@ -890,6 +936,7 @@
         }
 
         function showForgotPassword() {
+            rememberTriggerElement();
             // Pre-compila con l'email digitata nel form principale se presente
             const mainEmail = document.getElementById('email')?.value.trim();
             const forgotEmail = document.getElementById('forgot-email');
@@ -900,6 +947,7 @@
         }
 
         function showMagicLinkModal() {
+            rememberTriggerElement();
             // Pre-compila con l'email digitata nel form principale se presente
             const mainEmail = document.getElementById('email')?.value.trim();
             const magicEmail = document.getElementById('magic-email');
@@ -910,9 +958,21 @@
         }
 
         function openLegalModal(type) {
+            rememberTriggerElement();
             if (type === 'privacy') document.getElementById('modal-privacy').classList.remove('hidden');
             if (type === 'cookies') document.getElementById('modal-cookies').classList.remove('hidden');
             if (type === 'terms') document.getElementById('modal-terms').classList.remove('hidden');
+        }
+
+        // RATE LIMITING / DEBOUNCE SUI PULSANTI DI INVIO (MINIMO 2 SECONDI)
+        function enforceButtonCooldown(btn, startTime, minDurationMs = 2000) {
+            if (!btn) return;
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.max(0, minDurationMs - elapsed);
+            btn.disabled = true;
+            setTimeout(() => {
+                btn.disabled = false;
+            }, remaining);
         }
 
         // TOGGLE PASSWORD VISIBILITY (Con touch target 44px e aria-label dinamico)
@@ -946,18 +1006,23 @@
             btn.disabled = false;
         }
 
-        // GESTIONE ATTIVAZIONE ACCOUNT (Sanitizzazione CF & OWASP Anti-Enumeration Copy)
+        // GESTIONE ATTIVAZIONE ACCOUNT (Sanitizzazione CF & OWASP Anti-Enumeration Copy & Debounce)
         async function handleActivation(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-act-submit');
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
+
             const alertBox = document.getElementById('activation-alert');
             const alertMsg = document.getElementById('activation-alert-msg');
             const alertIcon = document.getElementById('activation-alert-icon');
             const testLink = document.getElementById('activation-test-link');
 
             // Normalizzazione e rimozione spazi interni ed esterni
-            const raw = document.getElementById('act-identifier').value || '';
+            const actInput = document.getElementById('act-identifier');
+            const raw = actInput ? actInput.value : '';
             const identifier = raw.trim().toUpperCase().replace(/\s+/g, '');
+            if (actInput) actInput.value = identifier;
 
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Verifica in corso...';
@@ -982,7 +1047,6 @@
                     testLink.innerHTML = `<a href="${data.previewUrl}" target="_blank" class="inline-flex items-center gap-1.5 text-xs text-blue-700 hover:text-blue-800 font-bold underline px-3 py-1.5 bg-blue-50 rounded-xl border border-blue-200"><i class="fa-solid fa-envelope-open-text"></i> Apri Email di Test per completare l'attivazione</a>`;
                 }
 
-                btn.disabled = false;
                 btn.innerHTML = '<i class="fa-solid fa-circle-check text-xs"></i> <span>Richiesta Inviata</span>';
             } catch (err) {
                 console.error(err);
@@ -991,22 +1055,28 @@
                 alertIcon.className = 'fa-solid fa-circle-exclamation text-rose-600 text-base mt-0.5 shrink-0';
                 alertMsg.textContent = 'Errore di connessione al server. Verifica la tua connessione e riprova.';
                 alertBox.classList.remove('hidden');
-                btn.disabled = false;
                 btn.innerHTML = '<i class="fa-regular fa-paper-plane text-xs"></i> <span>Verifica e Invia Link</span>';
+            } finally {
+                enforceButtonCooldown(btn, submitStartTime, 2000);
             }
         }
 
-        // LOGIN CON VERIFICA OTP E TOKEN DISPOSITIVO FIDATO (30 GIORNI)
+        // LOGIN CON VERIFICA OTP E TOKEN DISPOSITIVO FIDATO (30 GIORNI & Debounce)
         let pendingUserId = null;
         let pendingUserEmail = '';
 
         async function handleLogin(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-submit');
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
+
             const alertMsg = document.getElementById('error-message');
             const alertBox = document.getElementById('error-alert');
             
-            const email = document.getElementById('email').value.trim();
+            const emailInput = document.getElementById('email');
+            const email = (emailInput ? emailInput.value : '').trim();
+            if (emailInput) emailInput.value = email;
             const password = document.getElementById('password').value;
             pendingUserEmail = email;
 
@@ -1052,21 +1122,24 @@
                     alertMsg.textContent = data.message || 'Credenziali non valide o errore di accesso.';
                     alertBox.classList.remove('hidden');
                     btn.innerHTML = '<span>Accedi al Portale</span> <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>';
-                    btn.disabled = false;
+                    enforceButtonCooldown(btn, submitStartTime, 2000);
                 }
             } catch (err) {
                 console.error(err);
                 alertMsg.textContent = 'Errore di connessione al server.';
                 alertBox.classList.remove('hidden');
                 btn.innerHTML = '<span>Accedi al Portale</span> <i class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-1"></i>';
-                btn.disabled = false;
+                enforceButtonCooldown(btn, submitStartTime, 2000);
             }
         }
 
-        // VERIFY OTP (CON OPZIONE SALVATAGGIO DISPOSITIVO PER 30 GIORNI)
+        // VERIFY OTP (CON OPZIONE SALVATAGGIO DISPOSITIVO PER 30 GIORNI & Debounce)
         async function handleVerifyOTP(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-verify-otp');
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
+
             const alertBox = document.getElementById('otp-alert');
             const otp = document.getElementById('otp-code').value.trim();
             const rememberDevice = document.getElementById('remember-device')?.checked || false;
@@ -1092,14 +1165,14 @@
                     alertBox.textContent = data.message || 'Codice errato o scaduto.';
                     alertBox.classList.remove('hidden');
                     btn.innerHTML = '<i class="fa-solid fa-check"></i> <span>Conferma e Accedi</span>';
-                    btn.disabled = false;
+                    enforceButtonCooldown(btn, submitStartTime, 2000);
                 }
             } catch(err) {
                 console.error(err);
                 alertBox.textContent = 'Errore di connessione.';
                 alertBox.classList.remove('hidden');
                 btn.innerHTML = '<i class="fa-solid fa-check"></i> <span>Conferma e Accedi</span>';
-                btn.disabled = false;
+                enforceButtonCooldown(btn, submitStartTime, 2000);
             }
         }
 
@@ -1112,11 +1185,17 @@
             window.location.href = 'index.html';
         }
 
-        // ACCESSO PASSWORDLESS (MAGIC LINK)
+        // ACCESSO PASSWORDLESS (MAGIC LINK & Debounce)
         async function handleMagicLinkRequest(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-magic-submit');
-            const email = document.getElementById('magic-email').value.trim();
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
+
+            const magicInput = document.getElementById('magic-email');
+            const email = (magicInput ? magicInput.value : '').trim();
+            if (magicInput) magicInput.value = email;
+
             const alertBox = document.getElementById('magic-alert');
             const alertMsg = document.getElementById('magic-alert-msg');
             const testLink = document.getElementById('magic-test-link');
@@ -1148,8 +1227,8 @@
                 alertMsg.textContent = 'Errore di connessione.';
                 alertBox.classList.remove('hidden');
             } finally {
-                btn.disabled = false;
                 btn.innerHTML = '<i class="fa-regular fa-paper-plane text-xs"></i> <span>Invia Link di Accesso</span>';
+                enforceButtonCooldown(btn, submitStartTime, 2000);
             }
         }
 
@@ -1198,9 +1277,11 @@
             alert('Autenticazione con Passkey predisposta. Utilizza il Magic Link via Email per accedere istantaneamente.');
         }
 
-        // ACCESSO MODALITÀ DEMO (Ambiente simulato protetto e isolato)
+        // ACCESSO MODALITÀ DEMO (Ambiente simulato protetto e isolato & Debounce)
         async function startDemoMode() {
             const btn = document.getElementById('btn-demo-mode');
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
             const origText = btn ? btn.innerHTML : '';
             if (btn) {
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Caricamento Demo...';
@@ -1224,7 +1305,7 @@
                     alert('Impossibile avviare la modalità demo al momento.');
                     if (btn) {
                         btn.innerHTML = origText;
-                        btn.disabled = false;
+                        enforceButtonCooldown(btn, submitStartTime, 2000);
                     }
                 }
             } catch (err) {
@@ -1232,16 +1313,22 @@
                 alert('Errore di connessione durante l\'avvio della demo.');
                 if (btn) {
                     btn.innerHTML = origText;
-                    btn.disabled = false;
+                    enforceButtonCooldown(btn, submitStartTime, 2000);
                 }
             }
         }
 
-        // FORGOT PASSWORD
+        // FORGOT PASSWORD (Debounce & Normalizzazione)
         async function handleForgotPassword(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-forgot-submit');
-            const email = document.getElementById('forgot-email').value.trim();
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
+
+            const forgotInput = document.getElementById('forgot-email');
+            const email = (forgotInput ? forgotInput.value : '').trim();
+            if (forgotInput) forgotInput.value = email;
+
             const alert = document.getElementById('forgot-alert');
             const testLink = document.getElementById('forgot-test-link');
 
@@ -1274,17 +1361,20 @@
                 alert.classList.add('bg-rose-50', 'text-rose-800', 'border-rose-200');
                 alert.textContent = 'Errore di connessione.';
             } finally {
-                btn.disabled = false;
                 btn.innerHTML = '<i class="fa-regular fa-paper-plane text-xs"></i> <span>Invia Link</span>';
+                enforceButtonCooldown(btn, submitStartTime, 2000);
             }
         }
 
-        // RESET PASSWORD
+        // RESET PASSWORD (Debounce & Policy Check)
         async function handleResetPassword(e) {
             e.preventDefault();
+            const btn = document.getElementById('btn-reset-submit');
+            if (btn && btn.disabled) return;
+            const submitStartTime = Date.now();
+
             const token = document.getElementById('reset-token').value;
             const newPassword = document.getElementById('reset-password-input').value;
-            const btn = document.getElementById('btn-reset-submit');
             const alert = document.getElementById('reset-alert');
 
             // Validazione Policy Password
@@ -1293,6 +1383,7 @@
                 alert.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
                 alert.classList.add('bg-rose-50', 'text-rose-800', 'border-rose-200');
                 alert.innerHTML = '<div class="flex items-center gap-1.5 font-bold"><i class="fa-solid fa-circle-xmark text-rose-600"></i> La password non soddisfa i requisiti:</div><div class="text-sm font-normal text-rose-700 pl-5">Deve contenere almeno 8 caratteri, una lettera maiuscola, un numero e un carattere speciale.</div>';
+                enforceButtonCooldown(btn, submitStartTime, 2000);
                 return;
             }
 
@@ -1318,15 +1409,15 @@
                 } else {
                     alert.classList.add('bg-rose-50', 'text-rose-800', 'border-rose-200');
                     alert.textContent = data.message || 'Errore. Il link potrebbe essere scaduto.';
-                    btn.disabled = false;
                     btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Salva Nuova Password</span>';
+                    enforceButtonCooldown(btn, submitStartTime, 2000);
                 }
             } catch (err) {
                 alert.classList.remove('hidden');
                 alert.classList.add('bg-rose-50', 'text-rose-800', 'border-rose-200');
                 alert.textContent = 'Errore di connessione.';
-                btn.disabled = false;
                 btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Salva Nuova Password</span>';
+                enforceButtonCooldown(btn, submitStartTime, 2000);
             }
         }
     </script>
