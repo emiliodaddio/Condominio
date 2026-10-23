@@ -1630,17 +1630,17 @@
                         <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-500">3. Contabilità, Bilancio & Finanza</h2>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        <!-- 9. Card: Area Contabile -->
+                        <!-- 9. Card: Area Contabile & Quote -->
                         <div onclick="switchTab('accounting')" class="card-friendly group cursor-pointer p-6 flex flex-col justify-between hover:border-blue-300">
                             <div>
                                 <div class="w-13 h-13 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl mb-4 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
                                     <i class="fa-solid fa-file-invoice-dollar"></i>
                                 </div>
-                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-blue-600 transition-colors">Area Contabile</h3>
-                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Visualizza il bilancio, le spese, le rate millesimali e i pagamenti in modo trasparente.</p>
+                                <h3 class="text-lg font-bold text-slate-900 mb-1.5 group-hover:text-blue-600 transition-colors">Area Contabile &amp; Quote</h3>
+                                <p class="text-xs sm:text-sm text-slate-500 line-clamp-2">Quote condominiali, ripartizione locatore/inquilino, bilancio e pagamenti.</p>
                             </div>
                             <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600">
-                                <span>Consulta bilanci</span>
+                                <span>Quote &amp; Bilancio</span>
                                 <i class="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-1 transition-transform"></i>
                             </div>
                         </div>
@@ -1693,6 +1693,10 @@
                     </div>
                 </div>
                 <div class="admin-only hidden md:flex items-center space-x-2">
+                    <button onclick="openRipartizioneLocazioneModal()" 
+                        class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all flex items-center shadow-2xs">
+                        <i class="fa-solid fa-people-arrows mr-1.5"></i> Riparto Locatore/Inquilino
+                    </button>
                     <button onclick="switchTab('giornale')" 
                         class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all flex items-center shadow-2xs">
                         <i class="fa-solid fa-book-open mr-1.5"></i> Libro Giornale & Bilancio
